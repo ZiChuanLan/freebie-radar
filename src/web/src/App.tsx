@@ -137,6 +137,14 @@ function ItemCard({ item, onPatch, onOpen }: { item: Item; onPatch: (id: number,
                 {CATEGORY_LABEL[item.category] ?? item.category}
               </span>
             )}
+            {item.is_free === 1 && (
+              <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 font-medium text-emerald-300">白嫖</span>
+            )}
+            {item.is_free !== 1 && typeof item.price === "number" && item.price > 0 && (
+              <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 font-medium text-sky-300">
+                {item.price < 1 ? "<1" : Math.round(item.price)} 元内
+              </span>
+            )}
             {exp && (
               <span className={`inline-flex items-center gap-1 ${exp.urgent ? "text-orange-400" : "text-ink-400"}`}>
                 <Clock3 size={11} /> {exp.text}
@@ -497,6 +505,7 @@ export function App() {
   const [detail, setDetail] = useState<Item | null>(null);
   const [onlySubscribed, setOnlySubscribed] = useState(false);
   const [onlyExpiring, setOnlyExpiring] = useState(false);
+  const [priceCap, setPriceCap] = useState("all"); // all | free | 5 | 10 | 30
   const [newKeyword, setNewKeyword] = useState("");
   const [debounced, setDebounced] = useState("");
   const [source, setSource] = useState("");
@@ -521,12 +530,14 @@ export function App() {
     if (onlyFresh) p.set("unexpired", "1");
     if (onlySubscribed) p.set("subscribed", "1");
     if (onlyExpiring) p.set("expiring", "1");
+    if (priceCap === "free") p.set("freeOnly", "1");
+    else if (priceCap !== "all") p.set("maxPrice", priceCap);
     const DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "30d": 30 };
     const days = DAYS[range];
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "60");
     return p.toString();
-  }, [debounced, source, category, sort, onlyStarred, onlyFresh, range, onlySubscribed, onlyExpiring]);
+  }, [debounced, source, category, sort, onlyStarred, onlyFresh, range, onlySubscribed, onlyExpiring, priceCap]);
 
   const stats = useApi<Stats>("/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
@@ -718,6 +729,31 @@ export function App() {
 
             <section>
 <section>
+<section>
+              <div className="mb-2 text-[11px] tracking-wider text-ink-400 uppercase">我能付多少</div>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { key: "all", label: "不限" },
+                  { key: "free", label: "完全白嫖" },
+                  { key: "5", label: "≤ 5 元" },
+                  { key: "10", label: "≤ 10 元" },
+                  { key: "30", label: "≤ 30 元" },
+                  { key: "100", label: "≤ 100 元" },
+                ].map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => setPriceCap(o.key)}
+                    className={"rounded-lg border px-2 py-1.5 text-[11.5px] transition-colors " + (priceCap === o.key ? "border-lime/40 bg-lime/10 text-lime" : "border-ink-700 text-ink-300 hover:border-ink-600")}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-1.5 text-[10.5px] text-ink-500">
+                白嫖 {stats.data?.price?.free ?? 0} · ≤5 元 {stats.data?.price?.under5 ?? 0}
+              </div>
+            </section>
               <div className="mb-2 text-[11px] tracking-wider text-ink-400 uppercase">发布时间</div>
               <select
                 value={range}

@@ -1,6 +1,7 @@
 import { cleanText, guessExpiry, normalizeUrl, urlKey } from "./normalize.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { extractCodes } from "./codes.ts";
+import { extractPrice } from "./pricing.ts";
 
 export type Category =
   | "ai" | "cloud" | "domain" | "software" | "media" | "game" | "goods" | "invite" | "edu" | "other";
@@ -91,6 +92,8 @@ export type EnrichedItem = RawItem & {
   category: Category;
   tags: string[];
   codes: string[];
+  price: number | null;
+  isFree: boolean;
   score: number;
   url: string;
   urlKey: string;
@@ -193,6 +196,7 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
   const category: Category = guessed.category === "other" && isCategory(raw.categoryHint) ? raw.categoryHint : guessed.category;
   const tags = guessed.tags;
   const codes = extractCodes(title, raw.content ?? raw.summary ?? "");
+  const priceInfo = extractPrice(title, summary);
   const expiresAt = raw.expiresAt ?? guessExpiry(`${title} ${summary}`);
   const { score, reason } = scoreItem({
     title,
@@ -209,6 +213,8 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
   return {
     ...raw,
     codes,
+    price: priceInfo.price,
+    isFree: priceInfo.isFree,
     title,
     summary,
     url,

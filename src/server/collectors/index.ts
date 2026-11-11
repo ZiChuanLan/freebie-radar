@@ -184,6 +184,7 @@ function persist(
         run(
           `UPDATE items SET url = ?, url_key = ?, title = ?, summary = ?, author = ?, category = ?,
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
+             price = ?, is_free = ?,
              ai = COALESCE(?, ai),
              status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END
            WHERE id = ?`,
@@ -199,6 +200,8 @@ function persist(
           e.publishedAt ?? null,
           JSON.stringify(e.raw ?? {}),
           now,
+          e.price,
+          e.isFree ? 1 : 0,
           aiJson,
           status,
           existing.id,
@@ -209,8 +212,8 @@ function persist(
       try {
         const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, summary, author, category,
-             tags, score, expires_at, published_at, raw, status, ai, content, codes, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             tags, score, expires_at, published_at, raw, status, ai, content, codes, price, is_free, first_seen_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
@@ -228,6 +231,8 @@ function persist(
           aiJson,
           e.content ?? null,
           JSON.stringify(e.codes),
+          e.price,
+          e.isFree ? 1 : 0,
           now,
           now,
         );

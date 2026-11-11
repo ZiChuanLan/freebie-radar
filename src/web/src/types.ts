@@ -18,6 +18,8 @@ export type Item = {
   codes?: string[];
   content?: string | null;
   pushed_at?: string | null;
+  price?: number | null;
+  is_free?: number;
   first_seen_at: string;
   last_seen_at: string;
 };
@@ -27,6 +29,7 @@ export type Stats = {
   byCategory: { category: string | null; n: number }[];
   bySource: { source_id: string; n: number }[];
   features: { ai: boolean; push: boolean; pushChannel: string };
+  price?: { free: number; under5: number; under10: number; known: number };
 };
 
 export type Source = {
@@ -64,6 +67,8 @@ export type ItemsQuery = {
   unexpired?: string;
   subscribed?: string;
   expiring?: string;
+  maxPrice?: string;
+  freeOnly?: string;
   limit?: number;
   offset?: number;
 };

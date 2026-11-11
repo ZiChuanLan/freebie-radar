@@ -70,6 +70,19 @@ docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/s
 | `TELEGRAM_PROXY` | 空 | 推送单独走代理（本机直连不上 api.telegram.org） |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 空 | 可选 AI 二审，走 OpenAI 兼容 `/chat/completions` |
 
+## 按价格筛选
+
+左侧栏「我能付多少」支持按预算过滤：**不限 / 完全白嫖 / ≤5 元 / ≤10 元 / ≤30 元 / ≤100 元**。
+
+价格从标题里按高可信模式抽取（`¥3.5`、`最低 3 元`、`3 元起`、`$4.66`），遇到「省 30 块」「200 元耳机怎么选」这类描述性金额会被排除；美元按 7.2 折算成人民币。
+
+「完全白嫖」只看标题里的免费词，不看摘要，避免把「虽然免费但没用」这种讨论帖算进来。
+
+```bash
+curl '.../api/items?freeOnly=1'   # 只看完全免费
+curl '.../api/items?maxPrice=5'   # ≤5 元（含免费）
+```
+
 ## 时效性：送码类资源的抢速设计
 
 送码 / 送邀请码的帖子，码往往 **1 分钟内**就被抢光。本项目为此做了四层设计（细节见 `docs/timing.md`）：

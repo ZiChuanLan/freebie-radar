@@ -79,8 +79,10 @@ async function main() {
         if (!e) continue;
         if (e.category !== row.category) changed += 1;
         run(
-          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
-          e.category, JSON.stringify(e.tags), e.score, e.expiresAt, e.keep ? "active" : "expired", row.id,
+          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
+          e.category, JSON.stringify(e.tags), e.score, e.expiresAt,
+          e.price, e.isFree ? 1 : 0, JSON.stringify(e.codes),
+          e.keep ? "active" : "expired", row.id,
         );
       }
       console.log("[reclassify] " + rows.length + " items, category changed " + changed);

@@ -15,6 +15,9 @@ export type ItemRow = {
   author: string | null;
   category: string | null;
   tags: string;
+  codes?: string;
+  price?: number | null;
+  is_free?: number;
   score: number;
   expires_at: string | null;
   published_at: string | null;
@@ -40,6 +43,13 @@ function shape(row: ItemRow, keywords: string[] = []) {
   } catch {
     tags = [];
   }
+  let codes: string[] = [];
+  try {
+    codes = JSON.parse(row.codes ?? '[]') as string[];
+    if (!Array.isArray(codes)) codes = [];
+  } catch {
+    codes = [];
+  }
   let ai: unknown = null;
   if (row.ai) {
     try {
@@ -51,6 +61,7 @@ function shape(row: ItemRow, keywords: string[] = []) {
   return {
     ...row,
     tags,
+    codes,
     ai,
     starred: row.starred === 1,
     raw: undefined,
@@ -97,6 +108,18 @@ export function registerApi(app: Hono) {
     if (q.unexpired === "1") {
       where.push("(expires_at IS NULL OR expires_at > ?)");
       params.push(new Date().toISOString());
+    }
+
+    // 价格筛选：完全白嫖 / 最高能付多少（未知价格视为不匹配）
+    if (q.freeOnly === "1") {
+      where.push("(is_free = 1 OR price = 0)");
+    }
+    if (q.maxPrice) {
+      const cap = Number(q.maxPrice);
+      if (Number.isFinite(cap) && cap >= 0) {
+        where.push("((is_free = 1 OR price = 0) OR (price IS NOT NULL AND price <= ?))");
+        params.push(cap);
+      }
     }
 
     // 订阅命中 / 即将过期 两个筛选项
@@ -226,6 +249,13 @@ export function registerApi(app: Hono) {
       },
       byCategory,
       bySource,
+      price: get<{ free: number; under5: number; under10: number; known: number }>(
+        `SELECT SUM(CASE WHEN is_free = 1 OR price = 0 THEN 1 ELSE 0 END) AS free,
+                SUM(CASE WHEN price IS NOT NULL AND price > 0 AND price <= 5 THEN 1 ELSE 0 END) AS under5,
+                SUM(CASE WHEN price IS NOT NULL AND price > 5 AND price <= 10 THEN 1 ELSE 0 END) AS under10,
+                SUM(CASE WHEN price IS NOT NULL OR is_free = 1 THEN 1 ELSE 0 END) AS known
+         FROM items WHERE status = 'active'`,
+      ),
       features: { ai: aiEnabled, push: pushEnabled, pushChannel: config.pushChannel },
     });
   });

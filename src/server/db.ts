@@ -93,6 +93,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN pushed_at TEXT;
   CREATE INDEX IF NOT EXISTS idx_items_codes ON items(codes);
   `,
+
+  /* v4：价格 —— 「最高能付多少」筛选 */
+  `
+  ALTER TABLE items ADD COLUMN price REAL;
+  ALTER TABLE items ADD COLUMN is_free INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX IF NOT EXISTS idx_items_price ON items(price);
+  `,
 ];
 
 export function dbPath(): string {
