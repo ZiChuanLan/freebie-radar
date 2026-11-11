@@ -42,7 +42,16 @@ if (existsSync(webDistAbs)) {
       },
     }),
   );
-  app.use("/*", serveStatic({ root: relRoot }));
+  app.use(
+    "/*",
+    serveStatic({
+      root: relRoot,
+      // 命中 index.html 的响应必须不缓存，否则发版后浏览器会拿旧 HTML 去请求已删除的旧 JS
+      onFound: (p, c) => {
+        if (p.endsWith(".html")) c.header("Cache-Control", "no-store, must-revalidate");
+      },
+    }),
+  );
   app.get(
     "*",
     serveStatic({
