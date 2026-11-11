@@ -57,6 +57,22 @@ export function ingestItems(sourceId: string, items: RawItem[]): { inserted: num
   }
 }
 
+/** 本机采集器上报「登录态失效 / 被风控 / 抓不到内容」：写 runs 并标记 sources 状态，让 /status 如实反映。 */
+export function markSourceFailure(
+  sourceId: string,
+  reason: string,
+  status: "degraded" | "failed" = "degraded",
+): { ok: true; status: string } {
+  ensureSources();
+  const now = new Date().toISOString();
+  run(
+    "INSERT INTO runs (source_id, started_at, finished_at, status, fetched, inserted, skipped, duration_ms, error) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?)",
+    sourceId, now, now, status, reason.slice(0, 500),
+  );
+  run("UPDATE sources SET last_run_at = ?, last_status = ?, last_error = ? WHERE id = ?", now, status, reason.slice(0, 300), sourceId);
+  return { ok: true, status };
+}
+
 type SourceRow = {
   id: string;
   name: string;
@@ -289,7 +305,11 @@ export async function runAll(
   options: { http?: HttpClient; maxItems?: number; log?: (message: string) => void } = {},
 ): Promise<RunSummary[]> {
   ensureSources();
-  const rows = all<{ id: string }>("SELECT id FROM sources WHERE enabled = 1 ORDER BY id").map((r) => r.id);
+  // kind 没有对应 collector 的源（例如 kind="ingest"，由本机采集器回传）不参与服务器调度，
+  // 否则每轮都会产生 "no collector registered" 的无意义失败。
+  const rows = all<{ id: string; kind: string }>("SELECT id, kind FROM sources WHERE enabled = 1 ORDER BY id")
+    .filter((r) => BY_KIND.has(r.kind))
+    .map((r) => r.id);
   const filter = config.enabledSources;
   const targets = filter.length ? rows.filter((id) => filter.includes(id)) : rows;
   const out: RunSummary[] = [];

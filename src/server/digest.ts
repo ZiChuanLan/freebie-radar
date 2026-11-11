@@ -55,8 +55,20 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   );
 
   const pushed = alreadyPushed(dayKey(date));
-  return rows.filter((r) => !pushed.has(r.id)).slice(0, topN);
+  const fresh = rows.filter((r) => !pushed.has(r.id));
+
+  // 质量门槛：精选必须既是高分，标题里也真的带「免费/领取/限额」这类福利信号，
+  // 否则「豆包月卡不够用了」这种讨论帖会混进日报。
+  const strict = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title));
+  // 数量不足时只放宽分数，绝不放宽关键词：宁可一天少发几条，也不让讨论帖混进精选
+  const relaxed = fresh.filter((r) => DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
+  const pool = strict.length >= Math.min(6, topN) ? strict : relaxed;
+  return pool.slice(0, topN);
 }
+const NOISE_TITLE = /^(怎样|怎么|如何|哪里|哪个)|请问|有没有|求推荐|求一个|哪里(有|能)|值得买吗|怎么样\?|不够用|用完了|失效了|吐槽|踩坑|后悔|失望|盘点|评测|测评/;
+
+const MIN_DIGEST_SCORE = 55;
+const DEAL_HINT = /免费|领取|赠送|白嫖|零元|0\.01|试用|体验金|兑换|激活码|注册送|限时|开放注册|额度|礼包|优惠券|包邮|giveaway|coupon|free/i;
 
 const SOURCE_SHORT: Record<string, string> = {
   "linuxdo-welfare": "LINUX DO 福利",

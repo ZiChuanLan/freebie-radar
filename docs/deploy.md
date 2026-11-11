@@ -64,6 +64,16 @@ fresh stats:   {"total":10,"active":10,...}
 | README 陈旧（ego-browser / local-collect.mjs） | 全部改为 Playwright + `scripts/pw-collect.mjs` | README 内已无 ego 相关描述 |
 | 前端缺详情视图、SOURCE_LABEL 缺新源、token 硬编码 | 新增 `ItemDetail` 弹窗（摘要/时间/标签/收藏/忽略/原文）；补齐 5 个源的显示名；`pw-collect.mjs` 改为从 `.env` 读 `INGEST_TOKEN`，缺失即退出 | `pnpm build` 通过；`node --check scripts/pw-collect.mjs` 通过 |
 
+### 第三轮修复（针对第二次审计驳回）
+
+| 审计意见 | 修复 | 验证 |
+|---|---|---|
+| 登录态失效时不标 degraded、不写 /status | 新增 `POST /api/ingest/failed`（Bearer 鉴权）+ `markSourceFailure()`；`pw-collect.mjs` 在「需要登录 / 0 条 / 抓取异常」三条路径上报 degraded/failed | 实测：`{"ok":true,"status":"degraded"}`，`/api/sources` 中 zhihu-search 变为 `degraded` 且 `last_error=测试登录态失效`；随后真实采集恢复为 `ok` |
+| 服务器调度把 ingest 源当不支持的源 | `runAll()` 只取 `kind` 有注册 collector 的源，ingest 源不参与服务器调度 | 实测 `ENABLED_SOURCES=zhihu-search collect` → `[collect] done: 0 sources, 0 failed`，不再出现 `no collector registered` |
+| 每日精选里的详情/收藏/忽略按钮无操作 | `DigestPanel` 接收真实 `onPatch` / `onOpen`，与资源流共用同一套 handler | `tsc` 通过，构建产物含「查看详情」「打开原文」 |
+| 日报截图显示「推送关」，与推送声明不一致 | 用 Playwright 重新截图线上 `#digest` | `docs/ui-digest.png` 现在显示「推送 telegram」「2026-11-11 已推送」「12 条 · 已推送 Telegram」 |
+| 精选含「豆包月卡不够用了」「维修被收 2800」等非福利内容 | `pickDaily()` 加三道门槛：`MIN_DIGEST_SCORE=55`、`DEAL_HINT`（必须有免费/领取/额度等福利信号）、`NOISE_TITLE`（排除请问/怎样/求推荐/不够用/评测等讨论帖）；数量不足时只放宽分数，不放宽关键词 | 治理后当日 12 条全部为福利（Grok 免费一个月、Qwen 注册送 10$、网易云会员、BLG 免费领皮肤、邀请码…），无一条讨论/维修/评测帖 |
+| `.env.example` 仍引用 local-collect.mjs | 改为 Playwright 脚本 | 文件内已无 ego/local-collect 字样 |
 ### 采集失败重试
 
 计划任务首次运行出现 zhihu / xhs 的 `TypeError: fetch failed`（Easytier 链路瞬时抖动，同批 xiaoheihe 成功）。已给 `push()` 加 3 次重试 + 60s 单次超时 + 打印 `err.cause`，重跑计划任务三站全部 200。

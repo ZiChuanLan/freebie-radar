@@ -346,7 +346,7 @@ function ItemDetail({ item, onClose, onPatch }: { item: Item; onClose: () => voi
   );
 }
 
-function DigestPanel() {
+function DigestPanel({ onPatch, onOpen }: { onPatch: (id: number, body: Record<string, unknown>) => void; onOpen: (item: Item) => void }) {
   const list = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
   const dates = list.data?.digests ?? [];
   const [picked, setPicked] = useState<string | null>(null);
@@ -405,7 +405,7 @@ function DigestPanel() {
 
           <div className="space-y-2.5">
             {detail.data.items.map((item) => (
-              <ItemCard key={item.id} item={item} onPatch={() => {}} onOpen={() => {}} />
+              <ItemCard key={item.id} item={item} onPatch={onPatch} onOpen={onOpen} />
             ))}
           </div>
         </>
@@ -648,7 +648,7 @@ export function App() {
 
         <main className="min-w-0 flex-1">
           {tab === "digest" ? (
-            <DigestPanel />
+            <DigestPanel onPatch={patch} onOpen={setDetail} />
           ) : tab === "status" ? (
             <StatusPanel sources={sources.data?.sources ?? []} runs={runs.data?.runs ?? []} />
           ) : (

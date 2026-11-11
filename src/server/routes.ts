@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { all, get } from "./db.ts";
 import { aiEnabled, config, pushEnabled } from "./config.ts";
-import { ingestItems } from "./collectors/index.ts";
+import { ingestItems, markSourceFailure } from "./collectors/index.ts";
 import type { RawItem } from "./collectors/types.ts";
 
 export type ItemRow = {
@@ -191,6 +191,16 @@ export function registerApi(app: Hono) {
     });
     const saved = ingestItems(body.sourceId, items);
     return c.json({ ok: true, received: body.items.length, ...saved });
+  });
+
+  app.post("/api/ingest/failed", async (c) => {
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置" }, 403);
+    const auth = c.req.header("authorization") ?? "";
+    if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
+    const body = (await c.req.json().catch(() => null)) as { sourceId?: string; reason?: string; status?: string } | null;
+    if (!body?.sourceId || !body.reason) return c.json({ error: "sourceId 与 reason 必填" }, 400);
+    const status = body.status === "failed" ? "failed" : "degraded";
+    return c.json(markSourceFailure(body.sourceId, body.reason, status));
   });
   app.get("/api/digests", (c) => {
     return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });

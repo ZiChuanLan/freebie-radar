@@ -33,10 +33,29 @@ const jobs = only ? [only] : ["zhihu", "xhs", "xiaoheihe"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const summary = [];
 
+const SOURCE_IDS = { zhihu: "zhihu-search", xhs: "xhs-search", xiaoheihe: "xiaoheihe-search" };
+
+/** 上报失败/降级，让服务器 /status 如实反映（登录态失效、页面结构变化、抓取异常）。 */
+async function reportFailure(sourceId, reason, status = "degraded") {
+  console.log("[" + sourceId + "] 上报 " + status + ":", reason);
+  try {
+    const res = await fetch(SERVER + "/api/ingest/failed", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
+      body: JSON.stringify({ sourceId, reason, status }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = await res.text();
+    summary.push({ sourceId, reported: status, status: res.status, body: body.slice(0, 120) });
+  } catch (err) {
+    console.log("[" + sourceId + "] 上报失败:", String(err).slice(0, 120));
+    summary.push({ sourceId, reported: status, error: String(err).slice(0, 120) });
+  }
+}
 async function push(sourceId, items) {
   if (!items.length) {
-    summary.push({ sourceId, inserted: 0, note: "empty" });
-    console.log("[" + sourceId + "] 0 条，跳过回传");
+    await reportFailure(sourceId, "本轮未抓到任何条目：登录态可能失效，或页面结构变化导致选择器失效", "degraded");
+    return;
     return;
   }
   const payload = JSON.stringify({ sourceId, items });
@@ -114,7 +133,10 @@ async function collectXhs(page) {
       }).filter((x) => x.title && x.url),
     }));
     console.log("[xhs]", kw, "needLogin=", state.needLogin, "->", state.items.length);
-    if (state.needLogin) { summary.push({ sourceId: "xhs-search", note: "login required" }); return; }
+    if (state.needLogin) {
+      await reportFailure("xhs-search", "登录态失效：搜索页出现「登录后查看搜索结果」", "degraded");
+      return;
+    }
     for (const it of state.items) if (!seen.has(it.url)) seen.set(it.url, it);
   }
   await push("xhs-search", [...seen.values()].map((x) => ({
@@ -192,7 +214,7 @@ try {
       else if (job === "xiaoheihe") await collectXiaoheihe(page);
     } catch (err) {
       console.log("[" + job + "] 失败", String(err).slice(0, 200));
-      summary.push({ sourceId: job, error: String(err).slice(0, 160) });
+      await reportFailure(SOURCE_IDS[job] || job, "抓取异常: " + String(err).slice(0, 140), "failed");
     }
   }
 } finally {
