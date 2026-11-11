@@ -34,6 +34,8 @@ export const config = {
   httpsProxy: str("HTTPS_PROXY"),
   fetchTimeoutMs: num("FETCH_TIMEOUT_MS", 20_000),
   minRequestGapMs: num("MIN_REQUEST_GAP_MS", 2_000),
+  /** 源与源之间的间隔，避免 Reddit 一类站点因同 IP 连续请求返回 429 */
+  sourceGapMs: num("SOURCE_GAP_MS", 3_000),
 
   flaresolverrUrl: str("FLARESOLVERR_URL"),
   flaresolverrTimeoutMs: num("FLARESOLVERR_TIMEOUT_MS", 60_000),

@@ -53,7 +53,11 @@ const SOURCE_LABEL: Record<string, string> = {
   "mock-source": "Mock 源",
 };
 
-const sourceName = (id: string) => SOURCE_LABEL[id] ?? id;
+// 源显示名以 /api/sources 的 name 为准；SOURCE_LABEL 只作首屏兜底，
+// 这样新增后端源不用再改前端。
+let SOURCE_NAMES: Record<string, string> = { ...SOURCE_LABEL };
+
+const sourceName = (id: string) => SOURCE_NAMES[id] ?? SOURCE_LABEL[id] ?? id;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "—";
@@ -436,6 +440,20 @@ export function App() {
     else history.replaceState(null, "", location.pathname + location.search);
   }, [tab]);
   const [search, setSearch] = useState("");
+  const [, bumpNames] = useState(0);
+
+  // 用后端返回的源名覆盖前端写死的表，新源无需改代码
+  useEffect(() => {
+    fetch("/api/sources")
+      .then((r) => r.json())
+      .then((d: { sources: { id: string; name: string }[] }) => {
+        const m: Record<string, string> = { ...SOURCE_LABEL };
+        for (const s of d.sources) if (s.name) m[s.id] = s.name;
+        SOURCE_NAMES = m;
+        bumpNames((n) => n + 1);
+      })
+      .catch(() => {});
+  }, []);
   const [detail, setDetail] = useState<Item | null>(null);
   const [debounced, setDebounced] = useState("");
   const [source, setSource] = useState("");

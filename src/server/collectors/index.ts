@@ -11,11 +11,13 @@ import { rssCollector } from "./rss.ts";
 import { telegramCollector } from "./telegram.ts";
 import { gamerpowerCollector } from "./gamerpower.ts";
 import { epicCollector } from "./epic.ts";
+import { gogCollector } from "./gog.ts";
+import { steamCollector } from "./steam.ts";
 import type { Collector, RawItem, SourceSeed } from "./types.ts";
 
 export const COLLECTORS: Collector[] = [
   mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector,
-  gamerpowerCollector, epicCollector,
+  gamerpowerCollector, epicCollector, gogCollector, steamCollector,
 ];
 const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
@@ -33,6 +35,10 @@ export const SEEDS: SourceSeed[] = [
   { id: "xiaoheihe-search", name: "小黑盒 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费" } },
   { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
   { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, config: { query: "type=game", limit: 60 } },
+  // GOG 的 catalog API 不支持 discount=100 / price=free 筛选（实测都返回普通折扣游戏），
+  // 商店页是 Angular SSR，解析成本高、单周通常只有 0-1 个免费，先禁用。
+  { id: "gog-free", name: "GOG · 限时免费", kind: "gog", enabled: false, config: {} },
+  { id: "steam-free", name: "Steam · 限时免费", kind: "steam", enabled: true, config: { count: 50 } },
   { id: "epic-free", name: "Epic Games · 喜加一", kind: "epic", enabled: true, config: { includeUpcoming: true } },
   { id: "rss-reddit-freegames", name: "Reddit · FreeGameFindings", kind: "rss", enabled: true, config: { feeds: [{ id: "freegamefindings", url: "https://www.reddit.com/r/FreeGameFindings/hot.rss", limit: 40 }] } },
   { id: "rss-reddit-efreebies", name: "Reddit · eFreebies", kind: "rss", enabled: true, config: { feeds: [{ id: "efreebies", url: "https://www.reddit.com/r/efreebies/hot.rss", limit: 40 }] } },
@@ -40,6 +46,18 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-slickdeals", name: "Slickdeals 首页", kind: "rss", enabled: true, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
   { id: "rss-heyitsfree", name: "HeyItsFree 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "heyitsfree", url: "https://heyitsfree.net/feed/", limit: 30 }] } },
   { id: "rss-keylol", name: "其乐 Keylol", kind: "rss", enabled: true, config: { feeds: [{ id: "keylol", url: "https://keylol.com/forum.php?mod=rss", limit: 30 }] } },
+  { id: "rss-reddit-freebies", name: "Reddit · freebies", kind: "rss", enabled: true, config: { feeds: [{ id: "freebies", url: "https://www.reddit.com/r/freebies/hot.rss", limit: 30 }] } },
+  { id: "rss-reddit-apphookup", name: "Reddit · AppHookup（App 限免）", kind: "rss", enabled: true, config: { feeds: [{ id: "apphookup", url: "https://www.reddit.com/r/AppHookup/hot.rss", limit: 30 }] } },
+  { id: "rss-reddit-freeebooks", name: "Reddit · FreeEBOOKS", kind: "rss", enabled: true, config: { feeds: [{ id: "freeebooks", url: "https://www.reddit.com/r/FreeEBOOKS/hot.rss", limit: 30 }] } },
+  { id: "rss-reddit-googleplay", name: "Reddit · GooglePlayDeals", kind: "rss", enabled: true, config: { feeds: [{ id: "googleplaydeals", url: "https://www.reddit.com/r/googleplaydeals/hot.rss", limit: 30 }] } },
+  { id: "rss-giveawayoftheday", name: "Giveaway of the Day（每日免费软件）", kind: "rss", enabled: true, config: { feeds: [{ id: "giveawayoftheday", url: "https://www.giveawayoftheday.com/feed/", limit: 20 }] } },
+  { id: "rss-appinn", name: "小众软件 Appinn", kind: "rss", enabled: true, config: { feeds: [{ id: "appinn", url: "https://www.appinn.com/feed/", limit: 20 }] } },
+  { id: "rss-sspai", name: "少数派", kind: "rss", enabled: true, config: { feeds: [{ id: "sspai", url: "https://sspai.com/feed", limit: 20 }] } },
+  { id: "rss-ithome", name: "IT之家", kind: "rss", enabled: true, config: { feeds: [{ id: "ithome", url: "https://www.ithome.com/rss/", limit: 25 }] } },
+  { id: "rss-producthunt", name: "Product Hunt", kind: "rss", enabled: true, config: { feeds: [{ id: "producthunt", url: "https://www.producthunt.com/feed", limit: 25 }] } },
+  { id: "rss-hnrss", name: "Hacker News（100+ 分）", kind: "rss", enabled: true, config: { feeds: [{ id: "hnrss", url: "https://hnrss.org/frontpage?points=100", limit: 25 }] } },
+  { id: "rss-freebieshark", name: "FreebieShark 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "freebieshark", url: "https://www.freebieshark.com/feed/", limit: 25 }] } },
+  { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: true, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
 
@@ -335,5 +353,7 @@ export async function runAll(
       out.push({ sourceId: id, status: "failed", fetched: 0, inserted: 0, skipped: 0, durationMs: 0, error: message, cursor: null });
     }
   }
+    // 源之间留间隔：Reddit 一类站点对同 IP 连续请求会返回 429
+    if (config.sourceGapMs > 0) await new Promise((r) => setTimeout(r, config.sourceGapMs));
   return out;
 }

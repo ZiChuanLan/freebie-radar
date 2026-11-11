@@ -184,3 +184,47 @@ linux.do `c/36` 福利羊毛：
 | nitter.net | 410 | 实例已下线 |
 | steamdb.info/upcoming/free | 403 | Cloudflare |
 | x.com/EpicGames | 200 HTML | 能打开但内容是 JS 渲染 + 登录墙，单页解析不稳定；tg/reddit 已覆盖同类信息，暂不接入 |
+
+## 8. 第三批源（全量铺开，2026-11-11）
+
+按「能找到的全加」的要求，又探测约 50 个候选，落地 13 个新源：
+
+| 源 id | 实测 |
+|---|---|
+| `rss-reddit-freebies` / `-apphookup` / `-freeebooks` / `-googleplay` | 各 25 条（App 限免、免费电子书、Google Play 折扣） |
+| `rss-giveawayoftheday` | 10 条（每日一款正版软件限免） |
+| `rss-appinn`（小众软件） | 10 条 |
+| `rss-sspai`（少数派） | 10 条 |
+| `rss-ithome`（IT之家） | 25 条 |
+| `rss-producthunt` | 25 条 |
+| `rss-hnrss`（HN 100+ 分） | 16 条 |
+| `rss-freebieshark` | 23 条 |
+| `rss-9to5toys` | 25 条 |
+| `steam-free` | 1 条（`search/results?maxprice=free&specials=1`，当前只有 1 个 100% off） |
+| `gog-free` | **已禁用**，见下 |
+
+全站在库 1051 条 / 31 个有数据的源，游戏类 111 条。
+
+### Reddit 限流（关键约束）
+
+Reddit 对同一 IP 的 `.rss` 请求限制极严：并发 4 路会全 429，串行 9 秒间隔仍会有 6/9 失败。因此：
+
+- 新增 `SOURCE_GAP_MS`（默认 3000）在 `runAll()` 的源之间插入间隔；
+- Reddit 各子版拆成独立 `source_id`，单源失败只标记自己 failed，不牵连其它源，下一轮自动补；
+- 实测同源重试 1 次即成功（`freeebooks` 首次 429，20 秒后 ok）。
+
+### GOG 为什么放弃
+
+`catalog.gog.com/v1/catalog` 的 `price=free` / `priceBetween=0,0` / `discount=100` 三个参数**实测都不生效**：返回 48 个普通折扣游戏（-10% / -50% / -90%），没有一个是 0 元。GOG 真正的免费（GOG Giveaway）通过首页 banner 发放，商店页是 Angular SSR，解析成本高而单周通常只有 0-1 个。源保留但 `enabled=false`。
+
+### Steam 的一个正则坑
+
+`<a href=".../app/...">` 上挂了超长的 `onmouseover` / `data-ds-*` 属性，从 `href` 到 `<span class="title">` 实际有 1-2KB。最初限制 800 字符，结果 0 条；放宽到 3000 后正常。
+
+### 前端不再写死源名
+
+`App.tsx` 改为启动时拉 `/api/sources`，用后端 `name` 覆盖内置表（`SOURCE_NAMES`）。以后加源只需改 `SEEDS`，前端零改动。
+
+### 探测后仍不可用
+
+`bensbargains` / `hunt4freebies` / `greenmangaming` / `epic_free_page` / `steamgifts` 均 403；`xbox_gwg` 404；`sampleaday` / `free_app_watch` 域名不可解析；`humblebundle` API 403、页面需 JS；`fanatical` API 返回 249KB 但结构为混合页面数据，未找到免费列表字段；`itch.io` 无 JSON 接口（`/games/free.json` 404）。
