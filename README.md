@@ -81,15 +81,17 @@ pnpm test                                 # 14 个单测
 
 ## 采集登录态站点（知乎 / 小红书 / 小黑盒）
 
-这三站需要浏览器登录态和前端签名，服务器上抓不了，改由本机 `ego-browser` 采集后回传：
+这三站需要浏览器登录态和前端签名（小黑盒的搜索接口带 `hkey`/`_time`/`nonce`/`_rnd`，只能由页面 JS 生成），服务器上抓不了，改由本机 Playwright 驱动一个**持久化 Chrome profile** 采集后回传：
 
 ```bash
-# 1. 确保 ego-browser 已登录对应站点（小红书需扫码一次）
-bash -lc "cd /h/WorkSpace/freebie-radar && ego-browser nodejs < scripts/local-collect.mjs"
+node scripts/pw-collect.mjs          # 三站全跑
+node scripts/pw-collect.mjs xhs      # 只跑小红书
+HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里时可用）
 ```
 
-脚本依次抓知乎 3 个关键词、小红书、小黑盒 2 个关键词，去重后 POST 到 `SERVER/api/ingest`。
-顶部 `SERVER` / `TOKEN` / 关键词列表可直接改；设 `ONLY = "zhihu"` 只跑单站；服务器需配置同名 `INGEST_TOKEN`。
+- profile 目录默认 `%LOCALAPPDATA%\freebie-radar-chrome`，可用 `PROFILE_DIR` 覆盖；登录一次即持久化，之后无需重复登录。
+- 顶部常量可选环境变量覆盖：`SERVER_URL` / `INGEST_TOKEN`，服务器端需配置同名 `INGEST_TOKEN`。
+- 关键词列表在脚本的 `KEYWORDS`；小红书会自动滚动 3 屏加载更多。
 
 ## 加一个新源
 

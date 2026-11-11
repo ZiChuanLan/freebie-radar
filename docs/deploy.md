@@ -67,4 +67,4 @@ docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/s
 
 1. **Telegram 推送（按用户决定降级）**：代码、dry-run、3 天去重均已就绪，`PUSH_CHANNEL` 支持 `none|telegram`，`sendTelegram()` 走 `TELEGRAM_PROXY` 可绕过本机不可达；用户明确「先不做，看看效果」，因此线上维持 `PUSH_CHANNEL=none`，每日精选只落库（`digests` 表）+ Web 站可见。要启用只需在 RN 的 `.env` 填 token/chat_id 并改 `PUSH_CHANNEL=telegram`。
 2. **Telegram 羊毛频道清单**：抓取逻辑验证可用（`t.me/s/durov` 抓到 20 条消息），缺真实频道名，源保持 disabled。
-3. **知乎 / 小黑盒已接入**：经本机 ego-browser 采集后回传 `/api/ingest`，实测知乎 50 条、小黑盒 19 条入库。**小红书**待用户扫码登录后重跑 `scripts/local-collect.mjs`。
+3. **知乎 / 小红书 / 小黑盒已全部接入**：Playwright 驱动持久化 Chrome profile（`%LOCALAPPDATA%\freebie-radar-chrome`，登录一次持久化），采集后回传 `/api/ingest`。实测一批：知乎 47 条、小红书 74 条（全部新增）、小黑盒 20 条。脚本 `scripts/pw-collect.mjs`，支持 `node scripts/pw-collect.mjs xhs` 跑单站。
