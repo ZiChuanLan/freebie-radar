@@ -9,10 +9,15 @@
 | LINUX DO 福利羊毛 / 资源荟萃 | `linux.do/c/36`、`c/14` JSON | 需过 Cloudflare，走 FlareSolverr |
 | V2EX 免费赠送 | `v2ex.com/api/topics/show.json?node_name=free` | 需墙外出口，走 FlareSolverr 或直连 |
 | GitHub 免费清单 | `api.github.com` contents | free-for-dev 等 awesome 仓库，零登录 |
-| 福利吧 / 吾爱破解 / 什么值得买 | RSS | 直连；52pojie 为 GBK 编码 |
+| 福利吧 / 吾爱破解 / 什么值得买 / 其乐 Keylol | RSS | 直连；52pojie 为 GBK 编码 |
+| **GamerPower** | `gamerpower.com/api/giveaways` | 聚合 Epic / Steam / GOG / itch.io / IndieGala 的限时免费 |
+| **Epic Games 喜加一** | `store-site-backend-static.../freeGamesPromotions` | 官方接口，准确给出本周免费与即将免费的起止时间 |
+| **Reddit** FreeGameFindings / eFreebies / GameDeals | `reddit.com/r/<sub>/hot.rss` | 游戏与通用免费信息最活跃的三个版块 |
+| **Slickdeals / HeyItsFree** | RSS | 美国优惠与免费样品 |
 | Telegram 频道 | `t.me/s/<channel>` | 逻辑已实现，需自己填频道名 |
+| 知乎 / 小红书 / 小黑盒 | 本机 Playwright | 需登录态与前端签名，见下节 |
 
-实测（2026-11-11，境外机器）：7 源 / 190 条 / 0 失败，全程约 10 秒（FlareSolverr session 复用后 linux.do 单板块 1-2s）。
+实测（2026-11-11，境外机器）：18 个有数据的源 / 710 条在库，其中**游戏类 102 条**；服务器单轮 7 源约 10 秒，新增的 8 个源单车均 < 1.5 秒。
 
 ## 快速开始（本地）
 

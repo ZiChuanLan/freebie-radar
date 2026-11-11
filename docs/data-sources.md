@@ -150,3 +150,37 @@ linux.do `c/36` 福利羊毛：
 - 小黑盒第二次：`received=20 inserted=7 skipped=13`
 
 同一资源不会重复入库，只有标题/摘要变化的会更新。
+
+## 7. 第二批源（游戏与海外福利，2026-11-11 实测）
+
+用户反馈「白嫖内容不够、游戏方面太少」。新增 8 个源，全部实测入库：
+
+| 源 id | 采集器 | 入口 | 实测 |
+|---|---|---|---|
+| `gamerpower` | gamerpower (JSON) | `gamerpower.com/api/giveaways?type=game` | ✅ 14 条（Epic/Steam/GOG/itch.io/IndieGala/DRM-Free 全平台聚合，含 worth 与 end_date） |
+| `epic-free` | epic (JSON) | `store-site-backend-static-ipv4.../freeGamesPromotions` | ✅ 3 条（本周免费 2 + 即将免费 1，带原价与起止时间） |
+| `rss-reddit-freegames` | rss | `reddit.com/r/FreeGameFindings/hot.rss` | ✅ 25 条 |
+| `rss-reddit-efreebies` | rss | `reddit.com/r/efreebies/hot.rss` | ✅ 25 条 |
+| `rss-reddit-gamedeals` | rss | `reddit.com/r/GameDeals/hot.rss` | ✅ 25 条 |
+| `rss-slickdeals` | rss | `slickdeals.net/newsearch.php?rss=1` | ✅ 25 条 |
+| `rss-heyitsfree` | rss | `heyitsfree.net/feed` | ✅ 20 条 |
+| `rss-keylol` | rss | `keylol.com/forum.php?mod=rss`（中文 Steam 社区） | ✅ 20 条 |
+
+结果：游戏类条目从 23 → **102**，全站在库 710 条 / 18 个有数据的源。
+
+### 踩到的两个坑
+
+1. **Reddit 的 atom feed 触发 XML 实体展开上限**：`Entity expansion limit exceeded: 1028 > 1000`。fast-xml-parser 默认展开实体并限制 1000 次，Reddit 的单条 feed 就超了。解法：`processEntities: false`，实体交给后面的 `cleanText` / `decodeEntities` 统一处理。
+2. **Reddit 连续请求 429**：同一 IP 连抓 3 个子版会被限流（HTTP 429），隔 45 秒重试即可通过。当前三个 Reddit 源分属不同 `source_id`，服务器定时批次里会连续触发，因此把它们的采集间隔留给统一限速（`MIN_REQUEST_GAP_MS`）+ 失败重试自然恢复；单轮失败会被记为 failed 并在下一轮补上。
+
+### 探测后放弃的源
+
+| 目标 | 状态 | 原因 |
+|---|---|---|
+| old.reddit.com JSON | 403 | IP 被封，只有 .rss 可用 |
+| GOG 免费列表 API | 400 | `/games/ajax/filtered?price=free` 已改接口 |
+| freestufffinder.com | 403 | Cloudflare |
+| NGA 福利版 | 403 | 反爬 |
+| nitter.net | 410 | 实例已下线 |
+| steamdb.info/upcoming/free | 403 | Cloudflare |
+| x.com/EpicGames | 200 HTML | 能打开但内容是 JS 渲染 + 登录墙，单页解析不稳定；tg/reddit 已覆盖同类信息，暂不接入 |

@@ -42,6 +42,14 @@ const SOURCE_LABEL: Record<string, string> = {
   "xhs-search": "小红书 · 福利搜索",
   "xiaoheihe-search": "小黑盒 · 福利搜索",
   "tg-channels": "Telegram 频道",
+  "gamerpower": "GamerPower · 免费游戏",
+  "epic-free": "Epic Games · 喜加一",
+  "rss-reddit-freegames": "Reddit · FreeGameFindings",
+  "rss-reddit-efreebies": "Reddit · eFreebies",
+  "rss-reddit-gamedeals": "Reddit · GameDeals",
+  "rss-slickdeals": "Slickdeals",
+  "rss-heyitsfree": "HeyItsFree",
+  "rss-keylol": "其乐 Keylol",
   "mock-source": "Mock 源",
 };
 

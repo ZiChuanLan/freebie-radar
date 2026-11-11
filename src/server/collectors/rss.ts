@@ -5,7 +5,14 @@ import type { Collector, RawItem } from "./types.ts";
 
 type FeedSpec = { id: string; url: string; limit?: number; via?: "direct" | "flaresolverr" };
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", trimValues: true });
+// processEntities: false —— Reddit 的 atom feed 里实体太多，默认的展开上限（1000）会直接抛错；
+// 实体在后续 cleanText / decodeEntities 里统一处理。
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  trimValues: true,
+  processEntities: false,
+});
 
 function asArray<T>(v: T | T[] | undefined): T[] {
   if (v === undefined || v === null) return [];

@@ -9,9 +9,14 @@ import { v2exCollector } from "./v2ex.ts";
 import { githubCollector } from "./github.ts";
 import { rssCollector } from "./rss.ts";
 import { telegramCollector } from "./telegram.ts";
+import { gamerpowerCollector } from "./gamerpower.ts";
+import { epicCollector } from "./epic.ts";
 import type { Collector, RawItem, SourceSeed } from "./types.ts";
 
-export const COLLECTORS: Collector[] = [mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector];
+export const COLLECTORS: Collector[] = [
+  mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector,
+  gamerpowerCollector, epicCollector,
+];
 const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
 /** 内置源清单；collector 落地后在此追加。 */
@@ -27,6 +32,14 @@ export const SEEDS: SourceSeed[] = [
   { id: "xhs-search", name: "小红书 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
   { id: "xiaoheihe-search", name: "小黑盒 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费" } },
   { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
+  { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, config: { query: "type=game", limit: 60 } },
+  { id: "epic-free", name: "Epic Games · 喜加一", kind: "epic", enabled: true, config: { includeUpcoming: true } },
+  { id: "rss-reddit-freegames", name: "Reddit · FreeGameFindings", kind: "rss", enabled: true, config: { feeds: [{ id: "freegamefindings", url: "https://www.reddit.com/r/FreeGameFindings/hot.rss", limit: 40 }] } },
+  { id: "rss-reddit-efreebies", name: "Reddit · eFreebies", kind: "rss", enabled: true, config: { feeds: [{ id: "efreebies", url: "https://www.reddit.com/r/efreebies/hot.rss", limit: 40 }] } },
+  { id: "rss-reddit-gamedeals", name: "Reddit · GameDeals", kind: "rss", enabled: true, config: { feeds: [{ id: "gamedeals", url: "https://www.reddit.com/r/GameDeals/hot.rss", limit: 30 }] } },
+  { id: "rss-slickdeals", name: "Slickdeals 首页", kind: "rss", enabled: true, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
+  { id: "rss-heyitsfree", name: "HeyItsFree 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "heyitsfree", url: "https://heyitsfree.net/feed/", limit: 30 }] } },
+  { id: "rss-keylol", name: "其乐 Keylol", kind: "rss", enabled: true, config: { feeds: [{ id: "keylol", url: "https://keylol.com/forum.php?mod=rss", limit: 30 }] } },
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
 
