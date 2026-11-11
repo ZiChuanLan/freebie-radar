@@ -1,0 +1,572 @@
+import { config, pushEnabled } from "./config.ts";
+import { all, get, run } from "./db.ts";
+import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
+import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
+import { sendTelegram } from "./digest.ts";
+import type { FreshItem } from "./collectors/index.ts";
+
+/* ------------------------------------------------------------------ *
+ * 推送设置（存在 settings 表，网页可改，无需重启）
+ * ------------------------------------------------------------------ */
+
+export type PushSettings = {
+  /** 总开关；关掉后即时和攒批都不发，日报仍可单独触发 */
+  enabled: boolean;
+  /** 立即推送的评分阈值 */
+  instantScore: number;
+  /** 进攒批队列的评分阈值 */
+  batchScore: number;
+  /** 含兑换码/邀请码是否立即推 */
+  instantOnCodes: boolean;
+  /** 标题含「限量/先到先得」等词是否立即推 */
+  instantOnUrgent: boolean;
+  /** 每小时最多推几条（含批次里的单条计数） */
+  maxPerHour: number;
+  /** 单次立即推送最多几条 */
+  maxPerInstant: number;
+  /** 攒批间隔（分钟）；0 表示关闭攒批 */
+  batchIntervalMin: number;
+  /** 一批最多合并几条 */
+  maxPerBatch: number;
+  /** 静默时段 "23:00-08:00"，静默期内的立即推送转入攒批 */
+  quietHours: string;
+  /** 静默时段按哪个时区算（容器默认 UTC，差 8 小时会把静默跑到白天去） */
+  timezone: string;
+  /** 语言偏好：all 全部 / zh 只看中文 / en 只看英文 */
+  langMode: "all" | "zh" | "en";
+  /** 推送里是否带价格 */
+  includePrice: boolean;
+  /** 推送里是否带截止时间 */
+  includeDeadline: boolean;
+  /** 是否按标题去重（同一游戏被多个源报道只推一次） */
+  dedupeByTitle: boolean;
+};
+
+export const DEFAULT_SETTINGS: PushSettings = {
+  enabled: true,
+  instantScore: 70,
+  batchScore: 60,
+  instantOnCodes: true,
+  instantOnUrgent: true,
+  maxPerHour: 24,
+  maxPerInstant: 5,
+  batchIntervalMin: 30,
+  maxPerBatch: 8,
+  quietHours: "23:30-08:00",
+  timezone: "Asia/Shanghai",
+  langMode: "all",
+  includePrice: true,
+  includeDeadline: true,
+  dedupeByTitle: true,
+};
+
+const SETTINGS_KEY = "push";
+
+function numOr(v: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(Math.round(n), min), max);
+}
+
+export function getPushSettings(): PushSettings {
+  const row = get<{ value: string }>("SELECT value FROM settings WHERE key = ?", SETTINGS_KEY);
+  if (!row) return { ...DEFAULT_SETTINGS };
+  try {
+    const raw = JSON.parse(row.value) as Partial<PushSettings>;
+    return {
+      enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_SETTINGS.enabled,
+      instantScore: numOr(raw.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
+      batchScore: numOr(raw.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
+      instantOnCodes: raw.instantOnCodes !== false,
+      instantOnUrgent: raw.instantOnUrgent !== false,
+      maxPerHour: numOr(raw.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
+      maxPerInstant: numOr(raw.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
+      batchIntervalMin: numOr(raw.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
+      maxPerBatch: numOr(raw.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
+      quietHours: typeof raw.quietHours === "string" ? raw.quietHours : DEFAULT_SETTINGS.quietHours,
+      timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : DEFAULT_SETTINGS.timezone,
+      langMode: raw.langMode === "zh" || raw.langMode === "en" ? raw.langMode : "all",
+      includePrice: raw.includePrice !== false,
+      includeDeadline: raw.includeDeadline !== false,
+      dedupeByTitle: raw.dedupeByTitle !== false,
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export function savePushSettings(patch: Partial<PushSettings>): PushSettings {
+  const next = { ...getPushSettings(), ...patch } as PushSettings;
+  // 再次过一遍范围限制，避免前端传 0 或负数把推送关死
+  const normalized: PushSettings = {
+    ...next,
+    instantScore: numOr(next.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
+    batchScore: numOr(next.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
+    maxPerHour: numOr(next.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
+    maxPerInstant: numOr(next.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
+    batchIntervalMin: numOr(next.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
+    maxPerBatch: numOr(next.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
+  };
+  run(
+    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    SETTINGS_KEY,
+    JSON.stringify(normalized),
+    new Date().toISOString(),
+  );
+  return normalized;
+}
+
+/* ------------------------------------------------------------------ *
+ * 语言识别 / 标题归一化 / 价格与截止时间格式化
+ * ------------------------------------------------------------------ */
+
+const CJK = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
+
+export function detectLang(text: string): "zh" | "en" {
+  const cjk = (text.match(CJK) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+  if (cjk === 0) return "en";
+  // 中文占比超过 15% 就当中文（英文标题里偶尔夹一个中文词不算）
+  return cjk / Math.max(cjk + latin, 1) > 0.15 ? "zh" : "en";
+}
+
+/** 标题归一化：去掉【】/[]、价格标签、emoji 与标点，用于跨源去重。 */
+export function titleKey(title: string): string {
+  return title
+    .replace(/【[^】]*】|\[[^\]]*\]/g, " ")
+    .replace(/[（(][^)）]*[)）]/g, " ")
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, " ")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((w) => w.length > 1)
+    .slice(0, 12)
+    .join(" ");
+}
+
+const STORE_LABEL: Record<string, string> = {
+  steam: "Steam",
+  epic: "Epic",
+  gog: "GOG",
+  "epic games": "Epic",
+  amazon: "Amazon",
+  humble: "Humble",
+};
+
+function fmtPrice(item: FreshItem): string | null {
+  if (item.isFree) return "免费";
+  if (typeof item.price !== "number" || item.price <= 0) return null;
+  const v = item.price < 1 ? "<1" : String(Math.round(item.price));
+  return "约 ¥" + v;
+}
+
+function fmtDeadline(item: FreshItem): string | null {
+  if (!item.expiresAt) return null;
+  const t = new Date(item.expiresAt).getTime();
+  if (Number.isNaN(t)) return null;
+  const days = Math.ceil((t - Date.now()) / 86_400_000);
+  if (days < 0) return null;
+  if (days === 0) return "今天截止";
+  if (days <= 14) return days + " 天后截止";
+  return null;
+}
+
+const SOURCE_SHORT: Record<string, string> = {
+  "linuxdo-welfare": "LINUX DO 福利",
+  "linuxdo-resource": "LINUX DO 资源",
+  "v2ex-free": "V2EX 免费赠送",
+  "v2ex-deals": "V2EX 优惠",
+  "v2ex-share": "V2EX 分享",
+  "v2ex-promotions": "V2EX 推广",
+  "v2ex-cloud": "V2EX 云",
+  "xiaoheihe-search": "小黑盒",
+  "zhihu-search": "知乎",
+  "xhs-search": "小红书",
+  gamerpower: "GamerPower",
+  "epic-free": "Epic 喜加一",
+  "steam-free": "Steam 限免",
+  "cheapshark-free": "CheapShark",
+  "rss-isthereanydeal": "ITAD 喜加一",
+  "rss-reddit-freegames": "Reddit",
+  "rss-reddit-freegamesonsteam": "Reddit",
+  "rss-keylol": "其乐",
+  "tg-freegames": "TG 游戏情报",
+  "tg-cn-deals": "TG 中文羊毛",
+  "bsky-gamedeals": "Bluesky 游戏",
+  "bsky-plugins": "Bluesky 插件",
+  "rss-nodeseek": "NodeSeek",
+  "rss-sharewareonsale": "正版限免",
+  "rss-tickcoupon": "终身限免",
+};
+
+function sourceLabel(id: string): string {
+  return SOURCE_SHORT[id] ?? id;
+}
+
+/* ------------------------------------------------------------------ *
+ * 静默时段
+ * ------------------------------------------------------------------ */
+
+function parseHHMM(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** 判断某一刻是否在静默时段内，支持跨零点（23:30-08:00）。 */
+export function inQuietHours(quiet: string, at = new Date()): boolean {
+  const [from, to] = quiet.split("-");
+  const a = parseHHMM(from ?? "");
+  const b = parseHHMM(to ?? "");
+  if (a === null || b === null) return false;
+  const now = at.getHours() * 60 + at.getMinutes();
+  if (a === b) return false;
+  if (a < b) return now >= a && now < b;
+  return now >= a || now < b; // 跨零点
+}
+
+/** 取指定时区当前是几点几分（容器里默认 UTC，直接用 getHours 会把静默时段整体偏移）。 */
+function zonedMinutes(timezone: string, at: Date): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(at);
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+    const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+    return (h % 24) * 60 + m;
+  } catch {
+    return at.getHours() * 60 + at.getMinutes();
+  }
+}
+
+/** 静默时段按设置里的时区判断。 */
+export function inQuietHoursZoned(quiet: string, timezone: string, at = new Date()): boolean {
+  const [from, to] = quiet.split("-");
+  const a = parseHHMM(from ?? "");
+  const b = parseHHMM(to ?? "");
+  if (a === null || b === null) return false;
+  const now = zonedMinutes(timezone, at);
+  if (a === b) return false;
+  if (a < b) return now >= a && now < b;
+  return now >= a || now < b;
+}
+
+/* ------------------------------------------------------------------ *
+ * 候选筛选
+ * ------------------------------------------------------------------ */
+
+type Decision = { push: boolean; reason: string; urgent: boolean };
+
+function decide(item: FreshItem, s: PushSettings): Decision {
+  // 噪音标题一律不推：即使带「送」字（「球迷送医」）或被评分顶上来
+  if (NOISE_TITLE.test(item.title)) return { push: false, reason: "", urgent: false };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: "含兑换码", urgent: true };
+  // 手慢无的也要有个及格线，否则「限时优惠」这种广告词会把新闻顶上来
+  if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
+    return { push: true, reason: "限量/限时", urgent: true };
+  }
+  if (item.score >= s.instantScore) return { push: true, reason: "高分 " + Math.round(item.score), urgent: false };
+  return { push: false, reason: "", urgent: false };
+}
+
+function langAllowed(item: FreshItem, s: PushSettings): boolean {
+  if (s.langMode === "all") return true;
+  return detectLang(item.title) === s.langMode;
+}
+
+/** 最近 24h 已推送过的标题指纹，用于跨源去重。 */
+function recentTitleKeys(): Set<string> {
+  const rows = all<{ title_key: string | null }>(
+    "SELECT title_key FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ? AND title_key IS NOT NULL",
+    new Date(Date.now() - 86_400_000).toISOString(),
+  );
+  return new Set(rows.map((r) => r.title_key ?? "").filter(Boolean));
+}
+
+function pushedLastHour(): number {
+  return (
+    get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ?",
+      new Date(Date.now() - 3_600_000).toISOString(),
+    )?.n ?? 0
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * 攒批队列（内存，进程重启会丢，可接受；每日批量会补上）
+ * ------------------------------------------------------------------ */
+
+type QueueItem = { id: number; sourceId: string; item: FreshItem };
+let queue: QueueItem[] = [];
+let flushTimer: NodeJS.Timeout | null = null;
+
+export function queueSize(): number {
+  return queue.length;
+}
+
+function enqueue(entries: QueueItem[]): void {
+  const seen = new Set(queue.map((q) => q.id));
+  for (const e of entries) if (!seen.has(e.id)) queue.push(e);
+  if (queue.length > 200) queue = queue.slice(-200);
+}
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  const s = getPushSettings();
+  if (s.batchIntervalMin <= 0) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushBatch();
+    scheduleFlush();
+  }, s.batchIntervalMin * 60_000);
+  flushTimer.unref?.();
+}
+
+export function startPushScheduler(): void {
+  const s = getPushSettings();
+  if (!s.enabled || !pushEnabled) return;
+  scheduleFlush();
+  console.log("[push] 攒批调度已启动，间隔 " + s.batchIntervalMin + " 分钟");
+}
+
+/* ------------------------------------------------------------------ *
+ * 消息组装
+ * ------------------------------------------------------------------ */
+
+function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: number): string[] {
+  const lines: string[] = [];
+  const prefix = seq === undefined ? "" : seq + ". ";
+  const meta: string[] = [sourceLabel(sourceId)];
+  const price = s.includePrice ? fmtPrice(it) : null;
+  if (price) meta.push(price);
+  if (s.includeDeadline) {
+    const dl = fmtDeadline(it);
+    if (dl) meta.push(dl);
+  }
+  if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
+  lines.push(prefix + it.title.slice(0, 110));
+  lines.push("   " + meta.join(" · ") + (it.score ? " · " + Math.round(it.score) + " 分" : ""));
+  if (it.codes.length) lines.push("   码：" + it.codes.join(" / "));
+  lines.push("   " + it.url);
+  return lines;
+}
+
+/* ------------------------------------------------------------------ *
+ * 即时推送
+ * ------------------------------------------------------------------ */
+
+export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise<number> {
+  const s = getPushSettings();
+  if (!s.enabled || !pushEnabled || config.pushChannel !== "telegram") return 0;
+  if (!config.telegramBotToken || !config.telegramChatId) return 0;
+  if (!fresh.length) return 0;
+
+  const rules = loadActiveBlockRules();
+  const seenTitles = s.dedupeByTitle ? recentTitleKeys() : new Set<string>();
+
+  const candidates = fresh.filter((it) => {
+    if (isBlocked({ ...it, sourceId }, rules)) return false;
+    if (!langAllowed(it, s)) return false;
+    return true;
+  });
+
+  const instant: { it: FreshItem; reason: string }[] = [];
+  const batched: QueueItem[] = [];
+  const quiet = inQuietHoursZoned(s.quietHours, s.timezone);
+
+  for (const it of candidates) {
+    const key = titleKey(it.title);
+    const d = decide(it, s);
+    const dup = s.dedupeByTitle && key && seenTitles.has(key);
+    if (dup) continue;
+
+    // 静默时段：所有即时推送降级为攒批，早上一起发
+    if (d.push && !quiet) {
+      instant.push({ it, reason: d.reason });
+      if (key) seenTitles.add(key);
+      continue;
+    }
+    // 进攒批也要过噪音与福利信号，否则新闻会跟着排队一起发出去
+    const noisy = NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title);
+    if (!noisy && (it.score >= s.batchScore || d.push)) {
+      batched.push({ id: it.id, sourceId, item: it });
+      if (key) seenTitles.add(key);
+    }
+  }
+
+  if (batched.length) enqueue(batched);
+  if (quiet && (instant.length || batched.length)) {
+    console.log("[push] 静默时段 " + s.quietHours + "，" + (instant.length + batched.length) + " 条转入攒批");
+  }
+
+  const budget = Math.max(0, s.maxPerHour - pushedLastHour());
+  const picked = instant.slice(0, Math.min(s.maxPerInstant, budget));
+  if (!picked.length) return 0;
+
+  let sent = 0;
+  for (const { it, reason } of picked) {
+    const lines = ["⚡ 新羊毛 · " + reason, "", ...itemBlock(sourceId, it, s)];
+    const text = lines.join("\n");
+    try {
+      await sendTelegram(text);
+      const now = new Date().toISOString();
+      run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(it.title), it.id);
+      logPush("instant", [it.id], text, 1, true, null);
+      sent += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[push] 即时推送失败:", msg);
+      logPush("instant", [it.id], text, 0, false, msg);
+      break;
+    }
+  }
+  if (sent) console.log("[push] " + sourceId + " 即时推送 " + sent + " 条");
+  return sent;
+}
+
+/* ------------------------------------------------------------------ *
+ * 攒批推送
+ * ------------------------------------------------------------------ */
+
+export async function flushBatch(force = false): Promise<number> {
+  if (!queue.length) return 0;
+  const s = getPushSettings();
+  if (!s.enabled || !pushEnabled) return 0;
+  if (!force && inQuietHoursZoned(s.quietHours, s.timezone)) return 0;
+
+  const budget = Math.max(0, s.maxPerHour - pushedLastHour());
+  if (!budget) return 0;
+
+  const take = queue.splice(0, Math.min(s.maxPerBatch, budget));
+  const blocks: string[] = [];
+  take.forEach((q, i) => {
+    blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1));
+    blocks.push("");
+  });
+  const text = ["📦 本轮新发现 " + take.length + " 条", "", ...blocks].join("\n").trim();
+
+  try {
+    await sendTelegram(text);
+    const now = new Date().toISOString();
+    for (const q of take) {
+      run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(q.item.title), q.id);
+    }
+    logPush("batch", take.map((q) => q.id), text, take.length, true, null);
+    console.log("[push] 攒批推送 " + take.length + " 条");
+    return take.length;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[push] 攒批推送失败:", msg);
+    logPush("batch", take.map((q) => q.id), text, 0, false, msg);
+    // 失败放回队列，下一轮再试
+    queue.unshift(...take);
+    return 0;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 推送记录
+ * ------------------------------------------------------------------ */
+
+function logPush(kind: string, ids: number[], text: string, count: number, ok: boolean, error: string | null): void {
+  run(
+    "INSERT INTO push_log (kind, item_ids, text, count, ok, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    kind,
+    JSON.stringify(ids),
+    text.slice(0, 4000),
+    count,
+    ok ? 1 : 0,
+    error?.slice(0, 400) ?? null,
+    new Date().toISOString(),
+  );
+}
+
+export function recentPushLog(limit = 30) {
+  return all<{
+    id: number;
+    kind: string;
+    item_ids: string;
+    text: string;
+    count: number;
+    ok: number;
+    error: string | null;
+    created_at: string;
+  }>("SELECT * FROM push_log ORDER BY id DESC LIMIT ?", limit);
+}
+
+export function pushStats() {
+  const since = new Date(Date.now() - 3_600_000).toISOString();
+  const day = new Date(Date.now() - 86_400_000).toISOString();
+  return {
+    pushedLastHour: pushedLastHour(),
+    pushedLast24h:
+      get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ?", day)?.n ?? 0,
+    totalPushed: get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL")?.n ?? 0,
+    queued: queue.length,
+    lastHourLogs:
+      get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE created_at >= ?", since)?.n ?? 0,
+    failures:
+      get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE ok = 0 AND created_at >= ?", day)?.n ?? 0,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * 预览：如果现在推，会推出什么（不真发）
+ * ------------------------------------------------------------------ */
+
+export function previewPush(limit = 6): { instant: string[]; batch: string[]; queued: number } {
+  const s = getPushSettings();
+  const rules = loadActiveBlockRules();
+  const rows = all<{
+    id: number;
+    source_id: string;
+    title: string;
+    url: string;
+    score: number;
+    codes: string;
+    price: number | null;
+    is_free: number;
+    expires_at: string | null;
+    pushed_at: string | null;
+  }>(
+    `SELECT id, source_id, title, url, score, codes, price, is_free, expires_at, pushed_at
+     FROM items WHERE status = 'active' AND pushed_at IS NULL
+     ORDER BY score DESC LIMIT 120`,
+  );
+
+  const instant: string[] = [];
+  const batch: string[] = [];
+  for (const r of rows) {
+    if (isBlocked(r, rules)) continue;
+    let codes: string[] = [];
+    try {
+      codes = JSON.parse(r.codes ?? "[]") as string[];
+    } catch {
+      codes = [];
+    }
+    const fresh: FreshItem = {
+      id: r.id,
+      title: r.title,
+      url: r.url,
+      score: r.score,
+      codes,
+      expiresAt: r.expires_at,
+      price: r.price,
+      isFree: r.is_free === 1,
+    };
+    if (!langAllowed(fresh, s)) continue;
+    const d = decide(fresh, s);
+    const block = itemBlock(r.source_id, fresh, s).join("\n");
+    if (d.push && instant.length < limit) instant.push("⚡ " + d.reason + "\n" + block);
+    else if (!NOISE_TITLE.test(fresh.title) && DEAL_HINT.test(fresh.title) && fresh.score >= s.batchScore && batch.length < limit) batch.push(block);
+    if (instant.length >= limit && batch.length >= limit) break;
+  }
+  return { instant, batch, queued: queue.length };
+}

@@ -179,7 +179,12 @@ export type FreshItem = {
   score: number;
   codes: string[];
   expiresAt: string | null;
+  /** 归一化后的人民币价格；null 表示未知 */
+  price?: number | null;
+  /** 明确免费 */
+  isFree?: boolean;
 };
+
 function persist(
   sourceId: string,
   items: RawItem[],
@@ -266,7 +271,16 @@ function persist(
           now,
         );
         inserted += 1;
-        fresh.push({ id: Number(res.lastInsertRowid), title: e.title, url: e.url, score, codes: e.codes, expiresAt: e.expiresAt });
+        fresh.push({
+          id: Number(res.lastInsertRowid),
+          title: e.title,
+          url: e.url,
+          score,
+          codes: e.codes,
+          expiresAt: e.expiresAt,
+          price: e.price,
+          isFree: e.isFree,
+        });
       } catch (err) {
         if (/UNIQUE/i.test(String(err))) {
           skipped += 1;

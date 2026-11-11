@@ -39,5 +39,5 @@ export function extractCodes(title: string, content: string | null | undefined, 
   return found.slice(0, limit);
 }
 
-/** 标题里出现这些词说明「名额有限、去晚就没」，值得立即推送。 */
-export const URGENT = /先到先得|名额|限量|限时|手慢无|抢|cdk|cdkey|兑换码|邀请码|激活码|白嫖|送|还剩|最后/;
+/** 「手慢无」信号统一放在 enrich/noise.ts，避免规则散落。 */
+export { URGENT } from "./noise.ts";

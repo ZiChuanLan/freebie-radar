@@ -1,6 +1,7 @@
 import { config } from "./config.ts";
 import { all, get, run } from "./db.ts";
 import { CATEGORY_LABEL } from "./enrich/index.ts";
+import { DEAL_HINT, NOISE_TITLE } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 
 export type DigestItem = {
@@ -67,10 +68,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const pool = strict.length >= Math.min(6, topN) ? strict : relaxed;
   return pool.slice(0, topN);
 }
-const NOISE_TITLE = /^(怎样|怎么|如何|哪里|哪个)|请问|有没有|求推荐|求一个|哪里(有|能)|值得买吗|怎么样\?|不够用|用完了|失效了|吐槽|踩坑|后悔|失望|盘点|评测|测评/;
-
 const MIN_DIGEST_SCORE = 55;
-const DEAL_HINT = /免费|领取|赠送|白嫖|零元|0\.01|试用|体验金|兑换|激活码|注册送|限时|开放注册|额度|礼包|优惠券|包邮|giveaway|coupon|free/i;
 
 const SOURCE_SHORT: Record<string, string> = {
   "linuxdo-welfare": "LINUX DO 福利",

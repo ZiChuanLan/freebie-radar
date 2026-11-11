@@ -5,6 +5,18 @@ import { addCustomRssSource, ingestItems, markSourceFailure, runSource } from ".
 import type { RawItem } from "./collectors/types.ts";
 import { sendTelegram } from "./digest.ts";
 import {
+  DEFAULT_SETTINGS,
+  flushBatch,
+  getPushSettings,
+  inQuietHoursZoned,
+  previewPush,
+  pushStats,
+  queueSize,
+  recentPushLog,
+  savePushSettings,
+  type PushSettings,
+} from "./push.ts";
+import {
   compileRule,
   loadActiveBlockRules,
   matchBlockRules,
@@ -529,6 +541,42 @@ export function registerApi(app: Hono) {
       ),
       features: { ai: aiEnabled, push: pushEnabled, pushChannel: config.pushChannel },
     });
+  });
+
+  // ---- 推送设置 / 预览 / 记录 ----
+  app.get("/api/push", (c) => {
+    return c.json({
+      settings: getPushSettings(),
+      defaults: DEFAULT_SETTINGS,
+      stats: pushStats(),
+      channel: config.pushChannel,
+      ready: pushEnabled,
+      quiet: (() => {
+        const s = getPushSettings();
+        return inQuietHoursZoned(s.quietHours, s.timezone);
+      })(),
+    });
+  });
+
+  app.patch("/api/push", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as Partial<PushSettings> | null;
+    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    const settings = savePushSettings(body);
+    return c.json({ settings, stats: pushStats(), quiet: inQuietHoursZoned(settings.quietHours, settings.timezone) });
+  });
+
+  app.get("/api/push/preview", (c) => {
+    return c.json(previewPush(Math.min(Math.max(Number(c.req.query("limit") ?? 6), 1), 12)));
+  });
+
+  app.get("/api/push/log", (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 30), 1), 100);
+    return c.json({ logs: recentPushLog(limit) });
+  });
+
+  app.post("/api/push/flush", async (c) => {
+    const sent = await flushBatch(true);
+    return c.json({ ok: true, sent, queued: queueSize() });
   });
 
   app.post("/api/push/test", async (c) => {

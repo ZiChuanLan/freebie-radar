@@ -9,6 +9,7 @@ import { config } from "./config.ts";
 import { getDb, migrate } from "./db.ts";
 import { registerApi } from "./routes.ts";
 import { runAll } from "./collectors/index.ts";
+import { startPushScheduler } from "./push.ts";
 import { runDaily } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
 
@@ -68,6 +69,8 @@ if (existsSync(webDistAbs)) {
 if (config.enableScheduler) {
   // 采集：每个源按自己的 interval_sec 轮询（linux.do 90 秒，RSS 15 分钟，GitHub 6 小时）
   startIntervalScheduler();
+  // 推送：攒批队列按 batchIntervalMin 定时合并发送（静默时段自动跳过）
+  startPushScheduler();
   // 日报：仍然按 DAILY_CRON 触发
   startScheduler({
     collect: async () => undefined,

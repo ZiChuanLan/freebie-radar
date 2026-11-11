@@ -94,3 +94,48 @@ export type Subscription = {
   created_at: string;
   last_hit_at: string | null;
 };
+
+export type PushSettings = {
+  enabled: boolean;
+  instantScore: number;
+  batchScore: number;
+  instantOnCodes: boolean;
+  instantOnUrgent: boolean;
+  maxPerHour: number;
+  maxPerInstant: number;
+  batchIntervalMin: number;
+  maxPerBatch: number;
+  quietHours: string;
+  timezone: string;
+  langMode: "all" | "zh" | "en";
+  includePrice: boolean;
+  includeDeadline: boolean;
+  dedupeByTitle: boolean;
+};
+
+export type PushPayload = {
+  settings: PushSettings;
+  defaults: PushSettings;
+  stats: {
+    pushedLastHour: number;
+    pushedLast24h: number;
+    totalPushed: number;
+    queued: number;
+    lastHourLogs: number;
+    failures: number;
+  };
+  channel: string;
+  ready: boolean;
+  quiet: boolean;
+};
+
+export type PushLogItem = {
+  id: number;
+  kind: string;
+  item_ids: string;
+  text: string;
+  count: number;
+  ok: number;
+  error: string | null;
+  created_at: string;
+};

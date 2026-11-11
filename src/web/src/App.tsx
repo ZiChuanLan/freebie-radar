@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PushLogItem, PushPayload, PushSettings } from "./types.ts";
 import {
   Activity,
   Bell,
@@ -14,11 +15,13 @@ import {
   Search,
   ShieldBan,
   Wrench,
+  Zap,
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetail, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
+import { PushPanel } from "./components/PushPanel.tsx";
 import {
   CATEGORY_LABEL,
   SOURCE_GROUPS,
@@ -55,7 +58,7 @@ const SOURCE_LABEL: Record<string, string> = {
 let SOURCE_NAMES: Record<string, string> = { ...SOURCE_LABEL };
 const sourceName = (id: string) => SOURCE_NAMES[id] ?? SOURCE_LABEL[id] ?? id;
 
-type Tab = "feed" | "digest" | "rules" | "ops";
+type Tab = "feed" | "digest" | "rules" | "push" | "ops";
 
 function useApi<T>(url: string | null): { data: T | null; loading: boolean; error: string | null; reload: () => void } {
   const [data, setData] = useState<T | null>(null);
@@ -117,7 +120,7 @@ export function App() {
   const initialTab = (): Tab => {
     if (typeof location === "undefined") return "feed";
     const h = location.hash.replace("#", "");
-    return h === "digest" || h === "rules" || h === "ops" ? (h as Tab) : "feed";
+    return h === "digest" || h === "rules" || h === "push" || h === "ops" ? (h as Tab) : "feed";
   };
 
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -156,7 +159,7 @@ export function App() {
   useEffect(() => {
     const onHash = () => {
       const h = location.hash.replace("#", "");
-      setTab(h === "digest" || h === "rules" || h === "ops" ? (h as Tab) : "feed");
+      setTab(h === "digest" || h === "rules" || h === "push" || h === "ops" ? (h as Tab) : "feed");
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -213,6 +216,9 @@ export function App() {
   const sources = useApi<{ sources: Source[] }>("/api/sources");
   const runs = useApi<{ runs: Run[] }>("/api/runs?limit=40");
   const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>("/api/block-rules");
+  const push = useApi<PushPayload>("/api/push");
+  const pushLogs = useApi<{ logs: PushLogItem[] }>(tab === "push" ? "/api/push/log?limit=40" : null);
+  const [pushPreview, setPushPreview] = useState<{ instant: string[]; batch: string[]; queued: number } | null>(null);
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
   const [pickedDate, setPickedDate] = useState<string | null>(null);
   const activeDate = pickedDate ?? digests.data?.digests?.[0]?.date ?? null;
@@ -314,6 +320,7 @@ export function App() {
     { key: "feed", label: "资源流", icon: Activity },
     { key: "digest", label: "每日精选", icon: Radar },
     { key: "rules", label: "订阅与屏蔽", icon: ShieldBan, badge: stats.data?.totals.blockRules },
+    { key: "push", label: "推送", icon: Zap, badge: push.data?.stats.queued },
     { key: "ops", label: "运维", icon: Wrench },
   ];
 
@@ -725,7 +732,43 @@ export function App() {
           }}
         />
       )}
-
+      {tab === "push" && (
+        <PushPanel
+          payload={push.data}
+          preview={pushPreview}
+          logs={pushLogs.data?.logs ?? []}
+          onSave={async (patch: Partial<PushSettings>) => {
+            const res = await fetch("/api/push", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+              notify("保存失败");
+              return;
+            }
+            push.reload();
+            setPushPreview(null);
+          }}
+          onPreview={async () => {
+            const res = await fetch("/api/push/preview?limit=6");
+            setPushPreview((await res.json()) as { instant: string[]; batch: string[]; queued: number });
+          }}
+          onFlush={async () => {
+            const res = await fetch("/api/push/flush", { method: "POST" });
+            const data = (await res.json().catch(() => ({}))) as { sent?: number; queued?: number };
+            notify(`已发送 ${data.sent ?? 0} 条，队列剩 ${data.queued ?? 0} 条`);
+            push.reload();
+            pushLogs.reload();
+            setPushPreview(null);
+          }}
+          onTest={async () => {
+            const res = await fetch("/api/push/test", { method: "POST" });
+            notify(res.ok ? "测试消息已发送" : "推送未启用或缺少凭据");
+            pushLogs.reload();
+          }}
+        />
+      )}
       {tab === "ops" && (
         <OpsPanel
           sources={sources.data?.sources ?? []}
