@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #08090c;
+  --color-ink-900: #0c0e13;
+  --color-ink-850: #11141b;
+  --color-ink-800: #161a23;
+  --color-ink-700: #1e2430;
+  --color-ink-600: #2a3242;
+  --color-ink-400: #6b7688;
+  --color-ink-300: #9aa5b6;
+  --color-ink-200: #c6cedb;
+  --color-ink-100: #eef2f8;
+  --color-lime: #b8f24a;
+  --color-lime-dim: #8fc832;
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(184, 242, 74, 0.09), transparent 60%),
+      radial-gradient(900px 500px at 95% 0%, rgba(96, 165, 250, 0.07), transparent 55%),
+      var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(184, 242, 74, 0.28);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 999px;
+    border: 2px solid var(--color-ink-950);
+  }
+}
+
+@utility card {
+  border-radius: 16px;
+  border: 1px solid color-mix(in oklab, var(--color-ink-600) 70%, transparent);
+  background: linear-gradient(180deg, rgba(22, 26, 35, 0.92), rgba(12, 14, 19, 0.92));
+}
+
+@utility grain {
+  position: relative;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise 0.35s ease both;
+}

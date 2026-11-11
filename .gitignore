@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+.env
+.env.local
+*.log
+.DS_Store
+docs/dom.html
+docs/probe-results.json
+docs/probe2-results.json
+docs/fs-test.json

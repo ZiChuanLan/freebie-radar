@@ -1,0 +1,183 @@
+import type { Hono } from "hono";
+import { all, get } from "./db.ts";
+import { aiEnabled, config, pushEnabled } from "./config.ts";
+
+export type ItemRow = {
+  id: number;
+  source_id: string;
+  external_id: string;
+  url: string;
+  url_key: string;
+  title: string;
+  summary: string | null;
+  author: string | null;
+  category: string | null;
+  tags: string;
+  score: number;
+  expires_at: string | null;
+  published_at: string | null;
+  raw: string;
+  status: string;
+  starred: number;
+  ai: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+};
+
+function shape(row: ItemRow) {
+  let tags: string[] = [];
+  try {
+    tags = JSON.parse(row.tags) as string[];
+  } catch {
+    tags = [];
+  }
+  let ai: unknown = null;
+  if (row.ai) {
+    try {
+      ai = JSON.parse(row.ai);
+    } catch {
+      ai = null;
+    }
+  }
+  return {
+    ...row,
+    tags,
+    ai,
+    starred: row.starred === 1,
+    raw: undefined,
+  };
+}
+
+const SORTS: Record<string, string> = {
+  score: "score DESC, COALESCE(published_at, first_seen_at) DESC",
+  newest: "COALESCE(published_at, first_seen_at) DESC",
+  oldest: "COALESCE(published_at, first_seen_at) ASC",
+};
+
+export function registerApi(app: Hono) {
+  app.get("/api/items", (c) => {
+    const q = c.req.query();
+    const limit = Math.min(Math.max(Number(q.limit ?? 40), 1), 200);
+    const offset = Math.max(Number(q.offset ?? 0), 0);
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+
+    const status = q.status ?? "active";
+    if (status !== "all") {
+      where.push("status = ?");
+      params.push(status);
+    }
+    if (q.source) {
+      where.push("source_id = ?");
+      params.push(q.source);
+    }
+    if (q.category) {
+      where.push("category = ?");
+      params.push(q.category);
+    }
+    if (q.starred === "1") where.push("starred = 1");
+    if (q.search) {
+      where.push("(title LIKE ? OR COALESCE(summary,'') LIKE ?)");
+      params.push(`%${q.search}%`, `%${q.search}%`);
+    }
+    if (q.since) {
+      where.push("COALESCE(published_at, first_seen_at) >= ?");
+      params.push(q.since);
+    }
+    if (q.unexpired === "1") {
+      where.push("(expires_at IS NULL OR expires_at > ?)");
+      params.push(new Date().toISOString());
+    }
+
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const order = SORTS[q.sort ?? "score"] ?? SORTS.score;
+    const rows = all<ItemRow>(`SELECT * FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`, ...params, limit, offset);
+    const total = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items ${clause}`, ...params)?.n ?? 0;
+    return c.json({ total, limit, offset, items: rows.map(shape) });
+  });
+
+  app.get("/api/items/:id", (c) => {
+    const row = get<ItemRow>("SELECT * FROM items WHERE id = ?", Number(c.req.param("id")));
+    if (!row) return c.json({ error: "not found" }, 404);
+    return c.json(shape(row));
+  });
+
+  app.patch("/api/items/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as { starred?: boolean; status?: string };
+    const sets: string[] = [];
+    const params: (string | number)[] = [];
+    if (typeof body.starred === "boolean") {
+      sets.push("starred = ?");
+      params.push(body.starred ? 1 : 0);
+    }
+    if (body.status && ["active", "ignored", "expired"].includes(body.status)) {
+      sets.push("status = ?");
+      params.push(body.status);
+    }
+    if (!sets.length) return c.json({ error: "nothing to update" }, 400);
+    params.push(id);
+    get(`UPDATE items SET ${sets.join(", ")} WHERE id = ?`, ...params);
+    const row = get<ItemRow>("SELECT * FROM items WHERE id = ?", id);
+    return row ? c.json(shape(row)) : c.json({ error: "not found" }, 404);
+  });
+
+  app.get("/api/sources", (c) => {
+    const sourceRows = all<Record<string, unknown>>("SELECT * FROM sources ORDER BY id");
+    const stats = all<{ source_id: string; n: number; last_published: string | null }>(
+      "SELECT source_id, COUNT(*) AS n, MAX(COALESCE(published_at, first_seen_at)) AS last_published FROM items GROUP BY source_id",
+    );
+    const byId = new Map(stats.map((s) => [s.source_id, s]));
+    return c.json({
+      sources: sourceRows.map((s) => ({
+        ...s,
+        enabled: s.enabled === 1,
+        config: JSON.parse(String(s.config ?? "{}")),
+        items: byId.get(String(s.id))?.n ?? 0,
+        latest_item_at: byId.get(String(s.id))?.last_published ?? null,
+      })),
+    });
+  });
+
+  app.get("/api/runs", (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 200);
+    return c.json({ runs: all("SELECT * FROM runs ORDER BY id DESC LIMIT ?", limit) });
+  });
+
+  app.get("/api/stats", (c) => {
+    const totals = get<{ total: number; active: number; starred: number; expired: number }>(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,
+              SUM(CASE WHEN starred=1 THEN 1 ELSE 0 END) AS starred,
+              SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= ? THEN 1 ELSE 0 END) AS expired
+       FROM items`,
+      new Date().toISOString(),
+    );
+    const byCategory = all<{ category: string | null; n: number }>(
+      "SELECT category, COUNT(*) AS n FROM items WHERE status='active' GROUP BY category ORDER BY n DESC",
+    );
+    const bySource = all<{ source_id: string; n: number }>(
+      "SELECT source_id, COUNT(*) AS n FROM items WHERE status='active' GROUP BY source_id ORDER BY n DESC",
+    );
+    const last24h = get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM items WHERE COALESCE(published_at, first_seen_at) >= ?",
+      new Date(Date.now() - 86_400_000).toISOString(),
+    );
+    return c.json({
+      totals: {
+        total: totals?.total ?? 0,
+        active: totals?.active ?? 0,
+        starred: totals?.starred ?? 0,
+        expired: totals?.expired ?? 0,
+        last24h: last24h?.n ?? 0,
+      },
+      byCategory,
+      bySource,
+      features: { ai: aiEnabled, push: pushEnabled, pushChannel: config.pushChannel },
+    });
+  });
+
+  app.get("/api/digests", (c) => {
+    return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
+  });
+}
