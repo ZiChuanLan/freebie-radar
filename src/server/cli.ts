@@ -1,4 +1,5 @@
 import { all, get, migrate, run } from "./db.ts";
+import { enrichItem } from "./enrich/index.ts";
 import { runAll, runSource, ensureSources } from "./collectors/index.ts";
 import { lastDigests, runDaily } from "./digest.ts";
 
@@ -52,6 +53,37 @@ async function main() {
     }
     case "digests": {
       console.log(lastDigests(10));
+      break;
+    }
+    case "reclassify": {
+      // 规则调整后重算历史条目的分类 / 标签 / 评分（保留 ignored 状态）
+      const rows = all<{
+        id: number; source_id: string; external_id: string; url: string; title: string;
+        summary: string | null; author: string | null; published_at: string | null;
+        expires_at: string | null; tags: string; category: string | null;
+      }>("SELECT id, source_id, external_id, url, title, summary, author, published_at, expires_at, tags, category FROM items");
+      let changed = 0;
+      for (const row of rows) {
+        let tags: string[] = [];
+        try { tags = JSON.parse(row.tags) as string[]; } catch { tags = []; }
+        const e = enrichItem({
+          externalId: row.external_id,
+          url: row.url,
+          title: row.title,
+          summary: row.summary ?? "",
+          author: row.author,
+          publishedAt: row.published_at,
+          expiresAt: row.expires_at,
+          tags,
+        }, row.source_id);
+        if (!e) continue;
+        if (e.category !== row.category) changed += 1;
+        run(
+          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
+          e.category, JSON.stringify(e.tags), e.score, e.expiresAt, e.keep ? "active" : "expired", row.id,
+        );
+      }
+      console.log("[reclassify] " + rows.length + " items, category changed " + changed);
       break;
     }
     case "stats": {

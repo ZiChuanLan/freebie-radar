@@ -29,12 +29,12 @@ const RULES: Rule[] = [
   {
     category: "ai",
     weight: 1.15,
-    keywords: ["gpt", "chatgpt", "openai", "claude", "gemini", "grok", "llm", "大模型", "api", "token", "额度", "算力", "qwen", "deepseek", "kimi", "glm", "cursor", "copilot", "midjourney", "sora", "colab", "notebook", "gpu", "体验金", "中转"],
+    keywords: ["gpt", "chatgpt", "openai", "claude", "gemini", "grok", "llm", "大模型", "api", "token", "额度", "算力", "qwen", "deepseek", "kimi", "glm", "cursor", "copilot", "midjourney", "sora", "colab", "notebook", "gpu", "体验金", "中转", "codex", "积分", "多模型", "智能体", "llm", "ai 模型", "credits", "tokens"],
   },
   {
     category: "cloud",
     weight: 1.1,
-    keywords: ["云服务器", "vps", "云主机", "对象存储", "oss", "s3", "r2", "cdn", "带宽", "数据库", "容器", "k8s", "serverless", "免费层", "free tier", "试用金", "额度", "cloud", "azure", "aws", "虚拟机", "存储", "egress", "requests"],
+    keywords: ["云服务器", "vps", "云主机", "对象存储", "oss", "s3", "r2", "cdn", "带宽", "数据库", "容器", "k8s", "serverless", "免费层", "free tier", "试用金", "额度", "cloud", "azure", "aws", "虚拟机", "存储", "egress", "requests", "动态ip", "公网ip", "vps 测试", "cdn", "对象存储"],
   },
   {
     category: "domain",
@@ -44,7 +44,7 @@ const RULES: Rule[] = [
   {
     category: "software",
     weight: 1.0,
-    keywords: ["激活码", "序列号", "license", "授权", "正版", "破解", "绿色版", "注册机", "兑换码", "key", "office", "windows", "adobe", "jetbrains", "idea", "photoshop", "会员版", "工具", "软件", "插件", "app", "解锁", "remote desktop", "pipelines", "ci/cd"],
+    keywords: ["激活码", "序列号", "license", "授权", "正版", "破解", "绿色版", "注册机", "兑换码", "key", "office", "windows", "adobe", "jetbrains", "idea", "photoshop", "会员版", "工具", "软件", "插件", "app", "解锁", "remote desktop", "pipelines", "ci/cd", "套餐", "订阅", "永久授权", "免费版", "freemium", "lifetime"],
   },
   {
     category: "media",
@@ -54,12 +54,12 @@ const RULES: Rule[] = [
   {
     category: "game",
     weight: 1.0,
-    keywords: ["游戏", "epic", "steam", "喜加一", "激活", "游戏本体", "礼包", "cdkey", "xbox", "psn", "switch", "手游", "内测资格", "gog", "itch.io", "indiegala", "giveaway", "key 赠送", "白给", "免费入库", "humble"],
+    keywords: ["游戏", "epic", "steam", "喜加一", "激活", "游戏本体", "礼包", "cdkey", "xbox", "psn", "switch", "手游", "内测资格", "gog", "itch.io", "indiegala", "giveaway", "key 赠送", "白给", "免费入库", "humble", "皮肤", "dlc", "bundle", "game", "free game", "steam key"],
   },
   {
     category: "goods",
     weight: 0.95,
-    keywords: ["包邮", "优惠券", "优惠码", "券码", "满减", "零元", "一分钱", "实物", "纸巾", "洗衣液", "零食", "试用装", "小样", "京东", "淘宝", "拼多多", "天猫", "羊毛"],
+    keywords: ["包邮", "free shipping", "优惠券", "优惠码", "券码", "满减", "零元", "一分钱", "实物", "试用装", "小样", "京东", "淘宝", "拼多多", "天猫", "羊毛", "折扣", "降价", "元起", "% off", "deal", "clearance", "bogo"],
   },
   {
     category: "invite",

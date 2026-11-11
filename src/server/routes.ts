@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { all, get } from "./db.ts";
+import { all, get, run } from "./db.ts";
 import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { ingestItems, markSourceFailure } from "./collectors/index.ts";
 import type { RawItem } from "./collectors/types.ts";
@@ -26,7 +26,14 @@ export type ItemRow = {
   last_seen_at: string;
 };
 
-function shape(row: ItemRow) {
+/** 订阅命中的关键词（都转小写比较），用于前端高亮与筛选。 */
+function matchKeywords(row: ItemRow, keywords: string[]): string[] {
+  if (!keywords.length) return [];
+  const text = (row.title + " " + (row.summary ?? "")).toLowerCase();
+  return keywords.filter((k) => text.includes(k.toLowerCase()));
+}
+
+function shape(row: ItemRow, keywords: string[] = []) {
   let tags: string[] = [];
   try {
     tags = JSON.parse(row.tags) as string[];
@@ -47,6 +54,7 @@ function shape(row: ItemRow) {
     ai,
     starred: row.starred === 1,
     raw: undefined,
+    matched: matchKeywords(row, keywords),
   };
 }
 
@@ -91,11 +99,24 @@ export function registerApi(app: Hono) {
       params.push(new Date().toISOString());
     }
 
+    // 订阅命中 / 即将过期 两个筛选项
+    const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions ORDER BY keyword").map((r) => r.keyword);
+    if (q.subscribed === "1" && subKeywords.length) {
+      const likes = subKeywords.map(() => "(title LIKE ? OR COALESCE(summary,'') LIKE ?)").join(" OR ");
+      where.push("(" + likes + ")");
+      for (const k of subKeywords) params.push(`%${k}%`, `%${k}%`);
+    }
+    if (q.expiring === "1") {
+      const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+      where.push("expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?");
+      params.push(new Date().toISOString(), soon);
+    }
+
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const order = SORTS[q.sort ?? "score"] ?? SORTS.score;
     const rows = all<ItemRow>(`SELECT * FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`, ...params, limit, offset);
     const total = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items ${clause}`, ...params)?.n ?? 0;
-    return c.json({ total, limit, offset, items: rows.map(shape) });
+    return c.json({ total, limit, offset, items: rows.map((r) => shape(r, subKeywords)) });
   });
 
   app.get("/api/items/:id", (c) => {
@@ -146,6 +167,36 @@ export function registerApi(app: Hono) {
     return c.json({ runs: all("SELECT * FROM runs ORDER BY id DESC LIMIT ?", limit) });
   });
 
+  app.get("/api/subscriptions", (c) => {
+    const rows = all<{ id: number; keyword: string; created_at: string; last_hit_at: string | null }>(
+      "SELECT id, keyword, created_at, last_hit_at FROM subscriptions ORDER BY keyword",
+    );
+    const hits = all<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE status = 'active'").at(0)?.n ?? 0;
+    return c.json({ subscriptions: rows, activeItems: hits });
+  });
+
+  app.post("/api/subscriptions", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { keyword?: string } | null;
+    const keyword = (body?.keyword ?? "").trim();
+    if (!keyword || keyword.length > 40) return c.json({ error: "keyword 必填且不超过 40 字" }, 400);
+    run(
+      "INSERT INTO subscriptions (keyword, created_at) VALUES (?, ?) ON CONFLICT(keyword) DO NOTHING",
+      keyword,
+      new Date().toISOString(),
+    );
+    const rows = all<{ id: number; keyword: string; created_at: string; last_hit_at: string | null }>(
+      "SELECT id, keyword, created_at, last_hit_at FROM subscriptions ORDER BY keyword",
+    );
+    return c.json({ subscriptions: rows });
+  });
+
+  app.delete("/api/subscriptions/:id", (c) => {
+    run("DELETE FROM subscriptions WHERE id = ?", Number(c.req.param("id")));
+    const rows = all<{ id: number; keyword: string; created_at: string; last_hit_at: string | null }>(
+      "SELECT id, keyword, created_at, last_hit_at FROM subscriptions ORDER BY keyword",
+    );
+    return c.json({ subscriptions: rows });
+  });
   app.get("/api/stats", (c) => {
     const totals = get<{ total: number; active: number; starred: number; expired: number }>(
       `SELECT COUNT(*) AS total,
@@ -220,6 +271,7 @@ export function registerApi(app: Hono) {
     const items = ids.length
       ? all<ItemRow>(`SELECT * FROM items WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids)
       : [];
-    return c.json({ date: row.date, created_at: row.created_at, pushed_at: row.pushed_at, text, count: ids.length, items: items.map(shape) });
+    const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
+    return c.json({ date: row.date, created_at: row.created_at, pushed_at: row.pushed_at, text, count: ids.length, items: items.map((r) => shape(r, subKeywords)) });
   });
 }

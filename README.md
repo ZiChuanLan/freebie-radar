@@ -70,6 +70,27 @@ docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/s
 | `TELEGRAM_PROXY` | 空 | 推送单独走代理（本机直连不上 api.telegram.org） |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 空 | 可选 AI 二审，走 OpenAI 兼容 `/chat/completions` |
 
+## 订阅与提醒
+
+左侧栏「我的订阅」可以加任意关键词（如 `epic`、`会员`、`Claude`），命中订阅的条目：
+
+- 卡片上出现 `订阅命中：xxx` 的黄色徽章；
+- 「订阅命中」开关一键只看这些条目；
+- 「3 天内截止」开关按 `expires_at` 筛出即将过期的资源。
+
+```bash
+curl -X POST http://127.0.0.1:8788/api/subscriptions -H "content-type: application/json" -d '{"keyword":"epic"}'
+curl http://127.0.0.1:8788/api/items?subscribed=1      # 只看订阅命中
+curl http://127.0.0.1:8788/api/items?expiring=1        # 只看 3 天内截止
+curl -X DELETE http://127.0.0.1:8788/api/subscriptions/1
+```
+
+分类规则调整后，用 `cli.ts reclassify` 重算历史条目（保留 `ignored` 状态）：
+
+```bash
+docker compose exec radar node node_modules/tsx/dist/cli.mjs src/server/cli.ts reclassify
+```
+
 ## 常用命令
 
 ```bash

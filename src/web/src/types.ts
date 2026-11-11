@@ -14,6 +14,7 @@ export type Item = {
   status: string;
   starred: boolean;
   ai: { keep?: boolean; reason?: string; category?: string } | null;
+  matched?: string[];
   first_seen_at: string;
   last_seen_at: string;
 };
@@ -58,6 +59,8 @@ export type ItemsQuery = {
   status?: string;
   starred?: string;
   unexpired?: string;
+  subscribed?: string;
+  expiring?: string;
   limit?: number;
   offset?: number;
 };

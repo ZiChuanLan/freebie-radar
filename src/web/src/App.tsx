@@ -158,6 +158,11 @@ function ItemCard({ item, onPatch, onOpen }: { item: Item; onPatch: (id: number,
           {item.summary && <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-ink-400">{item.summary}</p>}
 
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {item.matched && item.matched.length > 0 && (
+              <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-medium text-amber-300">
+                订阅命中：{item.matched.join(" / ")}
+              </span>
+            )}
             {item.tags.slice(0, 6).map((t) => (
               <span key={t} className="rounded-md bg-ink-800 px-1.5 py-0.5 font-mono text-[10.5px] text-ink-300">
                 #{t}
@@ -455,6 +460,9 @@ export function App() {
       .catch(() => {});
   }, []);
   const [detail, setDetail] = useState<Item | null>(null);
+  const [onlySubscribed, setOnlySubscribed] = useState(false);
+  const [onlyExpiring, setOnlyExpiring] = useState(false);
+  const [newKeyword, setNewKeyword] = useState("");
   const [debounced, setDebounced] = useState("");
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
@@ -476,15 +484,43 @@ export function App() {
     if (sort) p.set("sort", sort);
     if (onlyStarred) p.set("starred", "1");
     if (onlyFresh) p.set("unexpired", "1");
+    if (onlySubscribed) p.set("subscribed", "1");
+    if (onlyExpiring) p.set("expiring", "1");
     const DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "30d": 30 };
     const days = DAYS[range];
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "60");
     return p.toString();
-  }, [debounced, source, category, sort, onlyStarred, onlyFresh, range]);
+  }, [debounced, source, category, sort, onlyStarred, onlyFresh, range, onlySubscribed, onlyExpiring]);
 
   const stats = useApi<Stats>("/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
+  const subs = useApi<{ subscriptions: { id: number; keyword: string; last_hit_at: string | null }[] }>("/api/subscriptions?x=1");
+
+  const refreshSubs = useCallback(() => {
+    subs.reload();
+    items.reload();
+  }, [subs, items]);
+
+  const addSubscription = useCallback(async () => {
+    const kw = newKeyword.trim();
+    if (!kw) return;
+    await fetch("/api/subscriptions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keyword: kw }),
+    });
+    setNewKeyword("");
+    refreshSubs();
+  }, [newKeyword, refreshSubs]);
+
+  const removeSubscription = useCallback(
+    async (id: number) => {
+      await fetch("/api/subscriptions/" + id, { method: "DELETE" });
+      refreshSubs();
+    },
+    [refreshSubs],
+  );
   const sources = useApi<{ sources: Source[] }>("/api/sources");
   const runs = useApi<{ runs: Run[] }>("/api/runs?limit=30");
 
@@ -625,6 +661,8 @@ export function App() {
               <div className="mb-2 text-[11px] tracking-wider text-ink-400 uppercase">筛选</div>
               {[
                 { label: "只看未过期", on: onlyFresh, toggle: () => setOnlyFresh((v) => !v) },
+                { label: "订阅命中", on: onlySubscribed, toggle: () => setOnlySubscribed((v) => !v) },
+                { label: "3 天内截止", on: onlyExpiring, toggle: () => setOnlyExpiring((v) => !v) },
                 { label: "只看收藏", on: onlyStarred, toggle: () => setOnlyStarred((v) => !v) },
               ].map((f) => (
                 <button
@@ -657,6 +695,47 @@ export function App() {
                 <option value="7d">一周内</option>
                 <option value="30d">一个月内</option>
               </select>
+            </section>
+<section>
+              <div className="mb-2 flex items-center justify-between text-[11px] tracking-wider text-ink-400 uppercase">
+                <span>我的订阅</span>
+                <span className="font-mono text-[10px]">{subs.data?.subscriptions.length ?? 0}</span>
+              </div>
+              <div className="mb-2 flex gap-1">
+                <input
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addSubscription(); }}
+                  placeholder="关键词，如 epic"
+                  className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12px] outline-none focus:border-lime/40"
+                />
+                <button
+                  type="button"
+                  onClick={addSubscription}
+                  className="rounded-lg border border-lime/30 bg-lime/10 px-2 text-[12px] text-lime hover:bg-lime/20"
+                  title="添加订阅"
+                >
+                  +
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {(subs.data?.subscriptions ?? []).map((s) => (
+                  <span key={s.id} className="group inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-[11px] text-ink-200">
+                    {s.keyword}
+                    <button
+                      type="button"
+                      onClick={() => removeSubscription(s.id)}
+                      className="text-ink-500 hover:text-red-400"
+                      title="取消订阅"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {!subs.data?.subscriptions.length && (
+                  <span className="text-[11px] text-ink-500">还没有订阅，加个关键词试试</span>
+                )}
+              </div>
             </section>
               <div className="mb-2 text-[11px] tracking-wider text-ink-400 uppercase">排序</div>
               <select
