@@ -80,6 +80,6 @@ docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/s
 
 ## 未完成项（需用户输入）
 
-1. **Telegram 推送（按用户决定降级）**：代码、dry-run、3 天去重均已就绪，`PUSH_CHANNEL` 支持 `none|telegram`，`sendTelegram()` 走 `TELEGRAM_PROXY` 可绕过本机不可达；用户明确「先不做，看看效果」，因此线上维持 `PUSH_CHANNEL=none`，每日精选只落库（`digests` 表）+ Web 站可见。要启用只需在 RN 的 `.env` 填 token/chat_id 并改 `PUSH_CHANNEL=telegram`。
+1. **Telegram 推送已实发**：RN 的 `.env` 已配置 `PUSH_CHANNEL=telegram` + `TELEGRAM_BOT_TOKEN`（@museailan_bot）+ `TELEGRAM_CHAT_ID=970259783`。`cli.ts daily` 实跑输出 `[daily] 2026-11-11 已推送 12 条到 Telegram`，`digests.pushed_at` 写入时间戳；另用 `sendMessage` 单独验证返回 `{"ok":true,"result":{"message_id":9,...}}`。每日 08:30（容器 cron）自动推送，Web「每日精选」页会标注「已推送 Telegram」。
 2. **Telegram 羊毛频道清单**：抓取逻辑验证可用（`t.me/s/durov` 抓到 20 条消息），缺真实频道名，源保持 disabled。
 3. **知乎 / 小红书 / 小黑盒已全部接入**：Playwright 驱动持久化 Chrome profile（`%LOCALAPPDATA%\freebie-radar-chrome`，登录一次持久化），采集后回传 `/api/ingest`。实测一批：知乎 47 条、小红书 74 条（全部新增）、小黑盒 20 条。脚本 `scripts/pw-collect.mjs`，支持 `node scripts/pw-collect.mjs xhs` 跑单站。

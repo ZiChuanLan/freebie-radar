@@ -110,7 +110,7 @@ HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里�
 
 - **知乎 / 小红书 / 小黑盒**：走本机 Playwright + 持久化 Chrome profile 采集（`scripts/pw-collect.mjs`），结果 POST 到服务器的 `/api/ingest`。三站均已实测打通：知乎 47 条、小红书 74 条、小黑盒 20 条。登录态保存在 `%LOCALAPPDATA%\freebie-radar-chrome`，登录一次长期有效。服务器端无法直采——它们依赖用户登录态与前端签名。
 - **Telegram 频道**：抓取逻辑已用 `t.me/s/durov` 验证可用（20 条消息），但没有可确认长期更新的中文羊毛频道清单，源默认 disabled。
-- **TG 推送**：本机网络直连不上 `api.telegram.org`，需要 `TELEGRAM_PROXY` 或部署在墙外机器；未配 token 时只落库不外发。
+- **TG 推送**：已部署在 RN（墙外）并实发成功。本机因无法直连 `api.telegram.org`，若在本机跑 `pnpm daily` 需配 `TELEGRAM_PROXY`；未配 token 时只落库不外发。
 - **RSSHub 公共实例 / hostloc / 线报酷**：实测不可用（403 / 非 RSS / 超时），见 `docs/data-sources.md`。
 - **FlareSolverr 首次冷启动慢**：首次解 Cloudflare 约 1-2 分钟，之后复用 session 降到 1-2 秒。
 
