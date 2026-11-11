@@ -119,3 +119,29 @@ linux.do `c/36` 福利羊毛：
 - **tg-channels 仍 blocked**：`t.me/s/<channel>` 抓取逻辑已验证可用（用 `durov` 测到 20 条消息），但手上没有可确认存在且持续更新的中文羊毛频道清单，源保持 disabled，等用户给频道名后 `cli.ts config tg-channels '{"channels":[...]}'` 一行即可启用。
 - **知乎 / 小红书 / 小黑盒**：维持二期（需登录态 + 签名），在 `/status` 中以 blocked 呈现。
 2. Telegram 推送用户已明确「先不急做这个」，首版只落本地日报，接口预留。
+
+## 6. 三个登录态站点（ego-browser 方案，2026-11-11 实测打通）
+
+原计划用独立 Chrome + CDP，实际改为 **ego-browser**（复用用户已登录的浏览器），因为无需重新登录、无需重启用户的 Chrome。
+
+实现：`scripts/local-collect.mjs`，用 `ego-browser nodejs < scripts/local-collect.mjs` 运行，结果 POST 到 `SERVER_URL/api/ingest`（Bearer token）。
+
+| 站 | 抓法 | 实测 |
+|---|---|---|
+| 知乎搜索 | 打开 `/search?type=content&q=`，读 `.SearchResult-Card` 的 `h2 a` + `.RichText` | ✅ 3 关键词（免费领取 / 免费额度 / 白嫖）去重后 47 条 |
+| 小黑盒搜索 | 打开 `/app/bbs/home`，注入 fetch+XHR hook，填入 `.el-input__inner` 并回车，拦截 `/bbs/app/api/general/search/v1` 的 JSON | ✅ 2 关键词去重后 20 条，type=link 的帖子带 linkid / title / description / create_at / topics |
+| 小红书搜索 | 打开 `/search_result?keyword=`，读 `section.note-item` | ⚠️ ego 内未登录，页面提示「登录后查看搜索结果」，抓到 0 条 |
+
+### 小黑盒为什么必须走浏览器
+
+搜索接口 `https://api.xiaoheihe.cn/bbs/app/api/general/search/v1` 需要 `hkey` / `_time` / `nonce` / `_rnd` 四个签名参数，由前端 JS 生成，直接 HTTP 请求无法复现。因此改为在页面内 hook `fetch` 与 `XMLHttpRequest`，让页面自己发签名请求，脚本只负责填关键词、回车、读拦截到的响应体。
+
+附带发现：小黑盒 web 端没有独立搜索路由，`/app/bbs/search` 会被重写成 `/app/bbs/home` 且丢弃关键词；只有 UI 输入框触发的 SPA 跳转 `/app/search/list?q=...` 才会真正调签名接口。
+
+### 小红书待办
+
+在 ego-browser 里扫码登录一次即可（登录态持久化在该浏览器 profile），之后重跑脚本自动带上；脚本检测到「登录后查看搜索结果」会打印 `[xhs] 需要登录，跳过` 并在 summary 里标 `login required`。
+
+### 去重验证
+
+第二次跑知乎：`received=47 inserted=3 skipped=44` —— 同一资源不会重复入库，只有标题/摘要变化的会更新。

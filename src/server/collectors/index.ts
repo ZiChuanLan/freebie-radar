@@ -23,9 +23,18 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: true, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
   { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: true, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
   { id: "rss-smzdm", name: "什么值得买", kind: "rss", enabled: true, config: { feeds: [{ id: "smzdm", url: "https://www.smzdm.com/rss/", limit: 20 }] } },
+  { id: "zhihu-search", name: "知乎 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
+  { id: "xhs-search", name: "小红书 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
+  { id: "xiaoheihe-search", name: "小黑盒 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费" } },
   { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
+
+/** 供本机浏览器采集器（CDP）把结果回传到服务器。 */
+export function ingestItems(sourceId: string, items: RawItem[]): { inserted: number; skipped: number } {
+  ensureSources();
+  return persist(sourceId, items, null);
+}
 
 type SourceRow = {
   id: string;

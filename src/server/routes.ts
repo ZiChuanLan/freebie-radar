@@ -1,6 +1,8 @@
 import type { Hono } from "hono";
 import { all, get } from "./db.ts";
 import { aiEnabled, config, pushEnabled } from "./config.ts";
+import { ingestItems } from "./collectors/index.ts";
+import type { RawItem } from "./collectors/types.ts";
 
 export type ItemRow = {
   id: number;
@@ -177,6 +179,19 @@ export function registerApi(app: Hono) {
     });
   });
 
+  app.post("/api/ingest", async (c) => {
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置，拒绝写入" }, 403);
+    const auth = c.req.header("authorization") ?? "";
+    if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
+    const body = (await c.req.json().catch(() => null)) as { sourceId?: string; items?: unknown[] } | null;
+    if (!body?.sourceId || !Array.isArray(body.items)) return c.json({ error: "sourceId 与 items 必填" }, 400);
+    const items = body.items.filter((i): i is RawItem => {
+      const r = i as RawItem | null;
+      return Boolean(r && typeof r.title === "string" && typeof r.url === "string");
+    });
+    const saved = ingestItems(body.sourceId, items);
+    return c.json({ ok: true, received: body.items.length, ...saved });
+  });
   app.get("/api/digests", (c) => {
     return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
   });

@@ -79,6 +79,18 @@ node --no-warnings node_modules/tsx/dist/cli.mjs src/server/cli.ts collect v2ex-
 pnpm test                                 # 14 个单测
 ```
 
+## 采集登录态站点（知乎 / 小红书 / 小黑盒）
+
+这三站需要浏览器登录态和前端签名，服务器上抓不了，改由本机 `ego-browser` 采集后回传：
+
+```bash
+# 1. 确保 ego-browser 已登录对应站点（小红书需扫码一次）
+bash -lc "cd /h/WorkSpace/freebie-radar && ego-browser nodejs < scripts/local-collect.mjs"
+```
+
+脚本依次抓知乎 3 个关键词、小红书、小黑盒 2 个关键词，去重后 POST 到 `SERVER/api/ingest`。
+顶部 `SERVER` / `TOKEN` / 关键词列表可直接改；设 `ONLY = "zhihu"` 只跑单站；服务器需配置同名 `INGEST_TOKEN`。
+
 ## 加一个新源
 
 1. 在 `src/server/collectors/` 新建文件，实现 `Collector`（`kind` + `collect(ctx)`，返回 `{ items, cursor?, degraded? }`）。
@@ -89,7 +101,7 @@ pnpm test                                 # 14 个单测
 
 ## 已知限制
 
-- **知乎 / 小红书 / 小黑盒**：未接入。三者都需要登录态 + 请求签名，采集端在墙外服务器上没有你的浏览器会话。二期方案：本机已登录浏览器（CDP）抓取后 POST 到 ingest 接口。
+- **知乎 / 小红书 / 小黑盒**：走本机 ego-browser（复用已登录会话）采集，脚本 `scripts/local-collect.mjs`，结果 POST 到服务器的 `/api/ingest`。知乎（47 条）与小黑盒（20 条）已实测打通；小红书需在 ego-browser 里扫码登录一次。服务器端无法直采这三站——它们依赖用户登录态与前端签名。
 - **Telegram 频道**：抓取逻辑已用 `t.me/s/durov` 验证可用（20 条消息），但没有可确认长期更新的中文羊毛频道清单，源默认 disabled。
 - **TG 推送**：本机网络直连不上 `api.telegram.org`，需要 `TELEGRAM_PROXY` 或部署在墙外机器；未配 token 时只落库不外发。
 - **RSSHub 公共实例 / hostloc / 线报酷**：实测不可用（403 / 非 RSS / 超时），见 `docs/data-sources.md`。

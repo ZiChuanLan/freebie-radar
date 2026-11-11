@@ -62,6 +62,8 @@ export const config = {
   aiApiKey: str("AI_API_KEY"),
   aiModel: str("AI_MODEL"),
   aiMaxItems: num("AI_MAX_ITEMS", 20),
+
+  ingestToken: str("INGEST_TOKEN"),
 } as const;
 
 export const aiEnabled = Boolean(config.aiBaseUrl && config.aiModel);
