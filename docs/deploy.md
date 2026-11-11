@@ -53,6 +53,21 @@ fresh stats:   {"total":10,"active":10,...}
 
 本机无墙外出口，开发时通过 RN 的 FlareSolverr（`FLARESOLVERR_URL=http://10.144.144.6:8191`）取 linux.do / V2EX。RN 上的容器则用 `http://172.17.0.1:8191`（容器内已验证可达）。
 
+## 审计修复记录（第二轮）
+
+针对独立审计驳回的四点，逐项修复并留证：
+
+| 审计意见 | 修复 | 证据 |
+|---|---|---|
+| 日报线上为空、前端无入口 | 新增 `/api/digests/:date` 返回完整 items；前端加「每日精选」tab（日期 chips + 正文预览 + 条目卡片）；服务器执行 `cli.ts daily` 生成当日日报 | `/api/digests` 返回 `2026-11-11` 12 条；截图 `docs/ui-digest.png` |
+| 三个登录态源 `last_run_at` 为 null、未纳入定时 | `ingestItems()` 现在同时写 `runs` 记录并更新 `sources.last_run_at/last_status`；新增 Windows 计划任务 `freebie-radar-local`（每日 09:30，headless），包装脚本 `scripts/local-collect.cmd` | `/api/sources` 三个源 last_run_at 均有值；`schtasks /query` 显示 Next Run 2026/11/12 9:30；计划任务实跑日志三站均 `status: 200` |
+| README 陈旧（ego-browser / local-collect.mjs） | 全部改为 Playwright + `scripts/pw-collect.mjs` | README 内已无 ego 相关描述 |
+| 前端缺详情视图、SOURCE_LABEL 缺新源、token 硬编码 | 新增 `ItemDetail` 弹窗（摘要/时间/标签/收藏/忽略/原文）；补齐 5 个源的显示名；`pw-collect.mjs` 改为从 `.env` 读 `INGEST_TOKEN`，缺失即退出 | `pnpm build` 通过；`node --check scripts/pw-collect.mjs` 通过 |
+
+### 采集失败重试
+
+计划任务首次运行出现 zhihu / xhs 的 `TypeError: fetch failed`（Easytier 链路瞬时抖动，同批 xiaoheihe 成功）。已给 `push()` 加 3 次重试 + 60s 单次超时 + 打印 `err.cause`，重跑计划任务三站全部 200。
+
 ## 运维
 
 ```bash

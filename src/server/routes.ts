@@ -195,4 +195,21 @@ export function registerApi(app: Hono) {
   app.get("/api/digests", (c) => {
     return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
   });
+
+  app.get("/api/digests/:date", (c) => {
+    const date = c.req.param("date");
+    const row = get<{ date: string; item_ids: string; payload: string; created_at: string; pushed_at: string | null }>(
+      "SELECT date, item_ids, payload, created_at, pushed_at FROM digests WHERE date = ?",
+      date,
+    );
+    if (!row) return c.json({ error: "not found" }, 404);
+    let ids: number[] = [];
+    try { ids = JSON.parse(row.item_ids) as number[]; } catch { ids = []; }
+    let text = "";
+    try { text = String((JSON.parse(row.payload) as { text?: string }).text ?? ""); } catch { text = ""; }
+    const items = ids.length
+      ? all<ItemRow>(`SELECT * FROM items WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids)
+      : [];
+    return c.json({ date: row.date, created_at: row.created_at, pushed_at: row.pushed_at, text, count: ids.length, items: items.map(shape) });
+  });
 }

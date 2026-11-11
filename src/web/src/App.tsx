@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Clock3,
   Filter,
+  Info,
   Github,
   Globe2,
   Loader2,
@@ -36,7 +37,11 @@ const SOURCE_LABEL: Record<string, string> = {
   "github-free-for-dev": "GitHub · free-for-dev",
   "rss-fuliba": "福利吧",
   "rss-52pojie": "吾爱破解",
-  "tg-channel": "Telegram 频道",
+  "rss-smzdm": "什么值得买",
+  "zhihu-search": "知乎 · 福利搜索",
+  "xhs-search": "小红书 · 福利搜索",
+  "xiaoheihe-search": "小黑盒 · 福利搜索",
+  "tg-channels": "Telegram 频道",
   "mock-source": "Mock 源",
 };
 
@@ -107,7 +112,7 @@ function StatPill({ label, value, accent }: { label: string; value: number | str
   );
 }
 
-function ItemCard({ item, onPatch }: { item: Item; onPatch: (id: number, body: Record<string, unknown>) => void }) {
+function ItemCard({ item, onPatch, onOpen }: { item: Item; onPatch: (id: number, body: Record<string, unknown>) => void; onOpen: (item: Item) => void }) {
   const exp = expiresLabel(item.expires_at);
   return (
     <article className="card animate-rise group relative overflow-hidden p-4 transition-colors hover:border-ink-600/90">
@@ -163,6 +168,14 @@ function ItemCard({ item, onPatch }: { item: Item; onPatch: (id: number, body: R
           >
             {Math.round(item.score)}
           </div>
+          <button
+            type="button"
+            onClick={() => onOpen(item)}
+            className="rounded-md p-1.5 text-ink-600 transition-colors hover:bg-ink-700 hover:text-ink-300"
+            title="查看详情"
+          >
+            <Info size={14} />
+          </button>
           <button
             type="button"
             onClick={() => onPatch(item.id, { starred: !item.starred })}
@@ -276,15 +289,146 @@ function StatusPanel({ sources, runs }: { sources: Source[]; runs: Run[] }) {
   );
 }
 
+function ItemDetail({ item, onClose, onPatch }: { item: Item; onClose: () => void; onPatch: (id: number, body: Record<string, unknown>) => void }) {
+  const exp = expiresLabel(item.expires_at);
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/70 p-4 backdrop-blur-sm sm:p-10" onClick={onClose}>
+      <div className="card w-full max-w-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
+            <span className="rounded-full bg-ink-700/70 px-2 py-0.5 text-ink-200">{sourceName(item.source_id)}</span>
+            {item.category && (
+              <span className="rounded-full border border-lime/25 bg-lime/10 px-2 py-0.5 text-lime">
+                {CATEGORY_LABEL[item.category] ?? item.category}
+              </span>
+            )}
+            {exp && <span className={exp.urgent ? "text-orange-400" : ""}>{exp.text}</span>}
+            <span>{timeAgo(item.published_at ?? item.first_seen_at)}</span>
+            <span className="font-mono">评分 {Math.round(item.score)}</span>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-400 hover:bg-ink-700 hover:text-ink-100" title="关闭">
+            <X size={16} />
+          </button>
+        </div>
+
+        <h2 className="text-[17px] leading-snug font-semibold">{item.title}</h2>
+        {item.summary && <p className="mt-3 text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink-300">{item.summary}</p>}
+
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
+          <div><dt className="text-ink-500">首次收录</dt><dd className="text-ink-300">{item.first_seen_at.replace("T", " ").slice(0, 19)}</dd></div>
+          <div><dt className="text-ink-500">最近更新</dt><dd className="text-ink-300">{item.last_seen_at.replace("T", " ").slice(0, 19)}</dd></div>
+          <div><dt className="text-ink-500">发布时间</dt><dd className="text-ink-300">{item.published_at ? item.published_at.replace("T", " ").slice(0, 19) : "—"}</dd></div>
+          <div><dt className="text-ink-500">截止时间</dt><dd className="text-ink-300">{item.expires_at ? item.expires_at.replace("T", " ").slice(0, 19) : "—"}</dd></div>
+          <div className="col-span-2"><dt className="text-ink-500">来源 ID</dt><dd className="font-mono text-ink-400">{item.source_id} · {item.external_id}</dd></div>
+        </dl>
+
+        {item.tags.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {item.tags.map((t) => (
+              <span key={t} className="rounded-md bg-ink-800 px-1.5 py-0.5 font-mono text-[11px] text-ink-300">#{t}</span>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          <a href={item.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 rounded-lg bg-lime/15 px-3 py-2 text-[13px] font-medium text-lime hover:bg-lime/25">
+            打开原文 <ArrowUpRight size={14} />
+          </a>
+          <button type="button" onClick={() => onPatch(item.id, { starred: !item.starred })} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 px-3 py-2 text-[13px] text-ink-200 hover:border-ink-600">
+            <Star size={14} fill={item.starred ? "currentColor" : "none"} /> {item.starred ? "取消收藏" : "收藏"}
+          </button>
+          <button type="button" onClick={() => { onPatch(item.id, { status: "ignored" }); onClose(); }} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 px-3 py-2 text-[13px] text-ink-400 hover:border-ink-600 hover:text-ink-200">
+            <X size={14} /> 忽略此条
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DigestPanel() {
+  const list = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
+  const dates = list.data?.digests ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked ?? dates[0]?.date ?? null;
+  const detail = useApi<{ date: string; text: string; count: number; created_at: string; pushed_at: string | null; items: Item[] }>(
+    active ? "/api/digests/" + active : null,
+  );
+
+  if (!list.loading && !dates.length) {
+    return (
+      <div className="card flex flex-col items-center gap-3 px-6 py-16 text-center">
+        <Sparkles size={26} className="text-ink-600" />
+        <div className="text-[14px]">还没有生成过日报</div>
+        <p className="max-w-md text-[12.5px] leading-relaxed text-ink-400">
+          运行 <code className="rounded bg-ink-800 px-1.5 py-0.5 font-mono">pnpm daily</code>，或
+          <code className="mx-1 rounded bg-ink-800 px-1.5 py-0.5 font-mono">docker compose exec radar node node_modules/tsx/dist/cli.mjs src/server/cli.ts daily</code>
+          生成当日精选；生成后这里会按日期列出。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {dates.map((d) => (
+          <button
+            key={d.date}
+            type="button"
+            onClick={() => setPicked(d.date)}
+            className={"rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors " + (d.date === active ? "border-lime/40 bg-lime/10 text-lime" : "border-ink-700 text-ink-300 hover:border-ink-600")}
+          >
+            {d.date}
+            {d.pushed_at ? <span className="ml-1.5 text-[10px] text-lime/70">已推送</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {detail.loading && <div className="card p-6 text-[13px] text-ink-400">加载中…</div>}
+      {detail.error && <div className="card border-red-500/30 p-4 text-[13px] text-red-400">{detail.error}</div>}
+
+      {detail.data && (
+        <>
+          <div className="card p-4">
+            <div className="mb-1 flex items-center justify-between text-[13px]">
+              <span className="font-medium">{detail.data.date} 精选</span>
+              <span className="text-[11.5px] text-ink-400">
+                {detail.data.count} 条 · 生成于 {detail.data.created_at.replace("T", " ").slice(5, 16)}
+                {detail.data.pushed_at ? " · 已推送 Telegram" : " · 仅落库（PUSH_CHANNEL=none）"}
+              </span>
+            </div>
+            <pre className="mt-3 max-h-[240px] overflow-auto rounded-lg bg-ink-900/80 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-300">
+              {detail.data.text}
+            </pre>
+          </div>
+
+          <div className="space-y-2.5">
+            {detail.data.items.map((item) => (
+              <ItemCard key={item.id} item={item} onPatch={() => {}} onOpen={() => {}} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function App() {
-  const [tab, setTab] = useState<"feed" | "status">(() => (typeof location !== "undefined" && location.hash === "#status" ? "status" : "feed"));
+  const [tab, setTab] = useState<"feed" | "digest" | "status">(() => {
+    if (typeof location === "undefined") return "feed";
+    if (location.hash === "#status") return "status";
+    if (location.hash === "#digest") return "digest";
+    return "feed";
+  });
 
   useEffect(() => {
     if (typeof location === "undefined") return;
-    if (tab === "status") history.replaceState(null, "", "#status");
+    if (tab === "status" || tab === "digest") history.replaceState(null, "", "#" + tab);
     else history.replaceState(null, "", location.pathname + location.search);
   }, [tab]);
   const [search, setSearch] = useState("");
+  const [detail, setDetail] = useState<Item | null>(null);
   const [debounced, setDebounced] = useState("");
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
@@ -368,7 +512,7 @@ export function App() {
           />
         </div>
         <div className="flex items-center gap-1 rounded-xl border border-ink-700 bg-ink-900/60 p-1">
-          {(["feed", "status"] as const).map((t) => (
+          {(["feed", "digest", "status"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -377,7 +521,7 @@ export function App() {
                 tab === t ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-200"
               }`}
             >
-              {t === "feed" ? "资源流" : "运维状态"}
+              {t === "feed" ? "资源流" : t === "digest" ? "每日精选" : "运维状态"}
             </button>
           ))}
         </div>
@@ -503,7 +647,9 @@ export function App() {
         )}
 
         <main className="min-w-0 flex-1">
-          {tab === "status" ? (
+          {tab === "digest" ? (
+            <DigestPanel />
+          ) : tab === "status" ? (
             <StatusPanel sources={sources.data?.sources ?? []} runs={runs.data?.runs ?? []} />
           ) : (
             <>
@@ -531,7 +677,7 @@ export function App() {
 
               <div className="space-y-2.5">
                 {(items.data?.items ?? []).map((item) => (
-                  <ItemCard key={item.id} item={item} onPatch={patch} />
+                  <ItemCard key={item.id} item={item} onPatch={patch} onOpen={setDetail} />
                 ))}
               </div>
 
@@ -556,6 +702,8 @@ export function App() {
         </span>
         <span className="font-mono">{stats.data?.totals.total ?? 0} items</span>
       </footer>
+
+      {detail && <ItemDetail item={detail} onClose={() => setDetail(null)} onPatch={patch} />}
     </div>
   );
 }

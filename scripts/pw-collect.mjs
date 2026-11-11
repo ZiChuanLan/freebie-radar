@@ -9,10 +9,18 @@
 import { chromium } from "playwright";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 从项目根 .env 读取配置（Node 21+ 内置 loadEnvFile），避免把 token 写死在脚本里
+try { process.loadEnvFile(fileURLToPath(new URL("../.env", import.meta.url))); } catch { /* 没有 .env 时忽略 */ }
 
 const PROFILE_DIR = process.env.PROFILE_DIR || join(homedir(), "AppData", "Local", "freebie-radar-chrome");
-const SERVER = process.env.SERVER_URL || "http://10.144.144.6:8788";
-const TOKEN = process.env.INGEST_TOKEN || "fr_ingest_9f3c2a7b1d";
+const SERVER = (process.env.SERVER_URL || "http://10.144.144.6:8788").replace(/\/+$/, "");
+const TOKEN = process.env.INGEST_TOKEN;
+if (!TOKEN) {
+  console.error("缺少 INGEST_TOKEN：请在 .env 或环境变量里设置，需与服务器端一致");
+  process.exit(1);
+}
 
 const KEYWORDS = {
   zhihu: ["免费领取", "免费额度", "白嫖"],
@@ -31,14 +39,30 @@ async function push(sourceId, items) {
     console.log("[" + sourceId + "] 0 条，跳过回传");
     return;
   }
-  const res = await fetch(SERVER + "/api/ingest", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
-    body: JSON.stringify({ sourceId, items }),
-  });
-  const body = await res.text();
-  summary.push({ sourceId, status: res.status, body: body.slice(0, 140) });
-  console.log("[" + sourceId + "] 回传", res.status, body.slice(0, 140));
+  const payload = JSON.stringify({ sourceId, items });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const res = await fetch(SERVER + "/api/ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
+        body: payload,
+        signal: AbortSignal.timeout(60_000),
+      });
+      const body = await res.text();
+      summary.push({ sourceId, status: res.status, body: body.slice(0, 140) });
+      console.log("[" + sourceId + "] 回传", res.status, body.slice(0, 140));
+      return;
+    } catch (err) {
+      const cause = err && err.cause ? (err.cause.code || err.cause.message || "") : "";
+      const msg = (err && err.message) || String(err);
+      console.log("[" + sourceId + "] 回传第 " + attempt + " 次失败:", msg, cause);
+      if (attempt === 3) {
+        summary.push({ sourceId, error: msg + " " + cause });
+        return;
+      }
+      await sleep(3000 * attempt);
+    }
+  }
 }
 
 async function collectZhihu(page) {

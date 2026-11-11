@@ -30,10 +30,31 @@ export const SEEDS: SourceSeed[] = [
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
 
-/** 供本机浏览器采集器（CDP）把结果回传到服务器。 */
+/** 供本机 Playwright 采集器把结果回传到服务器；同时补写 runs / sources 状态，保证 /status 有记录。 */
 export function ingestItems(sourceId: string, items: RawItem[]): { inserted: number; skipped: number } {
   ensureSources();
-  return persist(sourceId, items, null);
+  const startedAt = new Date().toISOString();
+  const t0 = Date.now();
+  const runRow = run("INSERT INTO runs (source_id, started_at, status) VALUES (?, ?, 'running')", sourceId, startedAt);
+  const runId = Number(runRow.lastInsertRowid);
+  try {
+    const saved = persist(sourceId, items, null);
+    const durationMs = Date.now() - t0;
+    run(
+      "UPDATE runs SET finished_at = ?, status = 'ok', fetched = ?, inserted = ?, skipped = ?, duration_ms = ? WHERE id = ?",
+      new Date().toISOString(), items.length, saved.inserted, saved.skipped, durationMs, runId,
+    );
+    run("UPDATE sources SET last_run_at = ?, last_status = 'ok', last_error = NULL WHERE id = ?", startedAt, sourceId);
+    return saved;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    run(
+      "UPDATE runs SET finished_at = ?, status = 'failed', fetched = ?, error = ?, duration_ms = ? WHERE id = ?",
+      new Date().toISOString(), items.length, message, Date.now() - t0, runId,
+    );
+    run("UPDATE sources SET last_run_at = ?, last_status = 'failed', last_error = ? WHERE id = ?", startedAt, message.slice(0, 300), sourceId);
+    throw err;
+  }
 }
 
 type SourceRow = {

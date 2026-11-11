@@ -92,7 +92,11 @@ HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里�
 - profile 目录默认 `%LOCALAPPDATA%\freebie-radar-chrome`，可用 `PROFILE_DIR` 覆盖；登录一次即持久化，之后无需重复登录。
 - 顶部常量可选环境变量覆盖：`SERVER_URL` / `INGEST_TOKEN`，服务器端需配置同名 `INGEST_TOKEN`。
 - 关键词列表在脚本的 `KEYWORDS`；小红书会自动滚动 3 屏加载更多。
-- 定时：这三站由本机跑，需要配合 Windows 任务计划程序（例如 `schtasks /create /tn freebie-local /tr "node H:\WorkSpace\freebie-radar\scripts\pw-collect.mjs" /sc hourly`）；服务器端只负责抓不需要登录的源。
+- 定时：这三站由本机计划任务 `freebie-radar-local` 驱动（每天 09:30，headless 模式），包装脚本为 `scripts/local-collect.cmd`，日志写 `logs/local-collect.log`。重新注册：
+  ```bash
+  schtasks /create /tn "freebie-radar-local" /tr "H:\WorkSpace\freebie-radar\scripts\local-collect.cmd" /sc daily /st 09:30 /f
+  schtasks /run /tn "freebie-radar-local"     # 立即跑一次
+  ```
 
 ## 加一个新源
 
@@ -104,7 +108,7 @@ HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里�
 
 ## 已知限制
 
-- **知乎 / 小红书 / 小黑盒**：走本机 ego-browser（复用已登录会话）采集，脚本 `scripts/local-collect.mjs`，结果 POST 到服务器的 `/api/ingest`。知乎（47 条）与小黑盒（20 条）已实测打通；小红书需在 ego-browser 里扫码登录一次。服务器端无法直采这三站——它们依赖用户登录态与前端签名。
+- **知乎 / 小红书 / 小黑盒**：走本机 Playwright + 持久化 Chrome profile 采集（`scripts/pw-collect.mjs`），结果 POST 到服务器的 `/api/ingest`。三站均已实测打通：知乎 47 条、小红书 74 条、小黑盒 20 条。登录态保存在 `%LOCALAPPDATA%\freebie-radar-chrome`，登录一次长期有效。服务器端无法直采——它们依赖用户登录态与前端签名。
 - **Telegram 频道**：抓取逻辑已用 `t.me/s/durov` 验证可用（20 条消息），但没有可确认长期更新的中文羊毛频道清单，源默认 disabled。
 - **TG 推送**：本机网络直连不上 `api.telegram.org`，需要 `TELEGRAM_PROXY` 或部署在墙外机器；未配 token 时只落库不外发。
 - **RSSHub 公共实例 / hostloc / 线报酷**：实测不可用（403 / 非 RSS / 超时），见 `docs/data-sources.md`。
