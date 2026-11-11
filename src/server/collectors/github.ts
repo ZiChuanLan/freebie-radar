@@ -6,7 +6,7 @@ type Parsed = { title: string; url: string; description: string; section: string
 
 /** free-for-dev 这类清单按二级标题分节，节名就是天然的分类提示。 */
 const SECTION_RULES: [RegExp, string][] = [
-  [/generative ai|apis, data, and ml/i, "ai"],
+  [/generative ai|apis, data, and ml|ai|llm|chatbot|image|video|audio|writing|agent/i, "ai"],
   [/domain|dns|web hosting/i, "domain"],
   [/education/i, "edu"],
   [/source code|artifact|code generation|code quality|code search|ci and cd|testing|issue tracking|management system|low-code|forms|cms|translation|feature toggle|crash|monitoring|log management|messaging|security|authentication|mobile app|tools for teams|tunneling|font|email|search/i, "software"],
@@ -29,11 +29,13 @@ function parseMarkdownList(markdown: string, limit: number): Parsed[] {
       continue;
     }
     if (out.length >= limit) break;
-    const m = /^\s*[-*+]\s+\[(.+?)\]\((https?:\/\/[^)\s]+)\)\s*[-–—:]?\s*(.*)$/.exec(line);
+    const bullet = /^\s*[-*+]\s+\[(.+?)\]\((https?:\/\/[^)\s]+)\)\s*[-–—:]?\s*(.*)$/.exec(line);
+    const table = !bullet ? /^\|\s*\[(.+?)\]\((https?:\/\/[^)\s]+)\)\s*\|\s*([^|]*)/.exec(line) : null;
+    const m = bullet ?? table;
     if (!m) continue;
     const title = (m[1] ?? "").replace(/\*\*/g, "").trim();
     const url = (m[2] ?? "").trim();
-    if (!title || seen.has(url)) continue;
+    if (!title || seen.has(url) || /shields\.io|badge/i.test(url)) continue;
     seen.add(url);
     out.push({
       title,

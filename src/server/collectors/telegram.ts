@@ -8,11 +8,11 @@ function stripTags(html: string): string {
 
 type Message = { postId: string; text: string; datetime: string | null };
 
-function parseChannelPage(html: string, channel: string): Message[] {
+function parseChannelPage(html: string): Message[] {
   const out: Message[] = [];
   const blocks = html.split('class="tgme_widget_message_wrap');
   for (const block of blocks.slice(1)) {
-    const idMatch = /data-post="([^"\/]+)\/(\d+)"/.exec(block);
+    const idMatch = /data-post="([^"/]+)\/(\d+)"/.exec(block);
     if (!idMatch) continue;
     const textMatch = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(block);
     const timeMatch = /<time[^>]*datetime="([^"]+)"/.exec(block);
@@ -41,17 +41,21 @@ export const telegramCollector: Collector = {
     for (const channel of channels) {
       const url = "https://t.me/s/" + channel;
       try {
-        let body: string;
-        if (hasFlare()) {
+        // t.me 的公开预览页直连即可；只有直连解析不到时才降级到 FlareSolverr。
+        // 之前无条件走 FlareSolverr，拿回的是人机校验页，解析永远是 0 条。
+        let body = "";
+        const direct = await ctx.http.text(url).catch(() => null);
+        if (direct && direct.status === 200) body = direct.body;
+        let messages = body ? parseChannelPage(body).slice(-30) : [];
+        if (!messages.length && hasFlare()) {
           const res = await flaresolverrGet(url);
-          if (res.status !== 200) throw new Error("HTTP " + res.status);
-          body = res.body;
-        } else {
-          const res = await ctx.http.text(url);
-          if (res.status !== 200) throw new Error("HTTP " + res.status);
-          body = res.body;
+          if (res.status === 200) {
+            body = res.body;
+            messages = parseChannelPage(body).slice(-30);
+          }
         }
-        const messages = parseChannelPage(body, channel).slice(-30);
+        if (!messages.length) throw new Error("页面解析不到消息（频道不存在或页面结构变化）");
+
         ctx.log(channel + " parsed " + messages.length + " messages");
         ok += 1;
         for (const m of messages) {
@@ -62,6 +66,7 @@ export const telegramCollector: Collector = {
             url: url + "/" + m.postId,
             title: firstLine.slice(0, 180),
             summary: m.text.slice(0, 400),
+            content: m.text,
             author: channel,
             publishedAt: parseDate(m.datetime),
             tags: ["telegram", channel],

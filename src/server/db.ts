@@ -100,6 +100,20 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN is_free INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX IF NOT EXISTS idx_items_price ON items(price);
   `,
+
+  /* v5：屏蔽词规则 + 已读标记 */
+  `
+  CREATE TABLE IF NOT EXISTS block_rules (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern    TEXT NOT NULL,
+    mode       TEXT NOT NULL DEFAULT 'keyword',
+    scope      TEXT NOT NULL DEFAULT 'all',
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_block_unique ON block_rules(pattern, scope);
+  ALTER TABLE items ADD COLUMN read_at TEXT;
+  `,
 ];
 
 export function dbPath(): string {
@@ -114,7 +128,9 @@ export function getDb(): DatabaseSync {
   db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
-  db.exec("PRAGMA busy_timeout = 5000;");
+  // 调度器与手动 CLI 是两个进程共用一个 SQLite 文件，写锁竞争时多等一会儿，
+  // 避免出现 "database is locked"（跑一次全量采集要几秒）。
+  db.exec("PRAGMA busy_timeout = 20000;");
   return db;
 }
 

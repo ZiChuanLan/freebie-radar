@@ -89,3 +89,35 @@ test("AI 二审关闭时（默认配置）全链路正常出结果", () => {
   assert.ok(enriched.score >= 40);
   assert.equal(enriched.category, "media");
 });
+
+import { isBlocked, matchBlockRules, PRESET_NOISE_PATTERNS, type BlockRule } from "../src/server/enrich/blocklist.ts";
+import { extractPrice } from "../src/server/enrich/pricing.ts";
+
+test("价格：free shipping 不算白嫖，100 元不算 0 元", () => {
+  const a = extractPrice("13-Oz Cookies $1.96 + Free Shipping", "");
+  assert.equal(a.isFree, false);
+  assert.ok(a.price && a.price > 10);
+
+  const b = extractPrice("100 元耳机推荐指南", "");
+  assert.equal(b.isFree, false);
+});
+
+test("价格：免费领与符号前置正常识别", () => {
+  assert.equal(extractPrice("Epic 免费领 Flotsam", "").isFree, true);
+  assert.equal(extractPrice("新人领 ¥3.5 体验额", "").price, 3.5);
+});
+
+test("屏蔽词：关键词、正则与源作用域", () => {
+  const rules: BlockRule[] = [
+    { id: 1, pattern: "汽车", mode: "keyword", scope: "all", enabled: 1, created_at: "" },
+    { id: 2, pattern: "^(请问|求助)", mode: "regex", scope: "all", enabled: 1, created_at: "" },
+    { id: 3, pattern: "油价", mode: "keyword", scope: "rss-smzdm", enabled: 1, created_at: "" },
+  ];
+  assert.equal(isBlocked({ title: "比亚迪汽车调换", source_id: "rss-ithome" }, rules), true);
+  assert.equal(isBlocked({ title: "请问哪里领额度", source_id: "linuxdo-welfare" }, rules), true);
+  assert.equal(isBlocked({ title: "国际油价跌破 90", source_id: "rss-smzdm" }, rules), true);
+  assert.equal(isBlocked({ title: "国际油价跌破 90", source_id: "v2ex-free" }, rules), false);
+  assert.equal(matchBlockRules({ title: "Epic 免费领游戏", source_id: "epic-free" }, rules), null);
+  assert.ok(PRESET_NOISE_PATTERNS.length >= 10);
+});
+

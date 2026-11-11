@@ -82,10 +82,19 @@ const NOISE_PATTERNS = [/怎么(?:领取|申请|弄|搞)/, /有没有/, /求(?:�
 const SOURCE_BONUS: Record<string, number> = {
   "linuxdo-welfare": 8,
   "v2ex-free": 8,
+  "epic-free": 8,
+  "gamerpower": 7,
+  "rss-isthereanydeal": 7,
+  "cheapshark-free": 6,
+  "rss-sharewareonsale": 6,
+  "rss-tickcoupon": 6,
+  "tg-freegames": 6,
+  "bsky-gamedeals": 5,
+  "rss-nodeseek": 5,
   "linuxdo-resource": 4,
   "github-free-for-dev": 3,
   "rss-fuliba": 2,
-  "tg-channel": 3,
+  "tg-cn-deals": 4,
 };
 
 export type EnrichedItem = RawItem & {

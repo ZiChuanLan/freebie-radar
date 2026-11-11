@@ -1,6 +1,7 @@
 import { config } from "./config.ts";
 import { all, get, run } from "./db.ts";
 import { CATEGORY_LABEL } from "./enrich/index.ts";
+import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 
 export type DigestItem = {
   id: number;
@@ -55,7 +56,8 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   );
 
   const pushed = alreadyPushed(dayKey(date));
-  const fresh = rows.filter((r) => !pushed.has(r.id));
+  const rules = loadActiveBlockRules();
+  const fresh = rows.filter((r) => !pushed.has(r.id) && !isBlocked(r, rules));
 
   // 质量门槛：精选必须既是高分，标题里也真的带「免费/领取/限额」这类福利信号，
   // 否则「豆包月卡不够用了」这种讨论帖会混进日报。

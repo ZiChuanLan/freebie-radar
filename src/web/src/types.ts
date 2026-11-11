@@ -8,28 +8,40 @@ export type Item = {
   author: string | null;
   category: string | null;
   tags: string[];
+  codes: string[];
+  content: string | null;
+  price: number | null;
+  is_free: number;
+  matched: string[];
+  blockedBy?: string | null;
   score: number;
   expires_at: string | null;
   published_at: string | null;
+  pushed_at: string | null;
+  read_at?: string | null;
+  read: boolean;
   status: string;
   starred: boolean;
   ai: { keep?: boolean; reason?: string; category?: string } | null;
-  matched?: string[];
-  codes?: string[];
-  content?: string | null;
-  pushed_at?: string | null;
-  price?: number | null;
-  is_free?: number;
   first_seen_at: string;
   last_seen_at: string;
 };
 
 export type Stats = {
-  totals: { total: number; active: number; starred: number; expired: number; last24h: number };
+  totals: {
+    total: number;
+    active: number;
+    starred: number;
+    expired: number;
+    withCodes: number;
+    unread: number;
+    last24h: number;
+    blockRules: number;
+  };
   byCategory: { category: string | null; n: number }[];
   bySource: { source_id: string; n: number }[];
-  features: { ai: boolean; push: boolean; pushChannel: string };
   price?: { free: number; under5: number; under10: number; known: number };
+  features: { ai: boolean; push: boolean; pushChannel: string };
 };
 
 export type Source = {
@@ -37,6 +49,8 @@ export type Source = {
   name: string;
   kind: string;
   enabled: boolean;
+  interval_sec: number;
+  config: Record<string, unknown>;
   last_run_at: string | null;
   last_status: string | null;
   last_error: string | null;
@@ -57,18 +71,26 @@ export type Run = {
   error: string | null;
 };
 
-export type ItemsQuery = {
-  search?: string;
-  source?: string;
-  category?: string;
-  sort?: string;
-  status?: string;
-  starred?: string;
-  unexpired?: string;
-  subscribed?: string;
-  expiring?: string;
-  maxPrice?: string;
-  freeOnly?: string;
-  limit?: number;
-  offset?: number;
+export type BlockRule = {
+  id: number;
+  pattern: string;
+  mode: "keyword" | "regex";
+  scope: string;
+  enabled: boolean;
+  created_at: string;
+  hits: number;
+};
+
+export type BlockPreset = {
+  pattern: string;
+  mode: "keyword" | "regex";
+  scope: string;
+  note: string;
+};
+
+export type Subscription = {
+  id: number;
+  keyword: string;
+  created_at: string;
+  last_hit_at: string | null;
 };

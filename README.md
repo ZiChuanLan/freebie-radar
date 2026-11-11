@@ -51,6 +51,30 @@ curl http://127.0.0.1:8788/health
 docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/server/cli.ts collect
 ```
 
+## 界面与功能一览
+
+| 页面 | 能做什么 |
+|---|---|
+| 资源流 | 源按四组折叠（国内社区 / 游戏喜加一 / 软件·AI·开源 / 综合羊毛）；卡片与紧凑两种视图；按价格、时间、未读、含码、订阅命中筛选；一键导出 Markdown |
+| 每日精选 | 按日期查看历史日报文本与当日条目，标了是否已推送 Telegram |
+| 订阅与屏蔽 | 关键词订阅 + **屏蔽词防火墙**（关键词/正则、全局或单源生效、可看每条命中数、可抽查被拦条目、可一键导入 12 条常见噪音词） |
+| 运维 | 全部源的开关 / 采集间隔（60 秒~6 小时）/ 立即采集 / 错误状态；**添加任意自定义 RSS**；发 Telegram 测试消息 |
+
+每张卡片右上角三个按钮：详情（含正文快照）、收藏、**快捷屏蔽**（自动把标题切成候选词，点一下加规则）。兑换码是黄色胶囊，点一下就复制。
+
+```bash
+# 屏蔽词 API
+curl -X POST '.../api/block-rules' -H 'content-type: application/json' -d '{"presets":true}'          # 导入预设
+curl -X POST '.../api/block-rules' -H 'content-type: application/json' -d '{"pattern":"汽车","scope":"all"}'
+curl '.../api/block-rules'            # 每条规则的命中条数与总拦截量
+curl '.../api/items?includeBlocked=1' # 连同被屏蔽的一起看（会标明 blockedBy）
+
+# 源管理
+curl -X POST '.../api/sources' -H 'content-type: application/json' -d '{"name":"某博客","url":"https://x.com/feed","intervalSec":1800}'
+curl -X PATCH '.../api/sources/epic-free' -H 'content-type: application/json' -d '{"interval_sec":900}'
+curl -X POST '.../api/sources/epic-free/collect'   # 立即采集
+```
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |

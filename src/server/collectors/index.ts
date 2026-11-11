@@ -14,11 +14,13 @@ import { gamerpowerCollector } from "./gamerpower.ts";
 import { epicCollector } from "./epic.ts";
 import { gogCollector } from "./gog.ts";
 import { steamCollector } from "./steam.ts";
+import { cheapsharkCollector } from "./cheapshark.ts";
+import { bskyCollector } from "./bsky.ts";
 import type { Collector, RawItem, SourceSeed } from "./types.ts";
 
 export const COLLECTORS: Collector[] = [
   mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector,
-  gamerpowerCollector, epicCollector, gogCollector, steamCollector,
+  gamerpowerCollector, epicCollector, gogCollector, steamCollector, cheapsharkCollector, bskyCollector,
 ];
 const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
@@ -59,6 +61,33 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-hnrss", name: "Hacker News（100+ 分）", kind: "rss", enabled: true, config: { feeds: [{ id: "hnrss", url: "https://hnrss.org/frontpage?points=100", limit: 25 }] } },
   { id: "rss-freebieshark", name: "FreebieShark 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "freebieshark", url: "https://www.freebieshark.com/feed/", limit: 25 }] } },
   { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: true, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
+  // === 第二/三批补充：游戏喜加一 / V2EX / NodeSeek / 软件限免 / AI / Bluesky(X镜像) / TG 频道 ===
+  { id: "cheapshark-free", name: "CheapShark · 免费与 ≤$1 游戏", kind: "cheapshark", enabled: true, intervalSec: 900, config: { upperPrice: 1, pageSize: 40 } },
+  { id: "rss-isthereanydeal", name: "IsThereAnyDeal · 喜加一", kind: "rss", enabled: true, intervalSec: 900, config: { feeds: [{ id: "itad", url: "https://isthereanydeal.com/feeds/US/giveaways.rss", limit: 30 }] } },
+  { id: "rss-indiegamebundles", name: "IndieGameBundles · 免费游戏", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "indiegamebundles", url: "https://www.indiegamebundles.com/category/free/feed/", limit: 25 }] } },
+  { id: "rss-ggdeals", name: "GG.deals · 免费与动态", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "ggdeals", url: "https://gg.deals/news/feed/", limit: 25 }] } },
+  { id: "rss-reddit-freegamesonsteam", name: "Reddit · FreeGamesOnSteam", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "freegamesonsteam", url: "https://www.reddit.com/r/FreeGamesOnSteam/hot.rss", limit: 30 }] } },
+  { id: "tg-freegames", name: "TG · 免费游戏情报", kind: "telegram", enabled: true, intervalSec: 300, config: { channels: ["FreeGamesInfo", "freegamesnews"] } },
+  { id: "tg-cn-deals", name: "TG · 中文科技/VPS/羊毛", kind: "telegram", enabled: true, intervalSec: 300, config: { channels: ["nodeseekc", "zaihuapd", "vps_offers"] } },
+  { id: "bsky-gamedeals", name: "Bluesky · 游戏限免大号", kind: "bsky", enabled: true, intervalSec: 600, config: { actors: ["freegamefindings.bsky.social", "freegamealert.bsky.social", "wario64.bsky.social", "cheapassgamer.com", "dekudeals.com", "steamdb.bsky.social"], limitPerActor: 10 } },
+  { id: "bsky-plugins", name: "Bluesky · 免费插件与综合", kind: "bsky", enabled: true, intervalSec: 1800, config: { actors: ["plugindeals.net", "frugalfreebies.bsky.social", "freebies.bsky.social"], limitPerActor: 10 } },
+  { id: "v2ex-deals", name: "V2EX · 优惠信息", kind: "v2ex", enabled: true, intervalSec: 300, config: { node: "deals" } },
+  { id: "v2ex-share", name: "V2EX · 分享发现", kind: "v2ex", enabled: true, intervalSec: 600, config: { node: "share" } },
+  { id: "v2ex-promotions", name: "V2EX · 推广与注册送", kind: "v2ex", enabled: true, intervalSec: 600, config: { node: "promotions" } },
+  { id: "v2ex-cloud", name: "V2EX · 云计算", kind: "v2ex", enabled: true, intervalSec: 1800, config: { node: "cloud" } },
+  { id: "rss-nodeseek", name: "NodeSeek · 官方动态", kind: "rss", enabled: true, intervalSec: 180, config: { feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", limit: 30 }] } },
+  { id: "rss-lowendbox", name: "LowEndBox · VPS 优惠", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "lowendbox", url: "https://lowendbox.com/feed/", limit: 20 }] } },
+  { id: "rss-sharewareonsale", name: "SharewareOnSale · 正版限免", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25 }] } },
+  { id: "rss-tickcoupon", name: "TickCoupon · 终身软件限免", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "tickcoupon", url: "https://giveaway.tickcoupon.com/feed/", limit: 20 }] } },
+  { id: "rss-iplaysoft", name: "异次元软件世界", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "iplaysoft", url: "https://www.iplaysoft.com/feed", limit: 25 }] } },
+  { id: "rss-iapps", name: "翻应用 · App 工具", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "iapps", url: "https://www.iapps.me/feed", limit: 20 }] } },
+  { id: "rss-ruanyifeng", name: "阮一峰 · 科技爱好者周刊", kind: "rss", enabled: true, intervalSec: 21600, config: { feeds: [{ id: "ruanyifeng", url: "https://www.ruanyifeng.com/blog/atom.xml", limit: 10 }] } },
+  { id: "rss-vonbeau", name: "VonBeau · 免费样品", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "vonbeau", url: "https://www.vonbeau.com/feed/", limit: 30 }] } },
+  { id: "rss-hip2save", name: "Hip2Save · 美国羊毛", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "hip2save", url: "https://hip2save.com/feed/", limit: 30 }] } },
+  { id: "rss-ozbargain", name: "OzBargain · 澳区好价", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "ozbargain", url: "https://www.ozbargain.com.au/feed", limit: 25 }] } },
+  { id: "github-public-apis", name: "GitHub · 免费公开 API", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "public-apis/public-apis", limit: 40 }] } },
+  { id: "github-awesome-ai", name: "GitHub · AI 工具清单", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "mahseema/awesome-ai-tools", limit: 40 }] } },
+  { id: "github-selfhosted", name: "GitHub · 开源自托管清单", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "awesome-selfhosted/awesome-selfhosted", limit: 40 }] } },
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
 
@@ -373,8 +402,26 @@ export async function runAll(
       (options.log ?? console.log)(`[collect] ${id} 启动失败: ${message}`);
       out.push({ sourceId: id, status: "failed", fetched: 0, inserted: 0, skipped: 0, durationMs: 0, error: message, cursor: null });
     }
-  }
     // 源之间留间隔：Reddit 一类站点对同 IP 连续请求会返回 429
     if (config.sourceGapMs > 0) await new Promise((r) => setTimeout(r, config.sourceGapMs));
+  }
   return out;
+}
+
+export function addCustomRssSource(input: { id?: string; name: string; url: string; intervalSec?: number }): string {
+  const cleanUrl = input.url.trim();
+  const slug = (input.id || input.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+  const id = slug.startsWith("rss-") ? slug : "rss-" + (slug || Date.now());
+  const feedId = id.replace(/^rss-/, "");
+  run(
+    `INSERT INTO sources (id, name, kind, enabled, config, interval_sec, created_at)
+     VALUES (?, ?, 'rss', 1, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, config = excluded.config, interval_sec = excluded.interval_sec, enabled = 1`,
+    id,
+    input.name.trim(),
+    JSON.stringify({ feeds: [{ id: feedId, url: cleanUrl, limit: 30 }] }),
+    input.intervalSec ?? 1800,
+    new Date().toISOString(),
+  );
+  return id;
 }

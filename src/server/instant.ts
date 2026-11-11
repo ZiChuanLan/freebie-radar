@@ -2,6 +2,7 @@ import { config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
 import { URGENT } from "./enrich/codes.ts";
 import { sendTelegram } from "./digest.ts";
+import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import type { FreshItem } from "./collectors/index.ts";
 
 /** 每小时最多推几条即时消息，避免刷屏。 */
@@ -41,7 +42,8 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   const pushedLastHour = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ?", since)?.n ?? 0;
   if (pushedLastHour >= MAX_PER_HOUR) return 0;
 
-  const picked = fresh
+  const rules = loadActiveBlockRules();
+  const picked = fresh.filter((it) => !isBlocked({ ...it, sourceId }, rules))
     .map((it) => ({ it, ...decide(it) }))
     .filter((x) => x.push)
     .slice(0, Math.min(5, MAX_PER_HOUR - pushedLastHour));

@@ -1,0 +1,12 @@
+import { chromium } from "playwright";
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const log = [];
+page.on("pageerror", (e) => log.push("PAGEERR " + e.message.slice(0, 300)));
+page.on("console", (m) => { if (m.type() === "error") log.push("CONSOLE " + m.text().slice(0, 300)); });
+page.on("response", async (r) => { if (r.url().includes("/assets/")) log.push(r.status() + " " + r.url().split("/").pop()); });
+await page.goto("http://10.144.144.6:8788/", { waitUntil: "domcontentloaded", timeout: 90000 });
+await page.waitForTimeout(9000);
+console.log(log.join("\n"));
+console.log("root:", await page.evaluate(() => (document.getElementById("root")?.innerHTML || "").length));
+await browser.close();
