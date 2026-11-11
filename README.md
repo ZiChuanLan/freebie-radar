@@ -92,6 +92,7 @@ HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里�
 - profile 目录默认 `%LOCALAPPDATA%\freebie-radar-chrome`，可用 `PROFILE_DIR` 覆盖；登录一次即持久化，之后无需重复登录。
 - 顶部常量可选环境变量覆盖：`SERVER_URL` / `INGEST_TOKEN`，服务器端需配置同名 `INGEST_TOKEN`。
 - 关键词列表在脚本的 `KEYWORDS`；小红书会自动滚动 3 屏加载更多。
+- 定时：这三站由本机跑，需要配合 Windows 任务计划程序（例如 `schtasks /create /tn freebie-local /tr "node H:\WorkSpace\freebie-radar\scripts\pw-collect.mjs" /sc hourly`）；服务器端只负责抓不需要登录的源。
 
 ## 加一个新源
 
