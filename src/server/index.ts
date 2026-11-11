@@ -9,7 +9,7 @@ import { getDb, migrate } from "./db.ts";
 import { registerApi } from "./routes.ts";
 import { runAll } from "./collectors/index.ts";
 import { runDaily } from "./digest.ts";
-import { startScheduler } from "./cron.ts";
+import { startIntervalScheduler, startScheduler } from "./cron.ts";
 
 migrate();
 const app = new Hono();
@@ -36,8 +36,11 @@ if (existsSync(webDist)) {
 }
 
 if (config.enableScheduler) {
+  // 采集：每个源按自己的 interval_sec 轮询（linux.do 90 秒，RSS 15 分钟，GitHub 6 小时）
+  startIntervalScheduler();
+  // 日报：仍然按 DAILY_CRON 触发
   startScheduler({
-    collect: () => runAll(),
+    collect: async () => undefined,
     daily: () => runDaily(),
   });
 }

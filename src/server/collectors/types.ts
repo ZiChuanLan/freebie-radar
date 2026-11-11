@@ -11,6 +11,8 @@ export type RawItem = {
   tags?: string[];
   /** 来源自带的结构化分类提示（例如 GitHub 清单的分节名） */
   categoryHint?: string | null;
+  /** 正文全文（可选，用于抽取兑换码与留档，避免原帖被删后信息丢失） */
+  content?: string | null;
   raw?: unknown;
 };
 
@@ -19,6 +21,8 @@ export type SourceSeed = {
   name: string;
   kind: string;
   enabled?: boolean;
+  /** 采集间隔（秒）。越小越及时；送码类源建议 60-120 秒 */
+  intervalSec?: number;
   config?: Record<string, unknown>;
 };
 

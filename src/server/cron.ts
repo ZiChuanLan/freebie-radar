@@ -1,4 +1,6 @@
 import { config } from "./config.ts";
+import { all } from "./db.ts";
+import { runSource } from "./collectors/index.ts";
 
 /** 极简 5 段 cron 匹配：分 时 日 月 周；支持 * , - /。 */
 export function matchCron(expr: string, date: Date, utc = false): boolean {
@@ -30,6 +32,56 @@ export function matchField(field: string, value: number, min: number, max: numbe
   return false;
 }
 
+
+/**
+ * 按每个源自己的 interval_sec 轮询：到点就跑，串行执行避免打爆上游。
+ * 送码类源设 60-120 秒，日报/清单类源设几小时。
+ */
+export function startIntervalScheduler(task: {
+  log?: (m: string) => void;
+  tickMs?: number;
+} = {}): void {
+  const log = task.log ?? ((m: string) => console.log(m));
+  const tickMs = task.tickMs ?? 30_000;
+  let busy = false;
+
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const due = all<{ id: string; interval_sec: number; last_run_at: string | null }>(
+        `SELECT id, interval_sec, last_run_at FROM sources
+          WHERE enabled = 1 AND kind != 'ingest'
+            AND (last_run_at IS NULL OR datetime(last_run_at, '+' || interval_sec || ' seconds') <= datetime('now'))
+          ORDER BY last_run_at IS NOT NULL, last_run_at ASC`,
+      );
+      for (const s of due) {
+        try {
+          await runSource(s.id);
+        } catch (err) {
+          log(`[cron] ${s.id} 失败: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      log(`[cron] 调度异常: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      busy = false;
+    }
+  };
+
+  void tick();
+  const timer = setInterval(() => void tick(), tickMs);
+  timer.unref?.();
+  intervalTimer = timer;
+  log(`[cron] interval scheduler started (tick=${tickMs}ms)`);
+}
+
+let intervalTimer: NodeJS.Timeout | null = null;
+
+export function stopIntervalScheduler(): void {
+  if (intervalTimer) clearInterval(intervalTimer);
+  intervalTimer = null;
+}
 let timer: NodeJS.Timeout | null = null;
 let lastKey = "";
 

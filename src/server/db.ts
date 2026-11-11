@@ -80,8 +80,18 @@ const MIGRATIONS: string[] = [
     keyword     TEXT NOT NULL UNIQUE,
     created_at  TEXT NOT NULL,
     last_hit_at TEXT
+
   );
   CREATE INDEX IF NOT EXISTS idx_subs_keyword ON subscriptions(keyword);
+  `,
+
+  /* v3：时效性 —— 每源采集间隔、正文快照、抽取到的兑换码 */
+  `
+  ALTER TABLE sources ADD COLUMN interval_sec INTEGER NOT NULL DEFAULT 10800;
+  ALTER TABLE items ADD COLUMN content TEXT;
+  ALTER TABLE items ADD COLUMN codes TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE items ADD COLUMN pushed_at TEXT;
+  CREATE INDEX IF NOT EXISTS idx_items_codes ON items(codes);
   `,
 ];
 

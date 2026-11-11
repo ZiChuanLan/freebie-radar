@@ -107,7 +107,7 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
   return lines.join("\n");
 }
 
-async function sendTelegram(text: string): Promise<void> {
+export async function sendTelegram(text: string): Promise<void> {
   const base = config.telegramApiBase.replace(/\/+$/, "");
   const url = base + "/bot" + config.telegramBotToken + "/sendMessage";
   const init: RequestInit & { dispatcher?: unknown } = {

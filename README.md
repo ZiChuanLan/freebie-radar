@@ -70,6 +70,24 @@ docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/s
 | `TELEGRAM_PROXY` | 空 | 推送单独走代理（本机直连不上 api.telegram.org） |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 空 | 可选 AI 二审，走 OpenAI 兼容 `/chat/completions` |
 
+## 时效性：送码类资源的抢速设计
+
+送码 / 送邀请码的帖子，码往往 **1 分钟内**就被抢光。本项目为此做了四层设计（细节见 `docs/timing.md`）：
+
+| 机制 | 说明 |
+|---|---|
+| 每源独立间隔 | `linuxdo-welfare` 90 秒、`v2ex-free` 120 秒、`linuxdo-resource` 180 秒，RSS 15-30 分钟，GitHub 6 小时 |
+| 即时推送 | 新条目若含兑换码 / 限量词 / 评分 ≥ 70，立刻发 Telegram，不等日报（每小时上限 24 条） |
+| 兑换码抽取 | 自动识别邀请码、分段码、长串码，前端点一下就复制 |
+| 正文快照 | 抓 linux.do 首帖正文存库，原帖被改被删也留档 |
+
+调整某个源的频率（秒）：
+
+```bash
+# 直接用 sqlite 改，或给该源改 config
+docker compose exec radar node -e "const{DatabaseSync}=require('node:sqlite');new DatabaseSync('/data/radar.db').prepare('UPDATE sources SET interval_sec=? WHERE id=?').run(60,'linuxdo-welfare')"
+```
+
 ## 订阅与提醒
 
 左侧栏「我的订阅」可以加任意关键词（如 `epic`、`会员`、`Claude`），命中订阅的条目：

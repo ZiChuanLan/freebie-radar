@@ -1,5 +1,6 @@
 import { flaresolverrGet, hasFlare } from "../flaresolverr.ts";
 import type { Collector, RawItem } from "./types.ts";
+import { cleanText } from "../enrich/normalize.ts";
 
 type TopicTag = string | { name?: string; slug?: string };
 type Topic = {
@@ -61,6 +62,22 @@ export const linuxdoCollector: Collector = {
       tags: tagNames(t.tags),
       raw: { id: t.id, categoryId: t.category_id, views: t.views, likes: t.like_count },
     }));
+
+    // 可选：抓最新几帖的正文并抽取兑换码。
+    // 送码帖 1 分钟内就没了，正文快照能让历史记录不丢内容，也让码抽取更准。
+    if (ctx.config.fetchContent) {
+      const targets = items.slice(0, Math.max(1, Math.min(Number(ctx.config.fetchContentLimit ?? 5), 8)));
+      for (const it of targets) {
+        try {
+          const detail = await flaresolverrGet("https://linux.do/t/" + it.externalId + ".json");
+          const parsed = JSON.parse(detail.body) as { post_stream?: { posts?: { cooked?: string }[] } };
+          const cooked = parsed.post_stream?.posts?.[0]?.cooked ?? "";
+          it.content = cleanText(cooked, 2000);
+        } catch (err) {
+          ctx.log("正文抓取失败 " + it.externalId + ": " + (err instanceof Error ? err.message : String(err)));
+        }
+      }
+    }
 
     const cursor = topics.length ? String(Math.max(...topics.map((t) => t.id))) : ctx.cursor;
     return { items: items.slice(0, ctx.maxItems), cursor };

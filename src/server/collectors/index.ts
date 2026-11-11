@@ -2,6 +2,7 @@ import { aiEnabled, config } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
 import { enrichItem } from "../enrich/index.ts";
 import { reviewItems, type AiVerdict } from "../enrich/ai.ts";
+import { pushInstant } from "../instant.ts";
 import { createHttp, type HttpClient } from "../http.ts";
 import { mockCollector } from "./mock.ts";
 import { linuxdoCollector } from "./linuxdo.ts";
@@ -23,9 +24,9 @@ const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
 /** 内置源清单；collector 落地后在此追加。 */
 export const SEEDS: SourceSeed[] = [
-  { id: "linuxdo-welfare", name: "LINUX DO · 福利羊毛", kind: "linuxdo", enabled: true, config: { categoryId: 36 } },
-  { id: "linuxdo-resource", name: "LINUX DO · 资源荟萃", kind: "linuxdo", enabled: true, config: { categoryId: 14 } },
-  { id: "v2ex-free", name: "V2EX · 免费赠送", kind: "v2ex", enabled: true, config: { node: "free" } },
+  { id: "linuxdo-welfare", name: "LINUX DO · 福利羊毛", kind: "linuxdo", enabled: true, intervalSec: 90, config: { categoryId: 36, fetchContent: true } },
+  { id: "linuxdo-resource", name: "LINUX DO · 资源荟萃", kind: "linuxdo", enabled: true, intervalSec: 180, config: { categoryId: 14 } },
+  { id: "v2ex-free", name: "V2EX · 免费赠送", kind: "v2ex", enabled: true, intervalSec: 120, config: { node: "free" } },
   { id: "github-free-for-dev", name: "GitHub · free-for-dev", kind: "github-readme", enabled: true, config: { repos: [{ repo: "ripienaar/free-for-dev", limit: 60 }] } },
   { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: true, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
   { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: true, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
@@ -34,12 +35,12 @@ export const SEEDS: SourceSeed[] = [
   { id: "xhs-search", name: "小红书 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
   { id: "xiaoheihe-search", name: "小黑盒 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费" } },
   { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
-  { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, config: { query: "type=game", limit: 60 } },
+  { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, intervalSec: 900, config: { query: "type=game", limit: 60 } },
   // GOG 的 catalog API 不支持 discount=100 / price=free 筛选（实测都返回普通折扣游戏），
   // 商店页是 Angular SSR，解析成本高、单周通常只有 0-1 个免费，先禁用。
   { id: "gog-free", name: "GOG · 限时免费", kind: "gog", enabled: false, config: {} },
-  { id: "steam-free", name: "Steam · 限时免费", kind: "steam", enabled: true, config: { count: 50 } },
-  { id: "epic-free", name: "Epic Games · 喜加一", kind: "epic", enabled: true, config: { includeUpcoming: true } },
+  { id: "steam-free", name: "Steam · 限时免费", kind: "steam", enabled: true, intervalSec: 1800, config: { count: 50 } },
+  { id: "epic-free", name: "Epic Games · 喜加一", kind: "epic", enabled: true, intervalSec: 3600, config: { includeUpcoming: true } },
   { id: "rss-reddit-freegames", name: "Reddit · FreeGameFindings", kind: "rss", enabled: true, config: { feeds: [{ id: "freegamefindings", url: "https://www.reddit.com/r/FreeGameFindings/hot.rss", limit: 40 }] } },
   { id: "rss-reddit-efreebies", name: "Reddit · eFreebies", kind: "rss", enabled: true, config: { feeds: [{ id: "efreebies", url: "https://www.reddit.com/r/efreebies/hot.rss", limit: 40 }] } },
   { id: "rss-reddit-gamedeals", name: "Reddit · GameDeals", kind: "rss", enabled: true, config: { feeds: [{ id: "gamedeals", url: "https://www.reddit.com/r/GameDeals/hot.rss", limit: 30 }] } },
@@ -117,14 +118,15 @@ export function ensureSources(seeds: SourceSeed[] = SEEDS): void {
   const now = new Date().toISOString();
   for (const s of seeds) {
     run(
-      `INSERT INTO sources (id, name, kind, enabled, config, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO sources (id, name, kind, enabled, config, interval_sec, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind`,
       s.id,
       s.name,
       s.kind,
       s.enabled === false ? 0 : 1,
       JSON.stringify(s.config ?? {}),
+      s.intervalSec ?? 10800,
       now,
     );
   }
@@ -141,12 +143,21 @@ export type RunSummary = {
   cursor: string | null;
 };
 
+export type FreshItem = {
+  id: number;
+  title: string;
+  url: string;
+  score: number;
+  codes: string[];
+  expiresAt: string | null;
+};
 function persist(
   sourceId: string,
   items: RawItem[],
   aiMap?: Map<number, AiVerdict> | null,
-): { inserted: number; skipped: number } {
+): { inserted: number; skipped: number; fresh: FreshItem[] } {
   let inserted = 0;
+  const fresh: FreshItem[] = [];
   let skipped = 0;
   const now = new Date().toISOString();
 
@@ -196,10 +207,10 @@ function persist(
         continue;
       }
       try {
-        run(
+        const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, summary, author, category,
-             tags, score, expires_at, published_at, raw, status, ai, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             tags, score, expires_at, published_at, raw, status, ai, content, codes, first_seen_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
@@ -215,10 +226,13 @@ function persist(
           JSON.stringify(e.raw ?? {}),
           status,
           aiJson,
+          e.content ?? null,
+          JSON.stringify(e.codes),
           now,
           now,
         );
         inserted += 1;
+        fresh.push({ id: Number(res.lastInsertRowid), title: e.title, url: e.url, score, codes: e.codes, expiresAt: e.expiresAt });
       } catch (err) {
         if (/UNIQUE/i.test(String(err))) {
           skipped += 1;
@@ -229,7 +243,7 @@ function persist(
     }
   });
 
-  return { inserted, skipped };
+  return { inserted, skipped, fresh };
 }
 
 export async function runSource(
@@ -290,6 +304,8 @@ export async function runSource(
     const saved = persist(sourceId, result.items, aiMap);
     inserted = saved.inserted;
     skipped = saved.skipped;
+    // 有新条目就立刻判断是否值得即时推送（送码类 1 分钟就没了）
+    if (saved.fresh.length) await pushInstant(sourceId, saved.fresh);
     if (result.cursor !== undefined) cursor = result.cursor;
     if (result.degraded) {
       status = "degraded";

@@ -15,6 +15,9 @@ export type Item = {
   starred: boolean;
   ai: { keep?: boolean; reason?: string; category?: string } | null;
   matched?: string[];
+  codes?: string[];
+  content?: string | null;
+  pushed_at?: string | null;
   first_seen_at: string;
   last_seen_at: string;
 };

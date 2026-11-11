@@ -161,6 +161,17 @@ function ItemCard({ item, onPatch, onOpen }: { item: Item; onPatch: (id: number,
             {item.matched && item.matched.length > 0 && (
               <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-medium text-amber-300">
                 订阅命中：{item.matched.join(" / ")}
+            {(item.codes ?? []).map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void navigator.clipboard?.writeText(code); }}
+                className="rounded-md border border-amber-400/50 bg-amber-400/15 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-amber-200 hover:bg-amber-400/25"
+                title="点击复制"
+              >
+                {code}
+              </button>
+            ))}
               </span>
             )}
             {item.tags.slice(0, 6).map((t) => (
@@ -330,6 +341,30 @@ function ItemDetail({ item, onClose, onPatch }: { item: Item; onClose: () => voi
 
         <h2 className="text-[17px] leading-snug font-semibold">{item.title}</h2>
         {item.summary && <p className="mt-3 text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink-300">{item.summary}</p>}
+
+        {item.codes && item.codes.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5">
+            <span className="text-[11.5px] text-amber-300">兑换码</span>
+            {item.codes.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => void navigator.clipboard?.writeText(code)}
+                className="rounded-md border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 font-mono text-[12px] font-semibold text-amber-200 hover:bg-amber-400/25"
+                title="点击复制"
+              >
+                {code}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {item.content && item.content !== item.summary && (
+          <div className="mt-3 rounded-lg bg-ink-900/70 p-3">
+            <div className="mb-1 text-[11px] text-ink-500">正文快照（原帖被删或被改也留档）</div>
+            <p className="max-h-[260px] overflow-auto text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-300">{item.content}</p>
+          </div>
+        )}
 
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
           <div><dt className="text-ink-500">首次收录</dt><dd className="text-ink-300">{item.first_seen_at.replace("T", " ").slice(0, 19)}</dd></div>
