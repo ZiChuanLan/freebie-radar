@@ -134,8 +134,9 @@ async function main() {
           reviewed += 1;
           if (!v.keep) rejected += 1;
           run(
-            "UPDATE items SET ai = ?, score = ?, category = ? WHERE id = ?",
+            "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ? WHERE id = ?",
             JSON.stringify(v),
+            v.keep ? 1 : 0,
             v.keep ? row.score : Math.round(row.score * 0.5),
             v.category || row.category,
             row.id,

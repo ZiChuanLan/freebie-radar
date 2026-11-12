@@ -1,8 +1,8 @@
-import { config, pushEnabled } from "./config.ts";
+import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
 import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
-import { sendTelegram } from "./digest.ts";
+import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
 
 /* ------------------------------------------------------------------ *
@@ -28,9 +28,9 @@ export type PushSettings = {
   batchIntervalMin: number;
   /** 一批最多合并几条 */
   maxPerBatch: number;
-  /** 静默时段 "23:00-08:00"，静默期内的立即推送转入攒批 */
+  /** 静默时段 "23:30-08:00"，静默期内的立即推送转入攒批 */
   quietHours: string;
-  /** 静默时段按哪个时区算（容器默认 UTC，差 8 小时会把静默跑到白天去） */
+  /** 静默时段按哪个时区算 */
   timezone: string;
   /** 语言偏好：all 全部 / zh 只看中文 / en 只看英文 */
   langMode: "all" | "zh" | "en";
@@ -40,6 +40,16 @@ export type PushSettings = {
   includeDeadline: boolean;
   /** 是否按标题去重（同一游戏被多个源报道只推一次） */
   dedupeByTitle: boolean;
+  /** 最高价格上限：null 不限 / 0 仅完全白嫖 / 正数为人民币上限 */
+  maxPrice: number | null;
+  /** 只推 AI 判定真福利（以及无 AI 结论时的强福利信号） */
+  onlyAiKeep: boolean;
+  /** 允许推送的分类白名单；空数组表示全部允许 */
+  categories: string[];
+  /** 命中「我的订阅」关键词时优先走即时推送 */
+  prioritizeSubscribed: boolean;
+  /** 将价格、分类、语言、AI 筛选同步应用到每日精选 */
+  applyToDigest: boolean;
 };
 
 export const DEFAULT_SETTINGS: PushSettings = {
@@ -58,9 +68,15 @@ export const DEFAULT_SETTINGS: PushSettings = {
   includePrice: true,
   includeDeadline: true,
   dedupeByTitle: true,
+  maxPrice: null,
+  onlyAiKeep: true,
+  categories: [],
+  prioritizeSubscribed: true,
+  applyToDigest: true,
 };
 
 const SETTINGS_KEY = "push";
+const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "software", "media", "game", "goods", "invite", "edu", "other"]);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
   const n = Number(v);
@@ -68,56 +84,66 @@ function numOr(v: unknown, fallback: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(n), min), max);
 }
 
+function normalizeMaxPrice(v: unknown): number | null {
+  if (v === null || v === undefined || v === "" || v === "all") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(Math.round(n * 100) / 100, 10000);
+}
+
+function normalizeCategories(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_CATEGORIES.has(x)))];
+}
+
+function normalizeSettings(raw: Partial<PushSettings>): PushSettings {
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_SETTINGS.enabled,
+    instantScore: numOr(raw.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
+    batchScore: numOr(raw.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
+    instantOnCodes: raw.instantOnCodes !== false,
+    instantOnUrgent: raw.instantOnUrgent !== false,
+    maxPerHour: numOr(raw.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
+    maxPerInstant: numOr(raw.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
+    batchIntervalMin: numOr(raw.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
+    maxPerBatch: numOr(raw.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
+    quietHours: typeof raw.quietHours === "string" ? raw.quietHours : DEFAULT_SETTINGS.quietHours,
+    timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : DEFAULT_SETTINGS.timezone,
+    langMode: raw.langMode === "zh" || raw.langMode === "en" ? raw.langMode : "all",
+    includePrice: raw.includePrice !== false,
+    includeDeadline: raw.includeDeadline !== false,
+    dedupeByTitle: raw.dedupeByTitle !== false,
+    maxPrice: "maxPrice" in raw ? normalizeMaxPrice(raw.maxPrice) : DEFAULT_SETTINGS.maxPrice,
+    onlyAiKeep: raw.onlyAiKeep !== false,
+    categories: "categories" in raw ? normalizeCategories(raw.categories) : DEFAULT_SETTINGS.categories,
+    prioritizeSubscribed: raw.prioritizeSubscribed !== false,
+    applyToDigest: raw.applyToDigest !== false,
+  };
+}
+
 export function getPushSettings(): PushSettings {
   const row = get<{ value: string }>("SELECT value FROM settings WHERE key = ?", SETTINGS_KEY);
   if (!row) return { ...DEFAULT_SETTINGS };
   try {
-    const raw = JSON.parse(row.value) as Partial<PushSettings>;
-    return {
-      enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_SETTINGS.enabled,
-      instantScore: numOr(raw.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
-      batchScore: numOr(raw.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
-      instantOnCodes: raw.instantOnCodes !== false,
-      instantOnUrgent: raw.instantOnUrgent !== false,
-      maxPerHour: numOr(raw.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
-      maxPerInstant: numOr(raw.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
-      batchIntervalMin: numOr(raw.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
-      maxPerBatch: numOr(raw.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
-      quietHours: typeof raw.quietHours === "string" ? raw.quietHours : DEFAULT_SETTINGS.quietHours,
-      timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : DEFAULT_SETTINGS.timezone,
-      langMode: raw.langMode === "zh" || raw.langMode === "en" ? raw.langMode : "all",
-      includePrice: raw.includePrice !== false,
-      includeDeadline: raw.includeDeadline !== false,
-      dedupeByTitle: raw.dedupeByTitle !== false,
-    };
+    return normalizeSettings(JSON.parse(row.value) as Partial<PushSettings>);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
 export function savePushSettings(patch: Partial<PushSettings>): PushSettings {
-  const next = { ...getPushSettings(), ...patch } as PushSettings;
-  // 再次过一遍范围限制，避免前端传 0 或负数把推送关死
-  const normalized: PushSettings = {
-    ...next,
-    instantScore: numOr(next.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
-    batchScore: numOr(next.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
-    maxPerHour: numOr(next.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
-    maxPerInstant: numOr(next.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
-    batchIntervalMin: numOr(next.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
-    maxPerBatch: numOr(next.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
-  };
+  const merged = normalizeSettings({ ...getPushSettings(), ...patch });
   run(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     SETTINGS_KEY,
-    JSON.stringify(normalized),
+    JSON.stringify(merged),
     new Date().toISOString(),
   );
-  return normalized;
+  return merged;
 }
 
 /* ------------------------------------------------------------------ *
- * 语言识别 / 标题归一化 / 价格与截止时间格式化
+ * 语言识别 / 标题归一化 / 过滤判定（与前端筛选同源）
  * ------------------------------------------------------------------ */
 
 const CJK = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
@@ -126,7 +152,6 @@ export function detectLang(text: string): "zh" | "en" {
   const cjk = (text.match(CJK) ?? []).length;
   const latin = (text.match(/[A-Za-z]/g) ?? []).length;
   if (cjk === 0) return "en";
-  // 中文占比超过 15% 就当中文（英文标题里偶尔夹一个中文词不算）
   return cjk / Math.max(cjk + latin, 1) > 0.15 ? "zh" : "en";
 }
 
@@ -145,14 +170,61 @@ export function titleKey(title: string): string {
     .join(" ");
 }
 
-const STORE_LABEL: Record<string, string> = {
-  steam: "Steam",
-  epic: "Epic",
-  gog: "GOG",
-  "epic games": "Epic",
-  amazon: "Amazon",
-  humble: "Humble",
-};
+function langAllowed(item: { title: string }, s: PushSettings): boolean {
+  if (s.langMode === "all") return true;
+  return detectLang(item.title) === s.langMode;
+}
+
+export function priceAllowed(item: { price?: number | null; isFree?: boolean }, maxPrice: number | null): boolean {
+  if (maxPrice === null) return true;
+  const free = item.isFree === true || item.price === 0;
+  if (maxPrice === 0) return free;
+  if (free) return true;
+  return typeof item.price === "number" && item.price <= maxPrice;
+}
+
+export function aiAllowed(
+  item: { title: string; score: number; codes: string[]; aiKeep?: boolean | null },
+  onlyAiKeep: boolean,
+): boolean {
+  if (item.aiKeep === false) return false;
+  if (!onlyAiKeep) return true;
+  if (item.aiKeep === true) return true;
+  // 还没有 AI 结论的（比如 AI 未开或本地脚本刚入库）：如果有兑换码或高分+福利信号才放行
+  if (!aiEnabled) return true;
+  return item.codes.length > 0 || (item.score >= 70 && DEAL_HINT.test(item.title));
+}
+
+export function categoryAllowed(category: string | null | undefined, allow: string[]): boolean {
+  if (!allow.length) return true;
+  return Boolean(category && allow.includes(category));
+}
+
+/** 推送与日报共用的筛选检查：语言 / 分类 / 最高价格 / AI 验真。 */
+export function passesPushFilters(
+  item: {
+    title: string;
+    score: number;
+    codes: string[];
+    price?: number | null;
+    isFree?: boolean;
+    aiKeep?: boolean | null;
+    category?: string | null;
+  },
+  s: PushSettings,
+): boolean {
+  if (!langAllowed(item, s)) return false;
+  if (!categoryAllowed(item.category, s.categories)) return false;
+  if (!priceAllowed(item, s.maxPrice)) return false;
+  if (!aiAllowed(item, s.onlyAiKeep)) return false;
+  return true;
+}
+
+function matchSubscriptions(item: { title: string; summary?: string | null }, keywords: string[]): string[] {
+  if (!keywords.length) return [];
+  const text = (item.title + " " + (item.summary ?? "")).toLowerCase();
+  return keywords.filter((k) => text.includes(k.toLowerCase()));
+}
 
 function fmtPrice(item: FreshItem): string | null {
   if (item.isFree) return "免费";
@@ -217,7 +289,6 @@ function parseHHMM(s: string): number | null {
   return h * 60 + min;
 }
 
-/** 判断某一刻是否在静默时段内，支持跨零点（23:30-08:00）。 */
 export function inQuietHours(quiet: string, at = new Date()): boolean {
   const [from, to] = quiet.split("-");
   const a = parseHHMM(from ?? "");
@@ -226,10 +297,9 @@ export function inQuietHours(quiet: string, at = new Date()): boolean {
   const now = at.getHours() * 60 + at.getMinutes();
   if (a === b) return false;
   if (a < b) return now >= a && now < b;
-  return now >= a || now < b; // 跨零点
+  return now >= a || now < b;
 }
 
-/** 取指定时区当前是几点几分（容器里默认 UTC，直接用 getHours 会把静默时段整体偏移）。 */
 function zonedMinutes(timezone: string, at: Date): number {
   try {
     const parts = new Intl.DateTimeFormat("en-GB", {
@@ -246,7 +316,6 @@ function zonedMinutes(timezone: string, at: Date): number {
   }
 }
 
-/** 静默时段按设置里的时区判断。 */
 export function inQuietHoursZoned(quiet: string, timezone: string, at = new Date()): boolean {
   const [from, to] = quiet.split("-");
   const a = parseHHMM(from ?? "");
@@ -264,13 +333,13 @@ export function inQuietHoursZoned(quiet: string, timezone: string, at = new Date
 
 type Decision = { push: boolean; reason: string; urgent: boolean };
 
-function decide(item: FreshItem, s: PushSettings): Decision {
-  // 噪音标题一律不推：即使带「送」字（「球迷送医」）或被评分顶上来
+function decide(item: FreshItem, s: PushSettings, subHits: string[]): Decision {
   if (NOISE_TITLE.test(item.title)) return { push: false, reason: "", urgent: false };
-  // AI 二审说不是福利的，评分再高也不推
   if (item.aiKeep === false) return { push: false, reason: "", urgent: false };
+  if (s.prioritizeSubscribed && subHits.length > 0) {
+    return { push: true, reason: "订阅命中：" + subHits.join("/"), urgent: true };
+  }
   if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: "含兑换码", urgent: true };
-  // 手慢无的也要有个及格线，否则「限时优惠」这种广告词会把新闻顶上来
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
     return { push: true, reason: "限量/限时", urgent: true };
   }
@@ -278,12 +347,6 @@ function decide(item: FreshItem, s: PushSettings): Decision {
   return { push: false, reason: "", urgent: false };
 }
 
-function langAllowed(item: FreshItem, s: PushSettings): boolean {
-  if (s.langMode === "all") return true;
-  return detectLang(item.title) === s.langMode;
-}
-
-/** 最近 24h 已推送过的标题指纹，用于跨源去重。 */
 function recentTitleKeys(): Set<string> {
   const rows = all<{ title_key: string | null }>(
     "SELECT title_key FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ? AND title_key IS NOT NULL",
@@ -302,10 +365,10 @@ function pushedLastHour(): number {
 }
 
 /* ------------------------------------------------------------------ *
- * 攒批队列（内存，进程重启会丢，可接受；每日批量会补上）
+ * 攒批队列
  * ------------------------------------------------------------------ */
 
-type QueueItem = { id: number; sourceId: string; item: FreshItem };
+type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[] };
 let queue: QueueItem[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
 
@@ -342,7 +405,7 @@ export function startPushScheduler(): void {
  * 消息组装
  * ------------------------------------------------------------------ */
 
-function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: number): string[] {
+function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: number, subHits: string[] = []): string[] {
   const lines: string[] = [];
   const prefix = seq === undefined ? "" : seq + ". ";
   const meta: string[] = [sourceLabel(sourceId)];
@@ -352,6 +415,7 @@ function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: numbe
     const dl = fmtDeadline(it);
     if (dl) meta.push(dl);
   }
+  if (subHits.length) meta.push("订阅：" + subHits.join("/"));
   if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
   lines.push(prefix + it.title.slice(0, 110));
   lines.push("   " + meta.join(" · ") + (it.score ? " · " + Math.round(it.score) + " 分" : ""));
@@ -371,35 +435,33 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   if (!fresh.length) return 0;
 
   const rules = loadActiveBlockRules();
+  const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
   const seenTitles = s.dedupeByTitle ? recentTitleKeys() : new Set<string>();
 
   const candidates = fresh.filter((it) => {
     if (isBlocked({ ...it, sourceId }, rules)) return false;
-    if (!langAllowed(it, s)) return false;
-    return true;
+    return passesPushFilters(it, s);
   });
 
-  const instant: { it: FreshItem; reason: string }[] = [];
+  const instant: { it: FreshItem; reason: string; subHits: string[] }[] = [];
   const batched: QueueItem[] = [];
   const quiet = inQuietHoursZoned(s.quietHours, s.timezone);
 
   for (const it of candidates) {
     const key = titleKey(it.title);
-    const d = decide(it, s);
+    const subHits = matchSubscriptions(it, subKeywords);
+    const d = decide(it, s, subHits);
     const dup = s.dedupeByTitle && key && seenTitles.has(key);
     if (dup) continue;
 
-    // 静默时段：所有即时推送降级为攒批，早上一起发
     if (d.push && !quiet) {
-      instant.push({ it, reason: d.reason });
+      instant.push({ it, reason: d.reason, subHits });
       if (key) seenTitles.add(key);
       continue;
     }
-    // 进攒批也要过噪音与福利信号，否则新闻会跟着排队一起发出去
-    const noisy =
-      NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title) || it.aiKeep === false;
+    const noisy = NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title) || it.aiKeep === false;
     if (!noisy && (it.score >= s.batchScore || d.push)) {
-      batched.push({ id: it.id, sourceId, item: it });
+      batched.push({ id: it.id, sourceId, item: it, subHits });
       if (key) seenTitles.add(key);
     }
   }
@@ -414,8 +476,8 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   if (!picked.length) return 0;
 
   let sent = 0;
-  for (const { it, reason } of picked) {
-    const lines = ["⚡ 新羊毛 · " + reason, "", ...itemBlock(sourceId, it, s)];
+  for (const { it, reason, subHits } of picked) {
+    const lines = ["⚡ 新羊毛 · " + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
     const text = lines.join("\n");
     try {
       await sendTelegram(text);
@@ -450,7 +512,7 @@ export async function flushBatch(force = false): Promise<number> {
   const take = queue.splice(0, Math.min(s.maxPerBatch, budget));
   const blocks: string[] = [];
   take.forEach((q, i) => {
-    blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1));
+    blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1, q.subHits ?? []));
     blocks.push("");
   });
   const text = ["📦 本轮新发现 " + take.length + " 条", "", ...blocks].join("\n").trim();
@@ -468,14 +530,13 @@ export async function flushBatch(force = false): Promise<number> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[push] 攒批推送失败:", msg);
     logPush("batch", take.map((q) => q.id), text, 0, false, msg);
-    // 失败放回队列，下一轮再试
     queue.unshift(...take);
     return 0;
   }
 }
 
 /* ------------------------------------------------------------------ *
- * 推送记录
+ * 推送记录与状态
  * ------------------------------------------------------------------ */
 
 function logPush(kind: string, ids: number[], text: string, count: number, ok: boolean, error: string | null): void {
@@ -513,25 +574,32 @@ export function pushStats() {
       get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ?", day)?.n ?? 0,
     totalPushed: get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE pushed_at IS NOT NULL")?.n ?? 0,
     queued: queue.length,
-    lastHourLogs:
-      get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE created_at >= ?", since)?.n ?? 0,
-    failures:
-      get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE ok = 0 AND created_at >= ?", day)?.n ?? 0,
+    lastHourLogs: get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE created_at >= ?", since)?.n ?? 0,
+    failures: get<{ n: number }>("SELECT COUNT(*) AS n FROM push_log WHERE ok = 0 AND created_at >= ?", day)?.n ?? 0,
   };
 }
 
 /* ------------------------------------------------------------------ *
- * 预览：如果现在推，会推出什么（不真发）
+ * 预览：按当前全套推送筛选条件算一遍
  * ------------------------------------------------------------------ */
 
-export function previewPush(limit = 6): { instant: string[]; batch: string[]; queued: number } {
+export function previewPush(limit = 6): {
+  instant: string[];
+  batch: string[];
+  queued: number;
+  scanned: number;
+  matched: number;
+} {
   const s = getPushSettings();
   const rules = loadActiveBlockRules();
+  const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
   const rows = all<{
     id: number;
     source_id: string;
     title: string;
+    summary: string | null;
     url: string;
+    category: string | null;
     score: number;
     codes: string;
     price: number | null;
@@ -540,13 +608,15 @@ export function previewPush(limit = 6): { instant: string[]; batch: string[]; qu
     pushed_at: string | null;
     ai: string | null;
   }>(
-    `SELECT id, source_id, title, url, score, codes, price, is_free, expires_at, pushed_at, ai
+    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, expires_at, pushed_at, ai
      FROM items WHERE status = 'active' AND pushed_at IS NULL
-     ORDER BY score DESC LIMIT 120`,
+     ORDER BY score DESC LIMIT 180`,
   );
 
   const instant: string[] = [];
   const batch: string[] = [];
+  let matched = 0;
+
   for (const r of rows) {
     if (isBlocked(r, rules)) continue;
     let codes: string[] = [];
@@ -573,13 +643,24 @@ export function previewPush(limit = 6): { instant: string[]; batch: string[]; qu
       price: r.price,
       isFree: r.is_free === 1,
       aiKeep,
+      category: r.category,
+      summary: r.summary,
     };
-    if (!langAllowed(fresh, s)) continue;
-    const d = decide(fresh, s);
-    const block = itemBlock(r.source_id, fresh, s).join("\n");
+    if (!passesPushFilters(fresh, s)) continue;
+
+    matched += 1;
+    const subHits = matchSubscriptions(fresh, subKeywords);
+    const d = decide(fresh, s, subHits);
+    const block = itemBlock(r.source_id, fresh, s, undefined, subHits).join("\n");
     if (d.push && instant.length < limit) instant.push("⚡ " + d.reason + "\n" + block);
-    else if (!NOISE_TITLE.test(fresh.title) && DEAL_HINT.test(fresh.title) && fresh.score >= s.batchScore && batch.length < limit) batch.push(block);
-    if (instant.length >= limit && batch.length >= limit) break;
+    else if (
+      !NOISE_TITLE.test(fresh.title) &&
+      DEAL_HINT.test(fresh.title) &&
+      fresh.score >= s.batchScore &&
+      batch.length < limit
+    ) {
+      batch.push(block);
+    }
   }
-  return { instant, batch, queued: queue.length };
+  return { instant, batch, queued: queue.length, scanned: rows.length, matched };
 }

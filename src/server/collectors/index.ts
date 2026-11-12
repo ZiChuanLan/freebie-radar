@@ -185,6 +185,10 @@ export type FreshItem = {
   isFree?: boolean;
   /** AI 二审结论：false 表示判定不是福利，任何情况下都不推送 */
   aiKeep?: boolean | null;
+  /** 归一化分类，用于推送分类过滤 */
+  category?: string | null;
+  /** 摘要文本，用于订阅关键词匹配 */
+  summary?: string | null;
 };
 
 function persist(
@@ -222,6 +226,7 @@ function persist(
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
              price = ?, is_free = ?,
              ai = COALESCE(?, ai),
+             ai_keep = COALESCE(?, ai_keep),
              status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END
            WHERE id = ?`,
           e.url,
@@ -248,8 +253,8 @@ function persist(
       try {
         const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, summary, author, category,
-             tags, score, expires_at, published_at, raw, status, ai, content, codes, price, is_free, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             tags, score, expires_at, published_at, raw, status, ai, ai_keep, content, codes, price, is_free, first_seen_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
@@ -265,6 +270,7 @@ function persist(
           JSON.stringify(e.raw ?? {}),
           status,
           aiJson,
+          verdict ? (verdict.keep ? 1 : 0) : null,
           e.content ?? null,
           JSON.stringify(e.codes),
           e.price,
@@ -283,6 +289,8 @@ function persist(
           price: e.price,
           isFree: e.isFree,
           aiKeep: verdict ? verdict.keep : null,
+          category: verdict?.category || e.category,
+          summary: e.summary ?? null,
         });
       } catch (err) {
         if (/UNIQUE/i.test(String(err))) {

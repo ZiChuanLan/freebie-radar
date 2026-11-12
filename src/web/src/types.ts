@@ -37,6 +37,8 @@ export type Stats = {
     unread: number;
     last24h: number;
     blockRules: number;
+    aiKept: number;
+    aiRejected: number;
   };
   byCategory: { category: string | null; n: number }[];
   bySource: { source_id: string; n: number }[];
@@ -111,6 +113,11 @@ export type PushSettings = {
   includePrice: boolean;
   includeDeadline: boolean;
   dedupeByTitle: boolean;
+  maxPrice: number | null;
+  onlyAiKeep: boolean;
+  categories: string[];
+  prioritizeSubscribed: boolean;
+  applyToDigest: boolean;
 };
 
 export type PushPayload = {

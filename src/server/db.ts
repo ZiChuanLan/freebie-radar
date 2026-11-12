@@ -136,6 +136,24 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN title_key TEXT;
   CREATE INDEX IF NOT EXISTS idx_items_title_key ON items(title_key);
   `,
+
+  /* v7：把 AI 判定摊平成独立列 —— 用 json_extract 过滤会让 4000+ 行的查询从 0.7s 掉到 90s 超时 */
+  `
+  ALTER TABLE items ADD COLUMN ai_keep INTEGER;
+  CREATE INDEX IF NOT EXISTS idx_items_ai_keep ON items(ai_keep);
+  UPDATE items SET ai_keep = json_extract(ai, '$.keep') WHERE ai IS NOT NULL AND ai_keep IS NULL;
+  `,
+
+  /* v8：列表默认按 status + ai_keep 过滤再按 score 排序，5000+ 行没复合索引要 4 秒 */
+  `
+  CREATE INDEX IF NOT EXISTS idx_items_feed ON items(status, ai_keep, score DESC);
+  CREATE INDEX IF NOT EXISTS idx_items_score ON items(score DESC);
+  `,
+
+  /* v9：不带 ai_keep 条件时，(status, ai_keep, score) 用不上排序，退化成全表排序 */
+  `
+  CREATE INDEX IF NOT EXISTS idx_items_status_score ON items(status, score DESC);
+  `,
 ];
 
 export function dbPath(): string {

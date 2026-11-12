@@ -1,5 +1,20 @@
 import { useState } from "react";
-import { BellRing, Clock, Eye, Languages, ListOrdered, Loader2, Moon, Send, Settings2, Zap } from "lucide-react";
+import {
+  BellRing,
+  Check,
+  Clock,
+  Eye,
+  Filter,
+  Languages,
+  ListOrdered,
+  Loader2,
+  Moon,
+  Send,
+  Settings2,
+  Sparkles,
+  Zap,
+} from "lucide-react";
+import { CATEGORY_LABEL } from "../lib/sources.ts";
 import type { PushLogItem, PushPayload, PushSettings } from "../types.ts";
 
 function Toggle({
@@ -17,14 +32,14 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-800 bg-ink-900/50 px-3 py-2 text-left transition-colors hover:border-ink-700"
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
     >
       <span className="min-w-0">
-        <span className="block text-[12.5px] text-ink-200">{label}</span>
-        {hint && <span className="mt-0.5 block text-[10.5px] leading-snug text-ink-500">{hint}</span>}
+        <span className="block text-[13px] font-medium text-ink-900">{label}</span>
+        {hint && <span className="mt-0.5 block text-[11px] leading-snug text-ink-500">{hint}</span>}
       </span>
-      <span className={`h-4 w-7 shrink-0 rounded-full p-0.5 transition-colors ${value ? "bg-lime/70" : "bg-ink-700"}`}>
-        <span className={`block h-3 w-3 rounded-full bg-ink-950 transition-transform ${value ? "translate-x-3" : ""}`} />
+      <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors ${value ? "bg-brand" : "bg-ink-300"}`}>
+        <span className={`block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${value ? "translate-x-4" : ""}`} />
       </span>
     </button>
   );
@@ -50,10 +65,10 @@ function NumberField({
   onChange: (v: number) => void;
 }) {
   return (
-    <label className="block rounded-xl border border-ink-800 bg-ink-900/50 px-3 py-2">
+    <label className="block rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[12.5px] text-ink-200">{label}</span>
-        <span className="font-mono text-[12.5px] text-lime">
+        <span className="text-[13px] font-medium text-ink-900">{label}</span>
+        <span className="font-mono text-[13px] font-semibold tabular-nums text-brand">
           {value}
           {suffix}
         </span>
@@ -65,12 +80,21 @@ function NumberField({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-lime"
+        className="mt-2 w-full accent-brand"
       />
-      {hint && <div className="mt-1 text-[10.5px] leading-snug text-ink-500">{hint}</div>}
+      {hint && <div className="mt-1 text-[11px] leading-snug text-ink-500">{hint}</div>}
     </label>
   );
 }
+
+const PRICE_CAPS: { label: string; value: number | null }[] = [
+  { label: "不限价格", value: null },
+  { label: "只推白嫖", value: 0 },
+  { label: "≤ 5 元", value: 5 },
+  { label: "≤ 10 元", value: 10 },
+  { label: "≤ 30 元", value: 30 },
+  { label: "≤ 100 元", value: 100 },
+];
 
 export function PushPanel({
   payload,
@@ -82,7 +106,7 @@ export function PushPanel({
   onTest,
 }: {
   payload: PushPayload | null;
-  preview: { instant: string[]; batch: string[]; queued: number } | null;
+  preview: { instant: string[]; batch: string[]; queued: number; scanned?: number; matched?: number } | null;
   logs: PushLogItem[];
   onSave: (patch: Partial<PushSettings>) => Promise<void>;
   onPreview: () => Promise<void>;
@@ -102,43 +126,224 @@ export function PushPanel({
     }
   };
 
-  if (!s) return <div className="card p-6 text-[13px] text-ink-400">加载推送设置…</div>;
+  if (!s) return <div className="panel p-6 text-[13px] text-ink-500">正在加载推送规则…</div>;
+
+  const toggleCategory = (cat: string) => {
+    const exists = s.categories.includes(cat);
+    const next = exists ? s.categories.filter((c) => c !== cat) : [...s.categories, cat];
+    void save({ categories: next });
+  };
 
   return (
     <div className="space-y-5">
-      {/* 顶部状态 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "1 小时已推", value: stats?.pushedLastHour ?? 0, hint: `上限 ${s.maxPerHour}` },
-          { label: "24 小时已推", value: stats?.pushedLast24h ?? 0 },
-          { label: "攒批队列", value: stats?.queued ?? 0, hint: `每 ${s.batchIntervalMin} 分钟发一批` },
-          { label: "24h 失败", value: stats?.failures ?? 0, warn: (stats?.failures ?? 0) > 0 },
-        ].map((c) => (
-          <div key={c.label} className="card p-4">
-            <div className={`text-xl font-semibold tabular-nums ${c.warn ? "text-red-400" : "text-ink-100"}`}>
-              {c.value}
+      {/* 总开关 + 实时状态条 */}
+      <section className="panel flex flex-wrap items-center justify-between gap-4 p-4">
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className={`grid h-10 w-10 place-items-center rounded-xl ${s.enabled ? "bg-deal-subtle text-deal" : "bg-ink-100 text-ink-500"}`}>
+              <BellRing size={18} />
             </div>
-            <div className="mt-0.5 text-[11px] text-ink-400">{c.label}</div>
-            {c.hint && <div className="mt-1 text-[10.5px] text-ink-500">{c.hint}</div>}
+            <div>
+              <div className="text-[14px] font-semibold text-ink-950">Telegram 自动推送</div>
+              <div className="text-[12px] text-ink-500">
+                {s.enabled ? (payload?.quiet ? "开启中 · 当前处于夜间静默时段（转攒批）" : "实时监控推送中") : "已暂停推送，仅本地收集入库"}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+
+          <div className="flex items-center gap-5 border-l border-ink-200 pl-6 text-[12px]">
+            <div>
+              <span className="block font-mono text-[15px] font-semibold tabular-nums text-ink-950">
+                {stats?.pushedLastHour ?? 0}/{s.maxPerHour}
+              </span>
+              <span className="text-ink-500">1小时已推</span>
+            </div>
+            <div>
+              <span className="block font-mono text-[15px] font-semibold tabular-nums text-ink-950">
+                {stats?.pushedLast24h ?? 0}
+              </span>
+              <span className="text-ink-500">24小时已推</span>
+            </div>
+            <div>
+              <span className="block font-mono text-[15px] font-semibold tabular-nums text-brand">
+                {stats?.queued ?? 0}
+              </span>
+              <span className="text-ink-500">攒批队列</span>
+            </div>
+            {(stats?.failures ?? 0) > 0 && (
+              <div>
+                <span className="block font-mono text-[15px] font-semibold tabular-nums text-alert">
+                  {stats?.failures ?? 0}
+                </span>
+                <span className="text-ink-500">推送失败</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => save({ enabled: !s.enabled })}
+          className={
+            "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[13px] font-medium transition-colors " +
+            (s.enabled
+              ? "border-deal-border bg-deal-subtle text-deal hover:bg-emerald-100"
+              : "border-ink-200 bg-ink-100 text-ink-600 hover:bg-ink-200")
+          }
+        >
+          <Settings2 size={14} /> {s.enabled ? "推送已开启（点击暂停）" : "推送已关闭（点击开启）"}
+        </button>
+      </section>
 
       {!payload?.ready && (
-        <div className="card border-amber-500/30 bg-amber-500/5 p-4 text-[12.5px] text-amber-300">
-          服务端未启用推送（缺 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 或 PUSH_CHANNEL=none），下面的设置仍然会保存，配好凭据后立即生效。
+        <div className="rounded-xl border border-code-border bg-code-subtle p-3.5 text-[12.5px] text-amber-900">
+          服务端尚未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID（或 PUSH_CHANNEL=none），这里的设置会提前保存，配好凭据后立即生效。
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* 阈值 */}
-        <section className="card space-y-3 p-4">
-          <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-            <Zap size={15} className="text-lime" /> 评分阈值
+      {/* 核心联动筛选区：价格上限、分类、AI 验真、订阅优先、应用到日报 */}
+      <section className="panel space-y-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-[14.5px] font-semibold text-ink-950">
+            <Filter size={16} className="text-brand" /> 推送筛选条件（与资源流一致）
+          </div>
+          <span className="text-[12px] text-ink-500">改动即时生效，不需要重启服务</span>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* 最高价格上限 */}
+          <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[13px] font-medium text-ink-900">我能付多少（最高推送价格）</span>
+              <span className="font-mono text-[12px] text-brand">
+                {s.maxPrice === null ? "不限" : s.maxPrice === 0 ? "完全白嫖" : `≤ ${s.maxPrice} 元`}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              {PRICE_CAPS.map((p) => {
+                const active = s.maxPrice === p.value;
+                return (
+                  <button
+                    key={String(p.value)}
+                    type="button"
+                    onClick={() => save({ maxPrice: p.value })}
+                    className={
+                      "rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors " +
+                      (active
+                        ? "border-brand bg-brand text-white"
+                        : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                    }
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-ink-500">
+              选「只推白嫖」时仅推送明确免费或 0 元资源；选金额上限时过滤超价折扣。
+            </p>
+          </div>
+
+          {/* 语言筛选 */}
+          <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-ink-900">
+              <Languages size={14} className="text-ink-500" /> 语言过滤
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: "all" as const, label: "中英文都推" },
+                { key: "zh" as const, label: "只看中文源" },
+                { key: "en" as const, label: "只看英文源" },
+              ].map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => save({ langMode: o.key })}
+                  className={
+                    "rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors " +
+                    (s.langMode === o.key
+                      ? "border-brand bg-brand text-white"
+                      : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                  }
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-ink-500">
+              自动按标题中文占比判断；英文条目会标示 EN，价格折算成人民币显示。
+            </p>
+          </div>
+        </div>
+
+        {/* 允许推送的分类多选 */}
+        <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-medium text-ink-900">只推哪些分类（不勾选表示全部分类都推）</span>
+            {s.categories.length > 0 && (
+              <button
+                type="button"
+                onClick={() => save({ categories: [] })}
+                className="text-[12px] font-medium text-brand hover:underline"
+              >
+                恢复全部分类
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(CATEGORY_LABEL).map(([key, label]) => {
+              const checked = s.categories.includes(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleCategory(key)}
+                  className={
+                    "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] transition-colors " +
+                    (checked
+                      ? "border-brand bg-brand-subtle font-medium text-brand"
+                      : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                  }
+                >
+                  {checked && <Check size={12} />}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-3">
+          <Toggle
+            label="只推 AI 验真福利"
+            hint="拦掉新闻、求问、评测等非福利帖"
+            value={s.onlyAiKeep}
+            onChange={(v) => save({ onlyAiKeep: v })}
+          />
+          <Toggle
+            label="订阅命中优先直推"
+            hint="命中「我的订阅」词条立刻单发"
+            value={s.prioritizeSubscribed}
+            onChange={(v) => save({ prioritizeSubscribed: v })}
+          />
+          <Toggle
+            label="同步应用到每日精选"
+            hint="早报也遵守价格、分类与 AI 条件"
+            value={s.applyToDigest}
+            onChange={(v) => save({ applyToDigest: v })}
+          />
+        </div>
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* 评分阈值与内容细节 */}
+        <section className="panel space-y-3 p-5">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink-950">
+            <Zap size={15} className="text-brand" /> 触发阈值与消息格式
           </div>
           <NumberField
-            label="立即推送 ≥"
-            hint="达到这个分数的条目马上发，不等攒批"
+            label="立即单发阈值 ≥"
+            hint="达到此分数马上单条发出，不等攒批"
             value={s.instantScore}
             min={0}
             max={100}
@@ -147,8 +352,8 @@ export function PushPanel({
             onChange={(v) => save({ instantScore: v })}
           />
           <NumberField
-            label="进攒批 ≥"
-            hint="分数不够立即推、但够这条线的，攒起来一起发；低于它的直接丢掉不打扰"
+            label="攒批合发阈值 ≥"
+            hint="够这条线先入攒批队列定时合并发，低于它的只入库不吵"
             value={s.batchScore}
             min={0}
             max={100}
@@ -156,19 +361,32 @@ export function PushPanel({
             suffix=" 分"
             onChange={(v) => save({ batchScore: v })}
           />
-          <div className="rounded-lg bg-ink-950/60 px-3 py-2 text-[11px] leading-relaxed text-ink-400">
-            当前策略：≥{s.instantScore} 分或含码/限量 → <span className="text-lime">立即单发</span>；≥{s.batchScore} 分 →{" "}
-            <span className="text-sky-300">攒批合并</span>；其余只入库不推送。
+          <div className="grid grid-cols-2 gap-2">
+            <Toggle
+              label="含兑换码直推"
+              value={s.instantOnCodes}
+              onChange={(v) => save({ instantOnCodes: v })}
+            />
+            <Toggle
+              label="限量/名额直推"
+              value={s.instantOnUrgent}
+              onChange={(v) => save({ instantOnUrgent: v })}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <Toggle label="带价格" value={s.includePrice} onChange={(v) => save({ includePrice: v })} />
+            <Toggle label="带截止日" value={s.includeDeadline} onChange={(v) => save({ includeDeadline: v })} />
+            <Toggle label="跨源去重" value={s.dedupeByTitle} onChange={(v) => save({ dedupeByTitle: v })} />
           </div>
         </section>
 
-        {/* 频率与静默 */}
-        <section className="card space-y-3 p-4">
-          <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-            <Clock size={15} className="text-lime" /> 频率与免打扰
+        {/* 频率限制与夜间免打扰 */}
+        <section className="panel space-y-3 p-5">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink-950">
+            <Clock size={15} className="text-brand" /> 频率控制与夜间免打扰
           </div>
           <NumberField
-            label="每小时上限"
+            label="每小时推送上限"
             value={s.maxPerHour}
             min={1}
             max={60}
@@ -177,134 +395,82 @@ export function PushPanel({
           />
           <div className="grid grid-cols-2 gap-2">
             <NumberField
-              label="单次最多"
+              label="单轮最多发"
               value={s.maxPerInstant}
               min={1}
               max={10}
               suffix=" 条"
               onChange={(v) => save({ maxPerInstant: v })}
             />
-            <label className="block rounded-xl border border-ink-800 bg-ink-900/50 px-3 py-2">
-              <div className="text-[12.5px] text-ink-200">攒批间隔</div>
+            <label className="block rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
+              <div className="text-[13px] font-medium text-ink-900">攒批周期</div>
               <select
                 value={s.batchIntervalMin}
                 onChange={(e) => save({ batchIntervalMin: Number(e.target.value) })}
-                className="mt-1.5 w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] text-ink-200 outline-none"
+                className="mt-2 w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-900 outline-none focus:border-brand"
               >
                 <option value={0}>关闭攒批</option>
-                <option value={10}>10 分钟</option>
-                <option value={15}>15 分钟</option>
-                <option value={30}>30 分钟</option>
-                <option value={60}>1 小时</option>
-                <option value={120}>2 小时</option>
+                <option value={10}>每 10 分钟</option>
+                <option value={15}>每 15 分钟</option>
+                <option value={30}>每 30 分钟</option>
+                <option value={60}>每 1 小时</option>
+                <option value={120}>每 2 小时</option>
               </select>
             </label>
           </div>
-          <label className="block rounded-xl border border-ink-800 bg-ink-900/50 px-3 py-2">
+
+          <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-[12.5px] text-ink-200">
-                <Moon size={12} /> 静默时段
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-900">
+                <Moon size={13} className="text-ink-500" /> 夜间免打扰时段
               </span>
-              <span className={`text-[11px] ${payload?.quiet ? "text-amber-300" : "text-ink-500"}`}>
-                {payload?.quiet ? "此刻静默中" : "不在静默"}
+              <span className={`text-[12px] font-medium ${payload?.quiet ? "text-amber-700" : "text-ink-500"}`}>
+                {payload?.quiet ? "目前免打扰中" : "目前可正常推送"}
               </span>
             </div>
-            <div className="mt-1.5 flex items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <input
                 type="time"
                 value={s.quietHours.split("-")[0] ?? "23:30"}
                 onChange={(e) => save({ quietHours: `${e.target.value}-${s.quietHours.split("-")[1] ?? "08:00"}` })}
-                className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 font-mono text-[12px] text-ink-200 outline-none"
+                className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
               />
-              <span className="text-ink-500">→</span>
+              <span className="text-ink-400">至</span>
               <input
                 type="time"
                 value={s.quietHours.split("-")[1] ?? "08:00"}
                 onChange={(e) => save({ quietHours: `${s.quietHours.split("-")[0] ?? "23:30"}-${e.target.value}` })}
-                className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 font-mono text-[12px] text-ink-200 outline-none"
+                className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
               />
-            </div>
-
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <span className="text-[10.5px] leading-snug text-ink-500">
-                这段时间内不推送，全转成攒批，早上一起发
-              </span>
               <select
                 value={s.timezone}
                 onChange={(e) => save({ timezone: e.target.value })}
-                className="rounded-md border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[10.5px] text-ink-200 outline-none"
-                title="静默时段按哪个时区算；容器默认 UTC，必须选对"
+                className="ml-auto rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
               >
-                <option value="Asia/Shanghai">北京时间</option>
-                <option value="Asia/Tokyo">东京</option>
+                <option value="Asia/Shanghai">北京时间 (UTC+8)</option>
+                <option value="Asia/Tokyo">东京时间 (UTC+9)</option>
                 <option value="UTC">UTC</option>
-                <option value="America/New_York">美东</option>
-                <option value="Europe/London">伦敦</option>
+                <option value="America/New_York">美东时间</option>
+                <option value="Europe/London">伦敦时间</option>
               </select>
             </div>
-          </label>
-        </section>
-
-        {/* 语言与内容 */}
-        <section className="card space-y-3 p-4">
-          <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-            <Languages size={15} className="text-lime" /> 语言与内容
+            <div className="mt-1.5 text-[11px] text-ink-500">免打扰期间内，即时推送暂存攒批队列，早上统一发出</div>
           </div>
+        </section>
+      </div>
+
+      {/* 预览与测试 */}
+      <section className="panel space-y-3.5 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <div className="mb-1.5 text-[11px] text-ink-400">只推哪种语言（按标题里中文占比自动判断）</div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { key: "all" as const, label: "全部", hint: "中英文都推" },
-                { key: "zh" as const, label: "只要中文", hint: "跳过英文源" },
-                { key: "en" as const, label: "只要英文", hint: "跳过中文源" },
-              ].map((o) => (
-                <button
-                  key={o.key}
-                  type="button"
-                  onClick={() => save({ langMode: o.key })}
-                  className={
-                    "rounded-xl border px-2 py-2 text-[12px] transition-colors " +
-                    (s.langMode === o.key
-                      ? "border-lime/40 bg-lime/10 text-lime"
-                      : "border-ink-800 text-ink-300 hover:border-ink-700")
-                  }
-                  title={o.hint}
-                >
-                  {o.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 text-[14px] font-semibold text-ink-950">
+              <Sparkles size={15} className="text-brand" /> 实时效果预览（不会真正发出）
             </div>
+            <p className="mt-0.5 text-[12px] text-ink-500">
+              用数据库里未推送的最新 180 条按上述全部筛选条件试算，立刻检查有没有漏网新闻或超价打折。
+            </p>
           </div>
-          <Toggle
-            label="含兑换码立即推"
-            hint="邀请码/激活码这类手慢无的，不受评分限制"
-            value={s.instantOnCodes}
-            onChange={(v) => save({ instantOnCodes: v })}
-          />
-          <Toggle
-            label="限量/限时立即推"
-            hint="标题含「先到先得」「名额」「最后」等词"
-            value={s.instantOnUrgent}
-            onChange={(v) => save({ instantOnUrgent: v })}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <Toggle label="带价格" value={s.includePrice} onChange={(v) => save({ includePrice: v })} />
-            <Toggle label="带截止时间" value={s.includeDeadline} onChange={(v) => save({ includeDeadline: v })} />
-          </div>
-          <Toggle
-            label="按标题跨源去重"
-            hint="同一个免费游戏被 5 个源报道时只推一次（24 小时内）"
-            value={s.dedupeByTitle}
-            onChange={(v) => save({ dedupeByTitle: v })}
-          />
-        </section>
-
-        {/* 预览与操作 */}
-        <section className="card space-y-3 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-              <Eye size={15} className="text-lime" /> 推送预览
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={async () => {
@@ -315,33 +481,10 @@ export function PushPanel({
                   setBusy(null);
                 }
               }}
-              className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2.5 py-1 text-[11.5px] text-ink-200 hover:border-lime/40 hover:text-lime"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover"
             >
-              {busy === "preview" ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} 按当前设置算一遍
+              {busy === "preview" ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} 试算推送预览
             </button>
-          </div>
-          <p className="text-[11.5px] leading-relaxed text-ink-400">
-            下面是「如果现在推，会推出什么」，不会真的发送。调完阈值点一下就能看到效果。
-          </p>
-
-          {preview && (
-            <div className="space-y-2">
-              <div>
-                <div className="mb-1 text-[11px] text-lime">⚡ 立即推送（{preview.instant.length}）</div>
-                <pre className="max-h-[160px] overflow-auto rounded-lg bg-ink-950/70 p-2.5 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink-300">
-                  {preview.instant.length ? preview.instant.join("\n\n") : "（当前没有达到立即推送阈值的条目）"}
-                </pre>
-              </div>
-              <div>
-                <div className="mb-1 text-[11px] text-sky-300">📦 攒批（{preview.batch.length}，队列里 {preview.queued} 条）</div>
-                <pre className="max-h-[160px] overflow-auto rounded-lg bg-ink-950/70 p-2.5 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink-300">
-                  {preview.batch.length ? preview.batch.join("\n\n") : "（没有达到攒批阈值的条目）"}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-2 pt-1">
             <button
               type="button"
               onClick={async () => {
@@ -352,10 +495,9 @@ export function PushPanel({
                   setBusy(null);
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/15 px-3 py-2 text-[12.5px] font-medium text-sky-300 hover:bg-sky-500/25"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
             >
-              {busy === "flush" ? <Loader2 size={13} className="animate-spin" /> : <ListOrdered size={13} />}
-              立即发送攒批队列
+              {busy === "flush" ? <Loader2 size={13} className="animate-spin" /> : <ListOrdered size={13} />} 立即发攒批
             </button>
             <button
               type="button"
@@ -367,67 +509,73 @@ export function PushPanel({
                   setBusy(null);
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 px-3 py-2 text-[12.5px] text-ink-200 hover:border-lime/40 hover:text-lime"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
             >
-              {busy === "test" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-              发测试消息
+              {busy === "test" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} 发测试消息
             </button>
           </div>
-        </section>
-      </div>
-
-      {/* 总开关 */}
-      <section className="card flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex items-center gap-2">
-          <Settings2 size={15} className="text-ink-400" />
-          <div>
-            <div className="text-[13px] font-medium">推送总开关</div>
-            <div className="text-[11px] text-ink-400">关掉后即时与攒批都停，日报仍可手动触发</div>
-          </div>
         </div>
-        <button
-          type="button"
-          onClick={() => save({ enabled: !s.enabled })}
-          className={
-            "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[13px] font-medium transition-colors " +
-            (s.enabled
-              ? "border-lime/40 bg-lime/10 text-lime"
-              : "border-ink-700 bg-ink-900 text-ink-400")
-          }
-        >
-          <BellRing size={14} /> {s.enabled ? "已开启" : "已关闭"}
-        </button>
+
+        {preview && (
+          <div className="grid gap-3 pt-1 lg:grid-cols-2">
+            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3">
+              <div className="mb-1.5 flex items-center justify-between text-[12px] font-medium text-deal">
+                <span>⚡ 立即推送（命中 {preview.instant.length}）</span>
+                {typeof preview.matched === "number" && (
+                  <span className="font-mono text-[11px] text-ink-500">
+                    符合条件 {preview.matched}/{preview.scanned}
+                  </span>
+                )}
+              </div>
+              <pre className="max-h-[200px] overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-700">
+                {preview.instant.length ? preview.instant.join("\n\n") : "（当前条件下没有触发立即推送的条目）"}
+              </pre>
+            </div>
+            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3">
+              <div className="mb-1.5 text-[12px] font-medium text-brand">
+                📦 攒批队列（本批 {preview.batch.length}，内存中已排队 {preview.queued}）
+              </div>
+              <pre className="max-h-[200px] overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-700">
+                {preview.batch.length ? preview.batch.join("\n\n") : "（当前条件下没有达到攒批阈值的条目）"}
+              </pre>
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* 推送记录 */}
-      <section className="card overflow-hidden">
-        <div className="border-b border-ink-700/60 px-4 py-3 text-sm font-medium">最近推送记录（{logs.length}）</div>
-        <div className="max-h-[420px] overflow-auto">
-          {logs.length === 0 && <div className="px-4 py-8 text-center text-[12px] text-ink-500">还没有推送记录</div>}
+      {/* 历史推送记录 */}
+      <section className="panel overflow-hidden">
+        <div className="border-b border-ink-100 px-5 py-3.5 text-[13.5px] font-semibold text-ink-950">
+          最近推送记录（{logs.length}）
+        </div>
+        <div className="max-h-[380px] divide-y divide-ink-100 overflow-auto">
+          {logs.length === 0 && (
+            <div className="px-5 py-10 text-center text-[12.5px] text-ink-500">还没有历史推送记录</div>
+          )}
           {logs.map((l) => (
-            <div key={l.id} className="border-b border-ink-800/60 px-4 py-2.5 last:border-0">
-              <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
+            <div key={l.id} className="px-5 py-3">
+              <div className="mb-1 flex flex-wrap items-center gap-2 text-[12px]">
                 <span
                   className={
-                    "rounded px-1.5 py-0.5 font-medium " +
+                    "rounded-md px-2 py-0.5 font-medium " +
                     (l.kind === "instant"
-                      ? "bg-amber-400/15 text-amber-300"
+                      ? "bg-code-subtle text-amber-800"
                       : l.kind === "batch"
-                        ? "bg-sky-400/15 text-sky-300"
-                        : "bg-ink-700 text-ink-300")
+                        ? "bg-brand-subtle text-brand"
+                        : "bg-ink-100 text-ink-700")
                   }
                 >
-                  {l.kind === "instant" ? "即时" : l.kind === "batch" ? "攒批" : l.kind}
+                  {l.kind === "instant" ? "即时推送" : l.kind === "batch" ? "攒批推送" : l.kind}
                 </span>
                 <span className="font-mono text-ink-500">{l.created_at.replace("T", " ").slice(5, 19)}</span>
-                <span className="text-ink-400">{l.count} 条</span>
-                {l.ok === 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-300">失败</span>}
+                <span className="text-ink-600">{l.count} 条</span>
+                {l.ok === 0 && <span className="rounded bg-alert-subtle px-1.5 py-0.5 text-alert">发送失败</span>}
               </div>
-              <pre className="max-h-[80px] overflow-hidden font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink-400">
+              <pre className="max-h-[72px] overflow-hidden font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-600">
                 {(l.text ?? "").slice(0, 240)}
                 {(l.text ?? "").length > 240 ? "…" : ""}
               </pre>
-              {l.error && <div className="mt-1 font-mono text-[10.5px] text-red-400">{l.error}</div>}
+              {l.error && <div className="mt-1 font-mono text-[11px] text-alert">{l.error}</div>}
             </div>
           ))}
         </div>

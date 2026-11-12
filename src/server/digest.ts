@@ -3,7 +3,9 @@ import { all, get, run } from "./db.ts";
 import { CATEGORY_LABEL } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
-
+import { getPushSettings, passesPushFilters } from "./push.ts";
+import { sendTelegram } from "./telegram.ts";
+export { sendTelegram };
 export type DigestItem = {
   id: number;
   source_id: string;
@@ -13,6 +15,10 @@ export type DigestItem = {
   score: number;
   expires_at: string | null;
   published_at: string | null;
+  price?: number | null;
+  is_free?: number;
+  ai?: string | null;
+  codes?: string;
 };
 
 export type Digest = {
@@ -51,19 +57,36 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, url, category, score, expires_at, published_at FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 300",
+    "SELECT id, source_id, title, url, category, score, expires_at, published_at, price, is_free, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
 
   const pushed = alreadyPushed(dayKey(date));
   const rules = loadActiveBlockRules();
-  const fresh = rows.filter((r) => !pushed.has(r.id) && !isBlocked(r, rules));
+  const settings = getPushSettings();
+  const fresh = rows.filter((r) => {
+    if (pushed.has(r.id) || isBlocked(r, rules)) return false;
+    let codes: string[] = [];
+    try { codes = JSON.parse(r.codes ?? '[]') as string[]; } catch { codes = []; }
+    let aiKeep: boolean | null = null;
+    if (r.ai) {
+      try { aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null; } catch { aiKeep = null; }
+    }
+    if (aiKeep === false) return false;
+    if (!settings.applyToDigest) return true;
+    return passesPushFilters({
+      title: r.title,
+      score: r.score,
+      codes,
+      price: r.price ?? null,
+      isFree: r.is_free === 1,
+      aiKeep,
+      category: r.category,
+    }, settings);
+  });
 
-  // 质量门槛：精选必须既是高分，标题里也真的带「免费/领取/限额」这类福利信号，
-  // 否则「豆包月卡不够用了」这种讨论帖会混进日报。
   const strict = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title));
-  // 数量不足时只放宽分数，绝不放宽关键词：宁可一天少发几条，也不让讨论帖混进精选
   const relaxed = fresh.filter((r) => DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
   const pool = strict.length >= Math.min(6, topN) ? strict : relaxed;
   return pool.slice(0, topN);
@@ -107,26 +130,6 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
   return lines.join("\n");
 }
 
-export async function sendTelegram(text: string): Promise<void> {
-  const base = config.telegramApiBase.replace(/\/+$/, "");
-  const url = base + "/bot" + config.telegramBotToken + "/sendMessage";
-  const init: RequestInit & { dispatcher?: unknown } = {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: config.telegramChatId,
-      text,
-      disable_web_page_preview: true,
-    }),
-  };
-  if (config.telegramProxy) {
-    const undici = (await import("undici")) as unknown as { ProxyAgent: new (url: string) => unknown };
-    init.dispatcher = new undici.ProxyAgent(config.telegramProxy);
-  }
-  const res = await fetch(url, init);
-  const body = await res.text();
-  if (!res.ok) throw new Error("Telegram HTTP " + res.status + ": " + body.slice(0, 160));
-}
 
 export type DailyResult = { date: string; count: number; text: string; pushed: boolean; skippedReason?: string };
 

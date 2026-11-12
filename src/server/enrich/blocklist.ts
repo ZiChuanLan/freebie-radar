@@ -22,7 +22,13 @@ export const PRESET_NOISE_PATTERNS: { pattern: string; mode: "keyword" | "regex"
   { pattern: "漏电", mode: "keyword", scope: "all", note: "维修讨论" },
   { pattern: "研学", mode: "keyword", scope: "all", note: "消费吐槽" },
   { pattern: "冠军阵容", mode: "keyword", scope: "all", note: "电竞资讯" },
-  { pattern: "^(请问|求助|有没有|求推荐|求一个)", mode: "regex", scope: "all", note: "求资源提问帖" },
+  // 原本是一条正则 ^(请问|求助|有没有|求推荐|求一个)。正则没法下推成 SQL，
+  // 每次列表请求都要把 5000+ 行拉出来跑一遍 JS 正则（5-40 秒），所以拆成关键词。
+  { pattern: "请问", mode: "keyword", scope: "all", note: "提问帖" },
+  { pattern: "求助", mode: "keyword", scope: "all", note: "求助帖" },
+  { pattern: "有没有", mode: "keyword", scope: "all", note: "询问有没有" },
+  { pattern: "求推荐", mode: "keyword", scope: "all", note: "求推荐" },
+  { pattern: "求一个", mode: "keyword", scope: "all", note: "求资源" },
 ];
 
 export function loadActiveBlockRules(): BlockRule[] {

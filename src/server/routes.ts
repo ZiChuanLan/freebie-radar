@@ -3,7 +3,8 @@ import { all, get, run, type SqlValue } from "./db.ts";
 import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { addCustomRssSource, ingestItems, markSourceFailure, runSource } from "./collectors/index.ts";
 import type { RawItem } from "./collectors/types.ts";
-import { sendTelegram } from "./digest.ts";
+import { runDaily } from "./digest.ts";
+import { sendTelegram } from "./telegram.ts";
 import {
   DEFAULT_SETTINGS,
   flushBatch,
@@ -121,6 +122,9 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
   if (q.starred === "1") where.push("starred = 1");
   if (q.unread === "1") where.push("read_at IS NULL");
   if (q.hasCodes === "1") where.push("codes != '[]' AND codes != ''");
+  if (q.aiOnly === "1") where.push("ai_keep = 1");
+  // 用 IS NOT 而不是 (IS NULL OR != 0)：OR 会让索引失效，5671 行要 27 秒
+  if (q.hideRejected === "1") where.push("ai_keep IS NOT 0");
   if (q.search) {
     where.push("(title LIKE ? OR COALESCE(summary,'') LIKE ?)");
     params.push(`%${q.search}%`, `%${q.search}%`);
@@ -178,25 +182,36 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
       }
     }
     if (regexRules.length) {
-      const candidates = all<{ id: number; source_id: string; title: string; summary: string | null }>(
-        "SELECT id, source_id, title, summary FROM items WHERE status = 'active'",
+      // 正则规则没法下推成 SQL，只能拉全表逐条跑 JS 正则。5000+ 行每次请求都扫一遍要 5-6 秒，
+      // 所以按「规则签名 + 数据版本」缓存结果，规则或条目数变了才重算。
+      const signature = regexRules.map((r) => r.id + ":" + r.pattern + ":" + r.scope).join("|");
+      const version = get<{ n: number; maxId: number }>(
+        "SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS maxId FROM items WHERE status = 'active'",
       );
-      const blockedIds: number[] = [];
-      const compiled = regexRules.map((r) => compileRule(r));
-      for (const row of candidates) {
-        const text = row.title + " " + (row.summary ?? "");
-        if (compiled.some((fn) => fn(text, row.source_id))) blockedIds.push(row.id);
+      const cacheKey = signature + "#" + (version?.n ?? 0) + "#" + (version?.maxId ?? 0);
+      if (regexBlockCache.key !== cacheKey) {
+        const candidates = all<{ id: number; source_id: string; title: string; summary: string | null }>(
+          "SELECT id, source_id, title, summary FROM items WHERE status = 'active'",
+        );
+        const compiled = regexRules.map((r) => compileRule(r));
+        const ids: number[] = [];
+        for (const row of candidates) {
+          const text = row.title + " " + (row.summary ?? "");
+          if (compiled.some((fn) => fn(text, row.source_id))) ids.push(row.id);
+        }
+        regexBlockCache = { key: cacheKey, ids };
       }
-      if (blockedIds.length) {
-        where.push(`id NOT IN (${blockedIds.map(() => "?").join(",")})`);
-        params.push(...blockedIds);
+      if (regexBlockCache.ids.length) {
+        where.push(`id NOT IN (${regexBlockCache.ids.map(() => "?").join(",")})`);
+        params.push(...regexBlockCache.ids);
       }
     }
   }
 
   return { where, params, subKeywords };
 }
-
+/** 正则屏蔽规则的扫描结果缓存（见 buildItemsQuery 里的说明）。 */
+let regexBlockCache: { key: string; ids: number[] } = { key: "", ids: [] };
 export function registerApi(app: Hono) {
   app.get("/api/items", (c) => {
     const q = c.req.query();
@@ -497,12 +512,23 @@ export function registerApi(app: Hono) {
   });
 
   app.get("/api/stats", (c) => {
-    const totals = get<{ total: number; active: number; starred: number; expired: number; withCodes: number; unread: number }>(
+    const totals = get<{
+      total: number;
+      active: number;
+      starred: number;
+      expired: number;
+      withCodes: number;
+      unread: number;
+      aiKept: number;
+      aiRejected: number;
+    }>(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,
               SUM(CASE WHEN starred=1 THEN 1 ELSE 0 END) AS starred,
               SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= ? THEN 1 ELSE 0 END) AS expired,
               SUM(CASE WHEN status='active' AND codes != '[]' AND codes != '' THEN 1 ELSE 0 END) AS withCodes,
+              SUM(CASE WHEN ai_keep = 1 THEN 1 ELSE 0 END) AS aiKept,
+              SUM(CASE WHEN ai_keep = 0 THEN 1 ELSE 0 END) AS aiRejected,
               SUM(CASE WHEN status='active' AND read_at IS NULL THEN 1 ELSE 0 END) AS unread
        FROM items`,
       new Date().toISOString(),
@@ -529,6 +555,8 @@ export function registerApi(app: Hono) {
         unread: totals?.unread ?? 0,
         last24h: last24h?.n ?? 0,
         blockRules,
+        aiKept: totals?.aiKept ?? 0,
+        aiRejected: totals?.aiRejected ?? 0,
       },
       byCategory,
       bySource,
@@ -613,6 +641,15 @@ export function registerApi(app: Hono) {
 
   app.get("/api/digests", (c) => {
     return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
+  });
+
+  app.post("/api/digests/run", async (c) => {
+    try {
+      const result = await runDaily({ dryRun: false });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
   });
 
   app.get("/api/digests/:date", (c) => {
