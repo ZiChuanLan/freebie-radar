@@ -14,7 +14,10 @@
     "migrate": "tsx src/server/migrate.ts",
     "collect": "tsx src/server/cli.ts collect",
     "daily": "tsx src/server/cli.ts daily",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "diagnose": "tsx src/server/cli.ts diagnose",
+    "obtain": "tsx src/server/cli.ts obtain"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.4",

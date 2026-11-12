@@ -3,7 +3,8 @@ import { enrichItem } from "./enrich/index.ts";
 import { reviewItems } from "./enrich/ai.ts";
 import { runAll, runSource, ensureSources } from "./collectors/index.ts";
 import { lastDigests, runDaily } from "./digest.ts";
-
+import { getPushSettings, passesPushFilters } from "./push.ts";
+import { guessObtain } from "./enrich/obtain.ts";
 const [cmd = "help", ...args] = process.argv.slice(2);
 migrate();
 ensureSources();
@@ -153,9 +154,65 @@ async function main() {
       console.log(get("SELECT source_id, COUNT(*) AS n FROM items GROUP BY source_id"));
       break;
     }
+    case "diagnose": {
+      // 推送体检：确认全套筛选下没有非白嫖条目漏进来，并给出各维度分布
+      const s = getPushSettings();
+      console.log("筛选条件", JSON.stringify({ maxPrice: s.maxPrice, obtainModes: s.obtainModes, onlyAiKeep: s.onlyAiKeep, langMode: s.langMode, categories: s.categories }));
+      const rows = all<{
+        title: string;
+        score: number;
+        codes: string;
+        price: number | null;
+        is_free: number;
+        obtain: string | null;
+        ai: string | null;
+        category: string | null;
+      }>(
+        `SELECT title, score, codes, price, is_free, obtain, ai, category FROM items
+         WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
+         ORDER BY score DESC LIMIT 500`,
+        new Date(Date.now() - 7 * 86_400_000).toISOString(),
+      );
+      const pass: Record<string, number> = {};
+      for (const r of rows) {
+        const aiKeep = r.ai ? (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null : null;
+        const ok = passesPushFilters(
+          { title: r.title, score: r.score, codes: JSON.parse(r.codes || "[]"), price: r.price, isFree: r.is_free === 1, aiKeep, category: r.category, obtain: r.obtain },
+          s,
+        );
+        if (ok) pass[r.obtain ?? "?"] = (pass[r.obtain ?? "?"] ?? 0) + 1;
+      }
+      console.log("候选池", rows.length, "通过筛选", JSON.stringify(pass));
+      const leak = Object.keys(pass).filter((k) => k !== "free" && k !== "conditional");
+      console.log(leak.length ? "⚠️  非白嫖泄漏: " + leak.join(",") : "✅ 没有抽奖/试用/推广/需付费条目漏进推送");
+      break;
+    }
+    case "obtain": {
+      // 重新判定全库获取方式（AI 提示词更新后跑一次）
+      const rows = all<{ id: number; title: string; summary: string | null; ai: string | null }>(
+        "SELECT id, title, summary, ai FROM items WHERE obtain IS NULL OR ? = 1",
+        args.includes("--all") ? 1 : 0,
+      );
+      const dist: Record<string, number> = {};
+      for (const r of rows) {
+        let fromAi: string | null = null;
+        if (r.ai) {
+          try {
+            fromAi = (JSON.parse(r.ai) as { obtain?: string }).obtain ?? null;
+          } catch {
+            fromAi = null;
+          }
+        }
+        const mode = fromAi ?? guessObtain(r.title, r.summary ?? "");
+        dist[mode] = (dist[mode] ?? 0) + 1;
+        run("UPDATE items SET obtain = ? WHERE id = ?", mode, r.id);
+      }
+      console.log(`[obtain] ${rows.length} 条`, JSON.stringify(dist));
+      break;
+    }
     default:
       console.log(
-        "usage: cli.ts <collect [sourceId...] | sources | enable <id...> | disable <id...> | config <id> <json> | reclassify | ai-review [limit] | stats>",
+        "usage: cli.ts <collect [sourceId...] | sources | enable <id...> | disable <id...> | config <id> <json> | reclassify | ai-review [limit] | obtain [--all] | diagnose | stats>",
       );
   }
 }

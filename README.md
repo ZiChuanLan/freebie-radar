@@ -1,43 +1,61 @@
-# 白嫖雷达 Freebie Radar
+# 白嫖雷达 · Freebie Radar
 
-多源聚合「免费 / 可领取 / 限时开放注册」类福利信息：定时采集 → 归一化去重打分 → SQLite → Web 站浏览筛选 → 每日精选（可推 Telegram）。
+聚合全网「免费领取 / 限时白嫖 / 注册就送」福利信息的自建雷达：定时采集 → 归一化去重打分 → AI 二审 → SQLite → Web 站筛选浏览 → 每日精选 + Telegram 即时推送。
 
-## 现在能抓什么
+目标是**真的能拿到手**，而不是让一堆广告、抽奖、试用和新闻混进来。为此系统有三层过滤：关键词规则 → AI 二审 → 获取方式（obtain）分级。
 
-| 源 | 入口 | 说明 |
-|---|---|---|
-| LINUX DO 福利羊毛 / 资源荟萃 | `linux.do/c/36`、`c/14` JSON | 需过 Cloudflare，走 FlareSolverr |
-| V2EX 免费赠送 | `v2ex.com/api/topics/show.json?node_name=free` | 需墙外出口，走 FlareSolverr 或直连 |
-| GitHub 免费清单 | `api.github.com` contents | free-for-dev 等 awesome 仓库，零登录 |
-| 福利吧 / 吾爱破解 / 什么值得买 / 其乐 Keylol | RSS | 直连；52pojie 为 GBK 编码 |
-| **GamerPower** | `gamerpower.com/api/giveaways` | 聚合 Epic / Steam / GOG / itch.io / IndieGala 的限时免费 |
-| **Epic Games 喜加一** | `store-site-backend-static.../freeGamesPromotions` | 官方接口，准确给出本周免费与即将免费的起止时间 |
-| **Reddit** FreeGameFindings / eFreebies / GameDeals | `reddit.com/r/<sub>/hot.rss` | 游戏与通用免费信息最活跃的三个版块 |
-| **Slickdeals / HeyItsFree** | RSS | 美国优惠与免费样品 |
-| Telegram 频道 | `t.me/s/<channel>` | 逻辑已实现，需自己填频道名 |
-| 知乎 / 小红书 / 小黑盒 | 本机 Playwright | 需登录态与前端签名，见下节 |
+## 特性
 
-实测（2026-11-11，境外机器）：18 个有数据的源 / 710 条在库，其中**游戏类 102 条**；服务器单轮 7 源约 10 秒，新增的 8 个源单车均 < 1.5 秒。
+- **57 个源**：LINUX DO、V2EX、NodeSeek、什么值得买、吾爱破解、GitHub awesome 仓库、GamerPower、Epic 官方接口、Reddit、Bluesky、Telegram 频道、知乎 / 小红书 / 小黑盒（登录态本机采集）
+- **获取方式分级**：区分「直接白嫖 / 有条件 / 抽奖 / 试用 / 推广 / 需付费」，抽奖和广告不会混进真福利
+- **AI 二审**：任意 OpenAI 兼容网关，判定「到底能拿到什么」，网页可改端点、模型、提示词、送审上限，改完立即生效
+- **低延迟**：分源采集间隔（热门源 90 秒）+ 采集后即时推送，从发帖到 Telegram 约 2 分钟
+- **兑换码提取**：自动从正文抽出邀请码/激活码/兑换码，前端一点即复制
+- **屏蔽词防火墙**：关键词或正则、全局或单源，同时作用于列表、日报和推送
+- **价格与预算筛选**：完全白嫖 / ≤5 / ≤10 / ≤30 / ≤100 元，宁可不抽也不抽错
+- **运维面板**：开关源、改采集间隔、立即采集、看错误原因、加任意 RSS
 
-## 快速开始（本地）
+## 架构
+
+```
+采集器 (collectors/*)          →  RawItem
+  ↓ enrich/normalize           归一化、URL 去重、关键词分类、打分、价格抽取
+  ↓ enrich/ai                  AI 二审（keep + category + obtain + reason）
+  ↓ collectors persist         SQLite（items / sources / settings / push_logs）
+  ↓ routes.ts                  Hono REST API
+  ↓ src/web                    React + Vite 单页应用
+  ↓ push.ts / digest.ts        Telegram 即时推送、攒批、每日精选
+```
+
+| 目录 | 职责 |
+|---|---|
+| `src/server/collectors/` | 每个源一个采集器，统一 `RawItem` 契约 |
+| `src/server/enrich/` | 归一化、打分、价格抽取、关键词规则、AI 二审、获取方式判定 |
+| `src/server/push.ts` | 推送策略：阈值、静默时段、语言、分类、价格、obtain、去重 |
+| `src/server/digest.ts` | 每日精选生成 |
+| `src/server/routes.ts` | 全部 REST 端点 |
+| `src/web/src/` | 前端：资源流 / 每日精选 / 订阅与屏蔽 / 推送规则 / AI 引擎 / 数据源运维 |
+| `scripts/pw-collect.mjs` | 本机登录态采集（知乎、小红书、小黑盒），需人工触发 |
+
+## 快速开始
 
 ```bash
 pnpm install
-cp .env.example .env      # 按需改端口与 FLARESOLVERR_URL
-pnpm migrate
+cp .env.example .env      # 按需改端口、代理、Telegram
+pnpm migrate              # 建表 + 写入源定义
 pnpm collect              # 采集全部启用的源
 pnpm build                # 构建前端到 dist/web
 pnpm start                # http://127.0.0.1:8788
 ```
 
-开发时前后端分开：
+开发时前后端分开跑：
 
 ```bash
 pnpm dev        # API :8788
 pnpm dev:web    # Vite :5173，/api 代理到 8788
 ```
 
-## 快速开始（Docker）
+### Docker
 
 ```bash
 cp .env.example .env
@@ -45,161 +63,72 @@ docker compose up -d --build
 curl http://127.0.0.1:8788/health
 ```
 
-数据落在命名卷 `radar-data`（容器内 `/data/radar.db`）。手动触发一次采集：
+数据落在命名卷 `radar-data`（容器内 `/data/radar.db`）。
+
+## 配置
+
+配置分两层：
+
+- **`.env`**：进程级参数（端口、代理、数据库路径、推送凭据）。改完要重启。
+- **网页设置**：推送策略、屏蔽词、各源采集间隔、AI 二审配置都存 `settings` / `sources` 表，改完**立即生效**，不用重启。
+
+AI 二审在「AI 引擎」页配置，只填端点、模型、Key 三项即可；不配置则只走关键词规则。
+
+## 部署注意事项
+
+采集必须在**能直连境外服务**的机器上跑（linux.do / V2EX / Reddit / Epic / GamerPower 从国内家庭宽带会超时），并且需要一台常驻的 [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 过 Cloudflare。
+
+知乎 / 小红书 / 小黑盒需要**你自己浏览器里的登录态**，只能在本地跑：
 
 ```bash
-docker compose exec radar node --no-warnings node_modules/tsx/dist/cli.mjs src/server/cli.ts collect
+# 先在本机启动站点，或把 INGEST_TOKEN 指向远端服务器
+scripts\local-collect.cmd
 ```
 
-## 界面与功能一览
+采集结果通过 `POST /api/ingest` 带 `INGEST_TOKEN` 回传，服务端按 `(source_id, external_id)` 去重写入。
 
-| 页面 | 能做什么 |
+## CLI
+
+```bash
+pnpm tsx src/server/cli.ts sources              # 列出所有源与状态
+pnpm tsx src/server/cli.ts collect [sourceId]   # 采集（不传则全部）
+pnpm tsx src/server/cli.ts enable <id...>       # 启用源
+pnpm tsx src/server/cli.ts disable <id...>      # 禁用源
+pnpm tsx src/server/cli.ts reclassify           # 重跑关键词分类与打分
+pnpm tsx src/server/cli.ts ai-review [limit]    # 历史条目补审
+pnpm tsx src/server/cli.ts obtain [--all]       # 重算获取方式
+pnpm tsx src/server/cli.ts diagnose             # 推送体检：确认没有非白嫖条目漏出
+```
+
+## 数据源
+
+完整清单、入口 URL、访问要求见 [`docs/data-sources.md`](docs/data-sources.md)。
+已探测但不可用的源（Cloudflare、签名、已下线）也记录在里面，省得重复踩坑。
+
+## 文档
+
+| 文档 | 内容 |
 |---|---|
-| 资源流 | 源按四组折叠（国内社区 / 游戏喜加一 / 软件·AI·开源 / 综合羊毛）；卡片与紧凑两种视图；按价格、时间、未读、含码、订阅命中筛选；一键导出 Markdown |
-| 每日精选 | 按日期查看历史日报文本与当日条目，标了是否已推送 Telegram |
-| 订阅与屏蔽 | 关键词订阅 + **屏蔽词防火墙**（关键词/正则、全局或单源生效、可看每条命中数、可抽查被拦条目、可一键导入 12 条常见噪音词） |
-| 运维 | 全部源的开关 / 采集间隔（60 秒~6 小时）/ 立即采集 / 错误状态；**添加任意自定义 RSS**；发 Telegram 测试消息 |
-
-每张卡片右上角三个按钮：详情（含正文快照）、收藏、**快捷屏蔽**（自动把标题切成候选词，点一下加规则）。兑换码是黄色胶囊，点一下就复制。
-
-```bash
-# 屏蔽词 API
-curl -X POST '.../api/block-rules' -H 'content-type: application/json' -d '{"presets":true}'          # 导入预设
-curl -X POST '.../api/block-rules' -H 'content-type: application/json' -d '{"pattern":"汽车","scope":"all"}'
-curl '.../api/block-rules'            # 每条规则的命中条数与总拦截量
-curl '.../api/items?includeBlocked=1' # 连同被屏蔽的一起看（会标明 blockedBy）
-
-# 源管理
-curl -X POST '.../api/sources' -H 'content-type: application/json' -d '{"name":"某博客","url":"https://x.com/feed","intervalSec":1800}'
-curl -X PATCH '.../api/sources/epic-free' -H 'content-type: application/json' -d '{"interval_sec":900}'
-curl -X POST '.../api/sources/epic-free/collect'   # 立即采集
-```
-
-## 环境变量
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `PORT` | 8788 | 监听端口（8787 常被 PixPin 占用） |
-| `DATABASE_PATH` | ./data/radar.db | SQLite 路径，Docker 内用 /data/radar.db |
-| `FLARESOLVERR_URL` | 空 | 例如 `http://172.17.0.1:8191`；留空则 linux.do 直连（会 403） |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 空 | 本机无墙外出口时指向代理 |
-| `ENABLED_SOURCES` | 空 | 逗号分隔的源 id，留空=全部启用 |
-| `MAX_ITEMS_PER_RUN` | 50 | 单源单次上限 |
-| `GITHUB_TOKEN` | 空 | 可选，把 GitHub 限额从 60/h 提到 5000/h |
-| `COLLECT_CRON` | `0 */2 * * *` | 采集周期 |
-| `DAILY_CRON` | `30 8 * * *` | 每日精选生成时间 |
-| `ENABLE_SCHEDULER` | true | 关掉后只能手动跑 |
-| `PUSH_CHANNEL` | none | none=只落库；telegram=推送 |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | 空 | 推送凭据 |
-| `TELEGRAM_PROXY` | 空 | 推送单独走代理（本机直连不上 api.telegram.org） |
-| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 空 | 可选 AI 二审，走 OpenAI 兼容 `/chat/completions` |
-
-## 按价格筛选
-
-左侧栏「我能付多少」支持按预算过滤：**不限 / 完全白嫖 / ≤5 元 / ≤10 元 / ≤30 元 / ≤100 元**。
-
-价格从标题里按高可信模式抽取（`¥3.5`、`最低 3 元`、`3 元起`、`$4.66`），遇到「省 30 块」「200 元耳机怎么选」这类描述性金额会被排除；美元按 7.2 折算成人民币。
-
-「完全白嫖」只看标题里的免费词，不看摘要，避免把「虽然免费但没用」这种讨论帖算进来。
-
-```bash
-curl '.../api/items?freeOnly=1'   # 只看完全免费
-curl '.../api/items?maxPrice=5'   # ≤5 元（含免费）
-```
-
-## 时效性：送码类资源的抢速设计
-
-送码 / 送邀请码的帖子，码往往 **1 分钟内**就被抢光。本项目为此做了四层设计（细节见 `docs/timing.md`）：
-
-| 机制 | 说明 |
-|---|---|
-| 每源独立间隔 | `linuxdo-welfare` 90 秒、`v2ex-free` 120 秒、`linuxdo-resource` 180 秒，RSS 15-30 分钟，GitHub 6 小时 |
-| 即时推送 | 新条目若含兑换码 / 限量词 / 评分 ≥ 70，立刻发 Telegram，不等日报（每小时上限 24 条） |
-| 兑换码抽取 | 自动识别邀请码、分段码、长串码，前端点一下就复制 |
-| 正文快照 | 抓 linux.do 首帖正文存库，原帖被改被删也留档 |
-
-调整某个源的频率（秒）：
-
-```bash
-# 直接用 sqlite 改，或给该源改 config
-docker compose exec radar node -e "const{DatabaseSync}=require('node:sqlite');new DatabaseSync('/data/radar.db').prepare('UPDATE sources SET interval_sec=? WHERE id=?').run(60,'linuxdo-welfare')"
-```
-
-## 订阅与提醒
-
-左侧栏「我的订阅」可以加任意关键词（如 `epic`、`会员`、`Claude`），命中订阅的条目：
-
-- 卡片上出现 `订阅命中：xxx` 的黄色徽章；
-- 「订阅命中」开关一键只看这些条目；
-- 「3 天内截止」开关按 `expires_at` 筛出即将过期的资源。
-
-```bash
-curl -X POST http://127.0.0.1:8788/api/subscriptions -H "content-type: application/json" -d '{"keyword":"epic"}'
-curl http://127.0.0.1:8788/api/items?subscribed=1      # 只看订阅命中
-curl http://127.0.0.1:8788/api/items?expiring=1        # 只看 3 天内截止
-curl -X DELETE http://127.0.0.1:8788/api/subscriptions/1
-```
-
-分类规则调整后，用 `cli.ts reclassify` 重算历史条目（保留 `ignored` 状态）：
-
-```bash
-docker compose exec radar node node_modules/tsx/dist/cli.mjs src/server/cli.ts reclassify
-```
-
-## 常用命令
-
-```bash
-pnpm collect                              # 全部启用的源
-node --no-warnings node_modules/tsx/dist/cli.mjs src/server/cli.ts collect v2ex-free   # 单个源
-... cli.ts sources                        # 看源状态与游标
-... cli.ts enable tg-channels             # 启用/禁用
-... cli.ts config tg-channels '{"channels":["somechannel"]}'   # 改源配置
-... cli.ts daily --dry-run                # 只打印今日精选，不落库
-... cli.ts daily                          # 生成并记录（PUSH_CHANNEL=none 时不外发）
-... cli.ts digests                        # 最近日报记录
-pnpm test                                 # 14 个单测
-```
-
-## 采集登录态站点（知乎 / 小红书 / 小黑盒）
-
-这三站需要浏览器登录态和前端签名（小黑盒的搜索接口带 `hkey`/`_time`/`nonce`/`_rnd`，只能由页面 JS 生成），服务器上抓不了，改由本机 Playwright 驱动一个**持久化 Chrome profile** 采集后回传：
-
-```bash
-node scripts/pw-collect.mjs          # 三站全跑
-node scripts/pw-collect.mjs xhs      # 只跑小红书
-HEADLESS=1 node scripts/pw-collect.mjs   # 无头（登录态已在 profile 里时可用）
-```
-
-- profile 目录默认 `%LOCALAPPDATA%\freebie-radar-chrome`，可用 `PROFILE_DIR` 覆盖；登录一次即持久化，之后无需重复登录。
-- 顶部常量可选环境变量覆盖：`SERVER_URL` / `INGEST_TOKEN`，服务器端需配置同名 `INGEST_TOKEN`。
-- 关键词列表在脚本的 `KEYWORDS`；小红书会自动滚动 3 屏加载更多。
-- 定时：这三站由本机计划任务 `freebie-radar-local` 驱动（每天 09:30，headless 模式），包装脚本为 `scripts/local-collect.cmd`，日志写 `logs/local-collect.log`。重新注册：
-  ```bash
-  schtasks /create /tn "freebie-radar-local" /tr "H:\WorkSpace\freebie-radar\scripts\local-collect.cmd" /sc daily /st 09:30 /f
-  schtasks /run /tn "freebie-radar-local"     # 立即跑一次
-  ```
-
-## 加一个新源
-
-1. 在 `src/server/collectors/` 新建文件，实现 `Collector`（`kind` + `collect(ctx)`，返回 `{ items, cursor?, degraded? }`）。
-2. 在 `src/server/collectors/index.ts` 注册到 `COLLECTORS`，并在 `SEEDS` 加一条源定义。
-3. 重跑采集即可；去重键是 `(source_id, external_id)` + 规范化 URL。
-
-已有 kind：`linuxdo` / `v2ex` / `github-readme` / `rss` / `telegram` / `mock`。纯 RSS 源不用写代码，直接 `cli.ts config` 加 feed 即可。
+| [`docs/data-sources.md`](docs/data-sources.md) | 全部数据源与可达性实测 |
+| [`docs/obtain.md`](docs/obtain.md) | 获取方式分级：怎么区分白嫖与抽奖/试用/推广 |
+| [`docs/ai.md`](docs/ai.md) | AI 二审的提示词设计、判定口径与误判处理 |
+| [`docs/push.md`](docs/push.md) | 推送三层分流、静默时段时区、去重 |
+| [`docs/timing.md`](docs/timing.md) | 时效性优化：分源间隔、即时推送、正文快照 |
+| [`docs/deploy.md`](docs/deploy.md) | 部署与运维 |
+| [`docs/classification-review.md`](docs/classification-review.md) | 分类规则复盘 |
+| [`DESIGN.md`](DESIGN.md) / [`PRODUCT.md`](PRODUCT.md) | 前端设计语言与产品定位 |
 
 ## 已知限制
 
-- **知乎 / 小红书 / 小黑盒**：走本机 Playwright + 持久化 Chrome profile 采集（`scripts/pw-collect.mjs`），结果 POST 到服务器的 `/api/ingest`。三站均已实测打通：知乎 47 条、小红书 74 条、小黑盒 20 条。登录态保存在 `%LOCALAPPDATA%\freebie-radar-chrome`，登录一次长期有效。服务器端无法直采——它们依赖用户登录态与前端签名。
-- **Telegram 频道**：抓取逻辑已用 `t.me/s/durov` 验证可用（20 条消息），但没有可确认长期更新的中文羊毛频道清单，源默认 disabled。
-- **TG 推送**：已部署在 RN（墙外）并实发成功。本机因无法直连 `api.telegram.org`，若在本机跑 `pnpm daily` 需配 `TELEGRAM_PROXY`；未配 token 时只落库不外发。
-- **RSSHub 公共实例 / hostloc / 线报酷**：实测不可用（403 / 非 RSS / 超时），见 `docs/data-sources.md`。
-- **FlareSolverr 首次冷启动慢**：首次解 Cloudflare 约 1-2 分钟，之后复用 session 降到 1-2 秒。
+- 抽奖 / 试用 / 推广靠 AI + 关键词判定，边界情况仍会误判，页面上可以按获取方式单独查看和核对
+- 老帖没有截止时间，靠发布时间算保鲜期（默认 14 天，真福利精选 7 天）
+- 偶发几十秒的接口尖峰来自采集调度器与读请求争抢同一个 SQLite，与查询写法无关
+- `会员免费`（如 Prime 会员看 Kindle）按当前口径算「需付费」，不计入白嫖
 
-## 结构
+## 免责
 
-```
-src/server/        API、采集器、打分、日报、调度
-src/web/           React + Tailwind 单页
-tests/             分类与规范化单测
-docs/              数据源侦察、分类抽样、截图
-```
+本项目只做公开信息的聚合与去重，不存储、不传播任何受版权保护的内容，也不提供账号共享。抓取频率已按各站实际情况限流，请自行遵守目标站点的使用条款。
+
+## License
+
+[MIT](LICENSE)
