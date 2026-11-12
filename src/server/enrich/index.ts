@@ -4,9 +4,9 @@ import { extractCodes } from "./codes.ts";
 import { extractPrice } from "./pricing.ts";
 
 export type Category =
-  | "ai" | "cloud" | "domain" | "software" | "media" | "game" | "goods" | "invite" | "edu" | "other";
+  | "ai" | "cloud" | "domain" | "opensource" | "software" | "media" | "game" | "goods" | "invite" | "edu" | "other";
 
-const CATEGORIES = new Set<string>(["ai", "cloud", "domain", "software", "media", "game", "goods", "invite", "edu", "other"]);
+const CATEGORIES = new Set<string>(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
 
 export function isCategory(value: unknown): value is Category {
   return typeof value === "string" && CATEGORIES.has(value);
@@ -16,6 +16,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   ai: "AI 额度",
   cloud: "云服务",
   domain: "域名/主机",
+  opensource: "开源软件",
   software: "软件授权",
   media: "影音会员",
   game: "游戏",
@@ -44,9 +45,15 @@ const RULES: Rule[] = [
     keywords: ["域名", "domain", "ssl", "证书", "dns", "主机", "虚拟主机", "建站", "托管"],
   },
   {
+    // 只认强信号：明确提到开源、GitHub、自托管才算，避免「工具」「插件」这类泛词抢走其它分类
+    category: "opensource",
+    weight: 1.0,
+    keywords: ["开源", "open source", "opensource", "github.com", "github 仓库", "github项目", "gitlab", "self-host", "selfhosted", "自托管", "自建服务", "awesome-", "mit 协议", "apache 协议", "gpl", "源码", "pull request", "开源项目", "开源软件", "开源工具", "开源库"],
+  },
+  {
     category: "software",
     weight: 1.0,
-    keywords: ["激活码", "序列号", "license", "授权", "正版", "破解", "绿色版", "注册机", "兑换码", "key", "office", "windows", "adobe", "jetbrains", "idea", "photoshop", "会员版", "工具", "软件", "插件", "app", "解锁", "remote desktop", "pipelines", "ci/cd", "套餐", "订阅", "永久授权", "免费版", "freemium", "lifetime"],
+    keywords: ["激活码", "序列号", "license", "授权", "正版", "绿色版", "注册机", "兑换码", "office", "windows", "adobe", "jetbrains", "photoshop", "会员版", "商业软件", "软件授权", "解锁", "remote desktop", "pipelines", "ci/cd", "永久授权", "免费版", "freemium", "lifetime", "限免"],
   },
   {
     category: "media",

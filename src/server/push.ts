@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
 };
 
 const SETTINGS_KEY = "push";
-const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "software", "media", "game", "goods", "invite", "edu", "other"]);
+const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
   const n = Number(v);

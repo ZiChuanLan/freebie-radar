@@ -25,6 +25,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   ai: "AI 额度",
   cloud: "云服务",
   domain: "域名/主机",
+  opensource: "开源软件",
   software: "软件授权",
   media: "影音会员",
   game: "游戏",
