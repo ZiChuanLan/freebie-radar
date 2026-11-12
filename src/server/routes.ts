@@ -251,7 +251,49 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
 }
 /** 正则屏蔽规则的扫描结果缓存（见 buildItemsQuery 里的说明）。 */
 let regexBlockCache: { key: string; ids: number[] } = { key: "", ids: [] };
+/**
+ * 公开读接口白名单：浏览、搜索、导出、健康检查都不需要密码。
+ * 其余（推送/推送规则/AI/清理/屏蔽词/订阅/运维/采集）一律需要 ADMIN_TOKEN。
+ */
+const PUBLIC_GET = [
+  "/api/items",
+  "/api/stats",
+  "/api/sources",
+  "/api/digests",
+  "/api/export",
+  "/api/auth/check",
+];
+
+let warnedNoAdminToken = false;
+
 export function registerApi(app: Hono) {
+  // 管理端鉴权：未设置 ADMIN_TOKEN 时全部放行（保持旧部署不变）
+  app.use("/api/*", async (c, next) => {
+    const token = config.adminToken;
+    if (!token) {
+      if (!warnedNoAdminToken) {
+        console.warn("[auth] 未设置 ADMIN_TOKEN，管理接口对所有访问者开放");
+        warnedNoAdminToken = true;
+      }
+      return next();
+    }
+
+    const path = c.req.path;
+    const method = c.req.method;
+    // 采集器回传有独立的 INGEST_TOKEN，不归这里管
+    if (path.startsWith("/api/ingest")) return next();
+    // 公开只读
+    if (method === "GET" && PUBLIC_GET.some((p) => path === p || path.startsWith(p + "/"))) return next();
+
+    const auth = c.req.header("authorization") ?? "";
+    const given = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    if (given && given === token) return next();
+    return c.json({ error: "需要管理密码", needAuth: true }, 401);
+  });
+
+  // 前端用它验证密码是否正确
+  app.get("/api/auth/check", (c) => c.json({ ok: true, protected: Boolean(config.adminToken) }));
+
   app.get("/api/items", (c) => {
     const q = c.req.query();
     const limit = Math.min(Math.max(Number(q.limit ?? 40), 1), 200);

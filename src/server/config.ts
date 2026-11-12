@@ -66,6 +66,8 @@ export const config = {
   aiMaxItems: num("AI_MAX_ITEMS", 20),
 
   ingestToken: str("INGEST_TOKEN"),
+  /** 管理端密码；留空则管理接口全部开放（向后兼容） */
+  adminToken: str("ADMIN_TOKEN"),
 } as const;
 
 export const aiEnabled = Boolean(config.aiBaseUrl && config.aiModel);

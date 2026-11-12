@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Download,
   EyeOff,
+  Lock,
   LayoutGrid,
   Loader2,
   Radar,
@@ -25,6 +26,8 @@ import {
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
 import { AiPanel } from "./components/AiPanel.tsx";
+import { AdminGate } from "./components/AdminGate.tsx";
+import { getToken } from "./lib/auth.ts";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
@@ -124,6 +127,10 @@ const PRESETS: Preset[] = [
   { key: "hidden", label: "已关闭", icon: EyeOff },
 ];
 
+// 公开区：任何人不登录就能看。其余全部归管理区。
+const PUBLIC_TABS = new Set<Tab>(["feed", "digest"]);
+const ADMIN_TABS = new Set<Tab>(["rules", "push", "ai", "ops"]);
+
 export function App() {
   const initialTab = (): Tab => {
     if (typeof location === "undefined") return "feed";
@@ -136,6 +143,14 @@ export function App() {
   const [quickBlock, setQuickBlock] = useState<Item | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
+  // 服务端是否启用管理密码（决定是否拦截管理区）
+  const [protectedMode, setProtectedMode] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/check")
+      .then((r) => r.json())
+      .then((j: { protected?: boolean }) => setProtectedMode(Boolean(j.protected)))
+      .catch(() => undefined);
+  }, []);
 
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -261,10 +276,13 @@ export function App() {
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
   const subs = useApi<{ subscriptions: Subscription[] }>("/api/subscriptions");
   const sources = useApi<{ sources: Source[] }>("/api/sources");
-  const runs = useApi<{ runs: Run[] }>("/api/runs?limit=40");
-  const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>("/api/block-rules");
+  const runs = useApi<{ runs: Run[] }>(getToken() ? "/api/runs?limit=40" : null);
+  const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>(
+    getToken() ? "/api/block-rules" : null,
+  );
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
-  const push = useApi<PushPayload>("/api/push");
+  // 管理接口只在已登录时请求，避免公开区刷出一堆 401
+  const push = useApi<PushPayload>(getToken() ? "/api/push" : null);
   const ai = useApi<AiPayload>(tab === "ai" ? "/api/ai" : null);
   const pushLogs = useApi<{ logs: PushLogItem[] }>(tab === "push" ? "/api/push/log?limit=40" : null);
   const [pushPreview, setPushPreview] = useState<{
@@ -373,14 +391,29 @@ export function App() {
     sources: enabledSources.filter((s) => groupOfSource(s) === g.key),
   })).filter((g) => g.sources.length > 0);
 
-  const tabs: { key: Tab; label: string; icon: typeof Activity; badge?: number }[] = [
+  const authed = Boolean(getToken());
+  // 公开区只显示「资源流 / 每日精选」，其余 Tab 只有进管理区后才出现
+  const tabs: { key: Tab | "admin"; label: string; icon: typeof Activity; badge?: number }[] = [
     { key: "feed", label: "资源流", icon: Activity },
     { key: "digest", label: "每日精选", icon: Radar },
-    { key: "rules", label: "订阅与屏蔽", icon: ShieldBan, badge: stats.data?.totals.blockRules },
-    { key: "push", label: "推送规则", icon: Zap, badge: push.data?.stats.queued },
-    { key: "ai", label: "AI 引擎", icon: Bot },
-    { key: "ops", label: "数据源运维", icon: Wrench },
+    ...(authed
+      ? [
+          { key: "rules" as Tab, label: "订阅与屏蔽", icon: ShieldBan, badge: stats.data?.totals.blockRules },
+          { key: "push" as Tab, label: "推送规则", icon: Zap, badge: push.data?.stats.queued },
+          { key: "ai" as Tab, label: "AI 引擎", icon: Bot },
+          { key: "ops" as Tab, label: "数据源运维", icon: Wrench },
+        ]
+      : [{ key: "admin" as const, label: "管理区", icon: Lock }]),
   ];
+
+  const handleTab = (key: Tab | "admin") => {
+    if (key === "admin") {
+      setTab("admin" as Tab);
+      return;
+    }
+    setTab(key);
+  };
+
 
   const exportUrl = "/api/export?format=md&" + query.replace(/limit=\d+/, "limit=300");
 
@@ -458,7 +491,7 @@ export function App() {
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setTab(t.key)}
+                onClick={() => handleTab(t.key)}
                 className={
                   "flex w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-colors " +
                   (tab === t.key
@@ -752,6 +785,30 @@ export function App() {
 
         {/* 主内容区 */}
         <main className="min-w-0 flex-1">
+          {(tab as string) === "admin" && (
+            <AdminGate protectedMode={protectedMode}>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { key: "rules" as Tab, label: "订阅与屏蔽", desc: "关键词订阅、屏蔽词防火墙", icon: ShieldBan },
+                  { key: "push" as Tab, label: "推送规则", desc: "阈值、静默时段、语言与去重", icon: Zap },
+                  { key: "ai" as Tab, label: "AI 引擎", desc: "二审模型、提示词、判定统计", icon: Bot },
+                  { key: "ops" as Tab, label: "数据源运维", desc: "采集开关、间隔、数据清理", icon: Wrench },
+                ].map((entry) => (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    onClick={() => setTab(entry.key)}
+                    className="panel flex flex-col items-start gap-1.5 p-4 text-left transition-colors hover:border-brand"
+                  >
+                    <entry.icon size={16} className="text-brand" />
+                    <span className="text-[13.5px] font-semibold text-ink-900">{entry.label}</span>
+                    <span className="text-[11.5px] leading-relaxed text-ink-500">{entry.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </AdminGate>
+          )}
+
           {tab === "feed" && (
             <>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
