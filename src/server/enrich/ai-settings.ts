@@ -146,10 +146,15 @@ export function publicAiSettings(s = getAiSettings()) {
 async function callOnce(
   payload: { index: number; title: string; summary: string }[],
   s: AiSettings,
+  timeoutMs = 15_000,
 ): Promise<Map<number, AiVerdict> | null> {
   const endpoint = s.baseUrl.replace(/\/+$/, "") + "/chat/completions";
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 60_000);
+  // 实测正常批次 2-5 秒，但 MG 偶发长尾能拖到 49 秒。
+  // 与其等长尾，不如 15 秒就放弃、让上层重试或拆小——重试通常立刻就快。
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const t0 = Date.now();
+  const tag = `[ai] batch n=${payload.length} idx=${payload[0]?.index ?? "-"}`;
   try {
     const res = await fetch(endpoint, {
       method: "POST",
@@ -167,8 +172,10 @@ async function callOnce(
       }),
       signal: ac.signal,
     });
+    const ttfb = Date.now() - t0;
     if (!res.ok) throw new Error("AI HTTP " + res.status + " " + (await res.text()).slice(0, 120));
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    console.log(`${tag} 完成 ${Date.now() - t0}ms（响应头 ${ttfb}ms）`);
     const content = data.choices?.[0]?.message?.content ?? "";
     const jsonText = /\[[\s\S]*\]/.exec(content)?.[0];
     if (!jsonText) throw new Error("AI 未返回 JSON 数组");
@@ -211,17 +218,29 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
     });
   }
 
+  /**
+   * 单批带重试：MG 偶发长尾（实测某批 49 秒而其余 2-5 秒），
+   * 15 秒超时后立刻重试一次，命中长尾的概率很低，重试基本能拿到。
+   */
+  const runJob = async (job: Job): Promise<Map<number, AiVerdict> | null> => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await callOnce(job.payload, s);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (attempt === 0) {
+          console.log(`[ai] 重试 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
+          continue;
+        }
+        console.log(`[ai] 放弃 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
+      }
+    }
+    return null;
+  };
+
   for (let i = 0; i < jobs.length; i += CONCURRENCY) {
     const wave = jobs.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      wave.map(async (job) => {
-        try {
-          return await callOnce(job.payload, s);
-        } catch {
-          return null;
-        }
-      }),
-    );
+    const results = await Promise.all(wave.map(runJob));
     for (const map of results) {
       if (!map) continue;
       for (const [k, v] of map) merged.set(k, v);
