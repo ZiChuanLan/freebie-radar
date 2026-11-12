@@ -1,85 +1,148 @@
+import { XMLParser } from "fast-xml-parser";
 import { flaresolverrGet, hasFlare } from "../flaresolverr.ts";
+import { cleanText, parseDate } from "../enrich/normalize.ts";
 import type { Collector, RawItem } from "./types.ts";
-import { cleanText } from "../enrich/normalize.ts";
 
-type TopicTag = string | { name?: string; slug?: string };
-type Topic = {
-  id: number;
-  title: string;
-  slug?: string;
-  created_at?: string;
-  last_posted_at?: string;
-  excerpt?: string;
-  category_id?: number;
-  tags?: TopicTag[];
-  posts_count?: number;
-  like_count?: number;
-  views?: number;
+/**
+ * linux.do 采集：走 Discourse 的 RSS，不走 JSON。
+ *
+ * 为什么不是 JSON：
+ *  /c/36/l/latest.json 直连 403，只能过 FlareSolverr 解挑战，每轮 40-70 秒，
+ *  送码帖的时效性直接被吃掉。RSS 小一个数量级，且 CF 对它的策略宽松得多。
+ *
+ * 取 RSS 的两条路：
+ *  1. 直连（curl 能拿 200，几百毫秒）
+ *  2. 直连被拦时切 FlareSolverr —— Node 的 fetch 用的是 undici，
+ *     TLS 指纹和 curl 不同，linux.do 会单独给它 403，所以这条路必须留着。
+ *     session 复用后单次约 1.4 秒，仍远快于 JSON 的 40-70 秒。
+ */
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  trimValues: true,
+  processEntities: false,
+});
+
+type FeedItem = Record<string, unknown>;
+
+function asArray<T>(v: T | T[] | undefined): T[] {
+  if (v === undefined || v === null) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+function textOf(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  if (typeof v === "object") {
+    const t = (v as Record<string, unknown>)["#text"];
+    if (typeof t === "string") return t;
+    if (typeof t === "number") return String(t);
+  }
+  return "";
+}
+
+function parseRss(xml: string): FeedItem[] {
+  const doc = parser.parse(xml) as Record<string, unknown>;
+  const rss = doc.rss as { channel?: { item?: FeedItem | FeedItem[] } } | undefined;
+  if (!rss?.channel) throw new Error("不是合法的 RSS");
+  return asArray(rss.channel.item);
+}
+
+/** 从 https://linux.do/t/xxx/3166375 里取话题 id */
+function topicIdOf(link: string): string | null {
+  const m = /\/t\/(?:[^/]+\/)?(\d+)/.exec(link);
+  return m ? m[1]! : null;
+}
+
+function toRawItem(it: FeedItem, categoryName: string): RawItem | null {
+  const title = textOf(it.title).trim();
+  const link = textOf(it.link).trim();
+  if (!title || !link) return null;
+  const id = topicIdOf(link);
+  if (!id) return null;
+
+  const description = textOf(it.description);
+  return {
+    externalId: id,
+    url: link,
+    title: cleanText(title, 200),
+    summary: cleanText(description, 400),
+    // RSS 的 description 就是首帖摘要，做「送什么、什么条件」的判断够了，
+    // 也省掉了原来每帖一次的正文请求（5 帖 = 5 次 FlareSolverr）
+    content: cleanText(description, 1200),
+    author: textOf(it["dc:creator"]) || null,
+    publishedAt: parseDate(textOf(it.pubDate)),
+    tags: [categoryName],
+    raw: { category: categoryName, via: "rss" },
+  };
+}
+
+type Ctx = {
+  http: { text(url: string): Promise<{ status: number; body: string }> };
+  log(msg: string): void;
 };
 
-function tagNames(tags: TopicTag[] | undefined): string[] {
-  return (tags ?? [])
-    .map((t) => (typeof t === "string" ? t : (t.name ?? t.slug ?? "")))
-    .filter((t) => Boolean(t));
+async function fetchRss(ctx: Ctx, url: string): Promise<string> {
+  try {
+    const res = await ctx.http.text(url);
+    if (res.status === 200 && res.body.includes("<rss")) {
+      ctx.log(`直连 RSS ok ${url}`);
+      return res.body;
+    }
+    ctx.log(`直连 RSS HTTP ${res.status}，切 FlareSolverr`);
+  } catch (err) {
+    ctx.log(`直连 RSS 失败（${err instanceof Error ? err.message : String(err)}），切 FlareSolverr`);
+  }
+
+  if (!hasFlare()) throw new Error("直连被拦且未配置 FLARESOLVERR_URL");
+  const res = await flaresolverrGet(url);
+  if (res.status !== 200) throw new Error("FlareSolverr 取 RSS HTTP " + res.status);
+  return res.body;
 }
+
+type Cfg = { categoryId: number; rssSlug: string; categoryName: string };
 
 export const linuxdoCollector: Collector = {
   kind: "linuxdo",
   label: "LINUX DO",
-  defaults: { config: { categoryId: 36 } },
+  defaults: { config: { categoryId: 36, rssSlug: "welfare", categoryName: "福利羊毛" } },
   async collect(ctx) {
-    const categoryId = Number(ctx.config.categoryId ?? 36);
-    const url = "https://linux.do/c/" + categoryId + "/l/latest.json?order=created";
-    ctx.log("GET " + url + (hasFlare() ? " via flaresolverr" : " direct"));
+    const cfg: Cfg = {
+      categoryId: Number(ctx.config.categoryId ?? 36),
+      rssSlug: String(ctx.config.rssSlug ?? ""),
+      categoryName: String(ctx.config.categoryName ?? ""),
+    };
 
-    let body: string;
-    if (hasFlare()) {
-      const res = await flaresolverrGet(url);
-      if (res.status !== 200) throw new Error("linux.do HTTP " + res.status);
-      body = res.body;
-    } else {
-      const res = await ctx.http.text(url);
-      if (res.status !== 200) {
-        throw new Error("linux.do HTTP " + res.status + "（未配置 FLARESOLVERR_URL，大概率被 Cloudflare 拦截）");
-      }
-      body = res.body;
-    }
+    let items: RawItem[] = [];
+    let degraded: string | null = null;
 
-    let data: { topic_list?: { topics?: Topic[] } };
-    try {
-      data = JSON.parse(body) as typeof data;
-    } catch {
-      throw new Error("linux.do 返回非 JSON，可能仍是 Cloudflare 挑战页");
-    }
-
-    const topics = data.topic_list?.topics ?? [];
-    const items: RawItem[] = topics.map((t) => ({
-      externalId: String(t.id),
-      url: "https://linux.do/t/" + (t.slug ? t.slug + "/" : "") + t.id,
-      title: t.title,
-      summary: t.excerpt ?? "",
-      publishedAt: t.created_at ?? t.last_posted_at ?? null,
-      tags: tagNames(t.tags),
-      raw: { id: t.id, categoryId: t.category_id, views: t.views, likes: t.like_count },
-    }));
-
-    // 可选：抓最新几帖的正文并抽取兑换码。
-    // 送码帖 1 分钟内就没了，正文快照能让历史记录不丢内容，也让码抽取更准。
-    if (ctx.config.fetchContent) {
-      const targets = items.slice(0, Math.max(1, Math.min(Number(ctx.config.fetchContentLimit ?? 5), 8)));
-      for (const it of targets) {
-        try {
-          const detail = await flaresolverrGet("https://linux.do/t/" + it.externalId + ".json");
-          const parsed = JSON.parse(detail.body) as { post_stream?: { posts?: { cooked?: string }[] } };
-          const cooked = parsed.post_stream?.posts?.[0]?.cooked ?? "";
-          it.content = cleanText(cooked, 2000);
-        } catch (err) {
-          ctx.log("正文抓取失败 " + it.externalId + ": " + (err instanceof Error ? err.message : String(err)));
-        }
+    // 1) 分类 RSS：精准，只有目标板块
+    if (cfg.rssSlug) {
+      try {
+        const xml = await fetchRss(ctx as Ctx, `https://linux.do/c/${cfg.rssSlug}/${cfg.categoryId}.rss`);
+        items = parseRss(xml)
+          .map((it) => toRawItem(it, cfg.categoryName))
+          .filter((x): x is RawItem => x !== null);
+        ctx.log(`分类 RSS ${items.length} 条`);
+      } catch (err) {
+        degraded = "分类 RSS 失败: " + (err instanceof Error ? err.message : String(err));
+        ctx.log(degraded);
       }
     }
 
-    const cursor = topics.length ? String(Math.max(...topics.map((t) => t.id))) : ctx.cursor;
-    return { items: items.slice(0, ctx.maxItems), cursor };
+    // 2) 兜底：latest.rss + 按 category 过滤（只有最新 30 条，覆盖全部板块）
+    if (!items.length) {
+      const xml = await fetchRss(ctx as Ctx, "https://linux.do/latest.rss");
+      const all = parseRss(xml);
+      const filtered = cfg.categoryName ? all.filter((it) => textOf(it.category).trim() === cfg.categoryName) : all;
+      items = filtered.map((it) => toRawItem(it, cfg.categoryName)).filter((x): x is RawItem => x !== null);
+      ctx.log(`latest.rss ${all.length} 条，命中「${cfg.categoryName}」${items.length} 条`);
+      if (!items.length) degraded = (degraded ? degraded + "; " : "") + "latest.rss 未命中板块";
+    }
+
+    const cursor = items.length ? String(Math.max(...items.map((i) => Number(i.externalId) || 0))) : ctx.cursor;
+    return { items: items.slice(0, ctx.maxItems), cursor, degraded };
   },
 };
