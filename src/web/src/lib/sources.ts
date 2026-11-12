@@ -1,5 +1,26 @@
 import type { Source } from "../types.ts";
 
+/** 获取方式：决定这条到底算不算「完全白嫖」。 */
+export const OBTAIN_LABEL: Record<string, string> = {
+  free: "直接白嫖",
+  conditional: "有条件",
+  lottery: "抽奖",
+  trial: "试用",
+  promo: "推广",
+  paid: "需付费",
+};
+
+export const OBTAIN_HINT: Record<string, string> = {
+  free: "点开就能领，不用发帖、邀请、抽签",
+  conditional: "要回帖/转发/邀请/实名才能拿",
+  lottery: "抽名额开奖，不一定轮到你",
+  trial: "免费试用 N 天，到期要付费",
+  promo: "商家推广自家服务的引流钩子",
+  paid: "要实付钱才拿得到",
+};
+
+export const OBTAIN_ORDER = ["free", "conditional", "lottery", "trial", "promo", "paid"] as const;
+
 export const CATEGORY_LABEL: Record<string, string> = {
   ai: "AI 额度",
   cloud: "云服务",

@@ -1,7 +1,8 @@
 import { aiEnabled, config } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
 import { enrichItem } from "../enrich/index.ts";
-import { reviewItems, type AiVerdict } from "../enrich/ai.ts";
+import { reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
+import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
 import { pushInstant } from "../instant.ts";
 import { createHttp, type HttpClient } from "../http.ts";
 import { mockCollector } from "./mock.ts";
@@ -187,9 +188,16 @@ export type FreshItem = {
   aiKeep?: boolean | null;
   /** 归一化分类，用于推送分类过滤 */
   category?: string | null;
+  /** 获取方式：free 才算完全白嫖，抽奖/试用/推广默认不推 */
+  obtain?: string | null;
   /** 摘要文本，用于订阅关键词匹配 */
   summary?: string | null;
 };
+
+/** AI 给了 obtain 就用 AI 的，没给就用关键词兜底。 */
+function obtainOf(e: { title: string; summary?: string | null }, verdict?: AiVerdict | null): ObtainMode {
+  return verdict?.obtain ?? guessObtain(e.title, e.summary ?? "");
+}
 
 function persist(
   sourceId: string,
@@ -226,6 +234,7 @@ function persist(
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
              price = ?, is_free = ?,
              ai = COALESCE(?, ai),
+             obtain = COALESCE(?, obtain),
              ai_keep = COALESCE(?, ai_keep),
              status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END
            WHERE id = ?`,
@@ -244,6 +253,7 @@ function persist(
           e.price,
           e.isFree ? 1 : 0,
           aiJson,
+          obtainOf(e, verdict),
           status,
           existing.id,
         );
@@ -253,8 +263,8 @@ function persist(
       try {
         const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, summary, author, category,
-             tags, score, expires_at, published_at, raw, status, ai, ai_keep, content, codes, price, is_free, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             tags, score, expires_at, published_at, raw, status, ai, obtain, ai_keep, content, codes, price, is_free, first_seen_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
@@ -270,6 +280,7 @@ function persist(
           JSON.stringify(e.raw ?? {}),
           status,
           aiJson,
+          obtainOf(e, verdict),
           verdict ? (verdict.keep ? 1 : 0) : null,
           e.content ?? null,
           JSON.stringify(e.codes),
@@ -349,7 +360,7 @@ export async function runSource(
     });
     fetched = result.items.length;
     let aiMap: Map<number, AiVerdict> | null = null;
-    if (aiEnabled && result.items.length) {
+    if (shouldReview() && result.items.length) {
       try {
         aiMap = await reviewItems(result.items);
         if (aiMap) {

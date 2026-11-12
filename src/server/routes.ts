@@ -133,9 +133,24 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
     where.push("COALESCE(published_at, first_seen_at) >= ?");
     params.push(q.since);
   }
+  // 「未过期」拆成两个独立条件，避免 (A OR B) 这种写法让索引整体失效：
+  //  1) 保鲜期：源没给截止时间时按发布时间算，否则 28 天前的老帖会被当成现役福利
+  //  2) 截止时间：源给了就按它判断
   if (q.unexpired === "1") {
+    const maxAgeDays = Math.min(Math.max(Number(q.maxAgeDays ?? 14), 1), 365);
+    const now = new Date();
+    where.push("COALESCE(published_at, first_seen_at) >= ?");
+    params.push(new Date(now.getTime() - maxAgeDays * 86_400_000).toISOString());
     where.push("(expires_at IS NULL OR expires_at > ?)");
-    params.push(new Date().toISOString());
+    params.push(now.toISOString());
+  }
+  // 获取方式：用 IN 精确匹配（走 idx_items_obtain），不要用 COALESCE 包住列
+  if (q.obtain) {
+    const modes = q.obtain.split(",").filter(Boolean);
+    if (modes.length) {
+      where.push(`obtain IN (${modes.map(() => "?").join(",")})`);
+      params.push(...modes);
+    }
   }
 
   // 价格筛选：完全白嫖 / 最高能付多少（未知价格视为不匹配）
@@ -512,6 +527,7 @@ export function registerApi(app: Hono) {
   });
 
   app.get("/api/stats", (c) => {
+    const statsCutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
     const totals = get<{
       total: number;
       active: number;
@@ -521,6 +537,7 @@ export function registerApi(app: Hono) {
       unread: number;
       aiKept: number;
       aiRejected: number;
+      cleanFree: number;
     }>(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,
@@ -529,9 +546,11 @@ export function registerApi(app: Hono) {
               SUM(CASE WHEN status='active' AND codes != '[]' AND codes != '' THEN 1 ELSE 0 END) AS withCodes,
               SUM(CASE WHEN ai_keep = 1 THEN 1 ELSE 0 END) AS aiKept,
               SUM(CASE WHEN ai_keep = 0 THEN 1 ELSE 0 END) AS aiRejected,
+              SUM(CASE WHEN ai_keep = 1 AND COALESCE(obtain,'free') = 'free' AND COALESCE(published_at, first_seen_at) >= ? THEN 1 ELSE 0 END) AS cleanFree,
               SUM(CASE WHEN status='active' AND read_at IS NULL THEN 1 ELSE 0 END) AS unread
        FROM items`,
       new Date().toISOString(),
+      statsCutoff,
     );
     const byCategory = all<{ category: string | null; n: number }>(
       "SELECT category, COUNT(*) AS n FROM items WHERE status='active' GROUP BY category ORDER BY n DESC",
@@ -557,6 +576,7 @@ export function registerApi(app: Hono) {
         blockRules,
         aiKept: totals?.aiKept ?? 0,
         aiRejected: totals?.aiRejected ?? 0,
+        cleanFree: totals?.cleanFree ?? 0,
       },
       byCategory,
       bySource,

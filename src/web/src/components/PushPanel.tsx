@@ -14,7 +14,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { CATEGORY_LABEL } from "../lib/sources.ts";
+import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
 import type { PushLogItem, PushPayload, PushSettings } from "../types.ts";
 
 function Toggle({
@@ -313,6 +313,37 @@ export function PushPanel({
           </div>
         </div>
 
+        <div>
+          <div className="mb-1.5 text-[12px] font-medium text-ink-700">只推这些获取方式</div>
+          <div className="flex flex-wrap gap-1.5">
+            {(["free", "conditional", "lottery", "trial", "promo"] as const).map((key) => {
+              const checked = s.obtainModes.includes(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    save({
+                      obtainModes: checked ? s.obtainModes.filter((x) => x !== key) : [...s.obtainModes, key],
+                    })
+                  }
+                  className={
+                    "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] transition-colors " +
+                    (checked
+                      ? "border-brand bg-brand-subtle font-medium text-brand"
+                      : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                  }
+                >
+                  {checked && <Check size={12} />}
+                  {OBTAIN_LABEL[key]}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11.5px] text-ink-500">
+            抽奖、试用、推广算不算福利有争议，默认只推「直接白嫖」；一个都不选表示不限制
+          </p>
+        </div>
         <div className="grid gap-2.5 sm:grid-cols-3">
           <Toggle
             label="只推 AI 验真福利"

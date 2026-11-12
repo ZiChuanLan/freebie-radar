@@ -17,6 +17,7 @@ export type DigestItem = {
   published_at: string | null;
   price?: number | null;
   is_free?: number;
+  obtain?: string | null;
   ai?: string | null;
   codes?: string;
 };
@@ -57,7 +58,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, url, category, score, expires_at, published_at, price, is_free, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
+    "SELECT id, source_id, title, url, category, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
@@ -83,6 +84,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
       isFree: r.is_free === 1,
       aiKeep,
       category: r.category,
+      obtain: r.obtain ?? null,
     }, settings);
   });
 

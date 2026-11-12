@@ -13,7 +13,7 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { CATEGORY_LABEL, expiresLabel, extractBlockCandidates, timeAgo } from "../lib/sources.ts";
+import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, expiresLabel, extractBlockCandidates, timeAgo } from "../lib/sources.ts";
 import type { Item } from "../types.ts";
 
 export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string) => void }) {
@@ -46,7 +46,7 @@ function PriceBadge({ item }: { item: Item }) {
   if (item.is_free === 1 || item.price === 0) {
     return (
       <span className="inline-flex items-center rounded-md border border-deal-border bg-deal-subtle px-1.5 py-0.5 text-[11px] font-medium text-deal">
-        完全白嫖
+        免费
       </span>
     );
   }
@@ -59,6 +59,32 @@ function PriceBadge({ item }: { item: Item }) {
     );
   }
   return null;
+  return null;
+}
+
+const OBTAIN_STYLE: Record<string, string> = {
+  conditional: "border-amber-300 bg-amber-50 text-amber-800",
+  lottery: "border-purple-300 bg-purple-50 text-purple-700",
+  trial: "border-sky-300 bg-sky-50 text-sky-700",
+  promo: "border-slate-300 bg-slate-100 text-slate-600",
+  paid: "border-slate-300 bg-slate-100 text-slate-600",
+};
+
+/** 获取方式徽章：非 free 的一律标出来，避免抽奖/试用/推广混进「完全白嫖」。 */
+function ObtainBadge({ obtain }: { obtain: string | null | undefined }) {
+  const mode = obtain ?? "free";
+  if (mode === "free") return null;
+  return (
+    <span
+      className={
+        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium " +
+        (OBTAIN_STYLE[mode] ?? OBTAIN_STYLE.promo)
+      }
+      title={OBTAIN_HINT[mode] ?? ""}
+    >
+      {OBTAIN_LABEL[mode] ?? mode}
+    </span>
+  );
 }
 
 /** 默认的精致紧凑列表行：在纯白面板里用 1px 细线分隔，扫货效率最高。 */
@@ -144,6 +170,7 @@ export function CompactRow({
           <span>·</span>
           <span>{CATEGORY_LABEL[item.category ?? "other"] ?? item.category}</span>
           <PriceBadge item={item} />
+          <ObtainBadge obtain={item.obtain} />
           {item.ai?.reason && (
             <span
               className={
@@ -245,6 +272,7 @@ export function ItemCard({
               </span>
             )}
             <PriceBadge item={item} />
+            <ObtainBadge obtain={item.obtain} />
             {exp && (
               <span className={"inline-flex items-center gap-1 " + (exp.urgent ? "font-medium text-amber-700" : "")}>
                 <Clock3 size={11} /> {exp.text}
@@ -422,6 +450,7 @@ export function ItemDetailDrawer({
               </span>
             )}
             <PriceBadge item={item} />
+            <ObtainBadge obtain={item.obtain} />
             <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-ink-700">
               评分 {Math.round(item.score)}
             </span>

@@ -24,7 +24,7 @@ import { DigestPanel } from "./components/DigestPanel.tsx";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
-import { CATEGORY_LABEL, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
+import { CATEGORY_LABEL, OBTAIN_HINT, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
 import type {
   BlockPreset,
   BlockRule,
@@ -138,6 +138,7 @@ export function App() {
   const [sort, setSort] = useState("score");
   const [range, setRange] = useState("all");
   const [priceCap, setPriceCap] = useState("all");
+  const [obtain, setObtain] = useState("");
   const [preset, setPreset] = useState("verified");
   const [viewMode, setViewMode] = useState<"compact" | "card">("compact");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -198,11 +199,16 @@ export function App() {
     if (category) p.set("category", category);
     if (sort) p.set("sort", sort);
     if (preset === "verified") {
+      // 真福利精选 = AI 判定是福利 + 没过截止时间 + 7 天内的新帖 + 排除抽奖/试用/推广
       p.set("unexpired", "1");
+      p.set("maxAgeDays", "7");
       p.set("aiOnly", "1");
+      p.set("obtain", "free");
     } else if (preset === "free") {
       p.set("unexpired", "1");
+      p.set("maxAgeDays", "14");
       p.set("freeOnly", "1");
+      p.set("obtain", "free");
     } else if (preset === "codes") {
       p.set("unexpired", "1");
       p.set("hasCodes", "1");
@@ -214,12 +220,14 @@ export function App() {
     if (preset === "all") p.set("hideRejected", "1");
     if (priceCap === "free") p.set("freeOnly", "1");
     else if (priceCap !== "all") p.set("maxPrice", priceCap);
+    // 手动选获取方式时覆盖预设的默认值（预设已各自设好，这里只在用户主动切换时生效）
+    if (obtain) p.set("obtain", obtain);
     const DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "30d": 30 };
     const days = DAYS[range];
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "100");
     return p.toString();
-  }, [debounced, source, category, sort, range, priceCap, preset]);
+  }, [debounced, source, category, sort, range, priceCap, preset, obtain]);
 
   const stats = useApi<Stats>("/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
@@ -509,6 +517,38 @@ export function App() {
                 <div className="mt-2 text-[11px] text-ink-500">
                   在库白嫖 <span className="font-mono font-medium text-deal">{stats.data?.price?.free ?? 0}</span> · ≤5 元{" "}
                   <span className="font-mono font-medium">{stats.data?.price?.under5 ?? 0}</span>
+                </div>
+              </div>
+
+              <div className="panel p-3">
+                <div className="mb-2 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">获取方式</div>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { k: "", label: "不限" },
+                    { k: "free", label: "直接白嫖" },
+                    { k: "conditional", label: "有条件" },
+                    { k: "lottery", label: "抽奖" },
+                    { k: "trial", label: "试用" },
+                    { k: "promo", label: "推广" },
+                  ].map((o) => (
+                    <button
+                      key={o.k || "any"}
+                      type="button"
+                      onClick={() => setObtain(o.k)}
+                      title={OBTAIN_HINT[o.k] ?? "不限制获取方式"}
+                      className={
+                        "rounded-lg border px-2 py-1 text-[11.5px] font-medium transition-colors " +
+                        (obtain === o.k
+                          ? "border-brand bg-brand text-white"
+                          : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
+                      }
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-ink-500">
+                  抽奖 / 试用 / 推广不算完全白嫖，默认已从「真福利精选」和推送里隔离
                 </div>
               </div>
 

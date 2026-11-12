@@ -12,6 +12,8 @@ export type Item = {
   content: string | null;
   price: number | null;
   is_free: number;
+  /** 获取方式：free 直接白嫖 / conditional 有条件 / lottery 抽奖 / trial 试用 / promo 推广 / paid 需付费 */
+  obtain: string | null;
   matched: string[];
   blockedBy?: string | null;
   score: number;
@@ -39,6 +41,7 @@ export type Stats = {
     blockRules: number;
     aiKept: number;
     aiRejected: number;
+    cleanFree: number;
   };
   byCategory: { category: string | null; n: number }[];
   bySource: { source_id: string; n: number }[];
@@ -115,6 +118,7 @@ export type PushSettings = {
   dedupeByTitle: boolean;
   maxPrice: number | null;
   onlyAiKeep: boolean;
+  obtainModes: string[];
   categories: string[];
   prioritizeSubscribed: boolean;
   applyToDigest: boolean;

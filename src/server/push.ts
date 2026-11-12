@@ -44,6 +44,8 @@ export type PushSettings = {
   maxPrice: number | null;
   /** 只推 AI 判定真福利（以及无 AI 结论时的强福利信号） */
   onlyAiKeep: boolean;
+  /** 允许推送的获取方式；空数组表示不限制。默认只推 free */
+  obtainModes: string[];
   /** 允许推送的分类白名单；空数组表示全部允许 */
   categories: string[];
   /** 命中「我的订阅」关键词时优先走即时推送 */
@@ -70,6 +72,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
   dedupeByTitle: true,
   maxPrice: null,
   onlyAiKeep: true,
+  obtainModes: ["free"],
   categories: [],
   prioritizeSubscribed: true,
   applyToDigest: true,
@@ -96,6 +99,13 @@ function normalizeCategories(v: unknown): string[] {
   return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_CATEGORIES.has(x)))];
 }
 
+const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
+
+function normalizeObtain(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_OBTAIN.has(x)))];
+}
+
 function normalizeSettings(raw: Partial<PushSettings>): PushSettings {
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_SETTINGS.enabled,
@@ -115,6 +125,7 @@ function normalizeSettings(raw: Partial<PushSettings>): PushSettings {
     dedupeByTitle: raw.dedupeByTitle !== false,
     maxPrice: "maxPrice" in raw ? normalizeMaxPrice(raw.maxPrice) : DEFAULT_SETTINGS.maxPrice,
     onlyAiKeep: raw.onlyAiKeep !== false,
+    obtainModes: "obtainModes" in raw ? normalizeObtain(raw.obtainModes) : DEFAULT_SETTINGS.obtainModes,
     categories: "categories" in raw ? normalizeCategories(raw.categories) : DEFAULT_SETTINGS.categories,
     prioritizeSubscribed: raw.prioritizeSubscribed !== false,
     applyToDigest: raw.applyToDigest !== false,
@@ -200,7 +211,13 @@ export function categoryAllowed(category: string | null | undefined, allow: stri
   return Boolean(category && allow.includes(category));
 }
 
-/** 推送与日报共用的筛选检查：语言 / 分类 / 最高价格 / AI 验真。 */
+/** 获取方式白名单：空数组不限制；无结论的条目按 free 处理（关键词兜底已覆盖多数）。 */
+export function obtainAllowed(obtain: string | null | undefined, allow: string[]): boolean {
+  if (!allow.length) return true;
+  return allow.includes(obtain ?? "free");
+}
+
+/** 推送与日报共用的筛选检查：语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
 export function passesPushFilters(
   item: {
     title: string;
@@ -210,6 +227,7 @@ export function passesPushFilters(
     isFree?: boolean;
     aiKeep?: boolean | null;
     category?: string | null;
+    obtain?: string | null;
   },
   s: PushSettings,
 ): boolean {
@@ -217,6 +235,7 @@ export function passesPushFilters(
   if (!categoryAllowed(item.category, s.categories)) return false;
   if (!priceAllowed(item, s.maxPrice)) return false;
   if (!aiAllowed(item, s.onlyAiKeep)) return false;
+  if (!obtainAllowed(item.obtain, s.obtainModes)) return false;
   return true;
 }
 
@@ -275,6 +294,7 @@ const SOURCE_SHORT: Record<string, string> = {
 function sourceLabel(id: string): string {
   return SOURCE_SHORT[id] ?? id;
 }
+
 
 /* ------------------------------------------------------------------ *
  * 静默时段
@@ -604,13 +624,15 @@ export function previewPush(limit = 6): {
     codes: string;
     price: number | null;
     is_free: number;
+    obtain: string | null;
     expires_at: string | null;
     pushed_at: string | null;
     ai: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, expires_at, pushed_at, ai
-     FROM items WHERE status = 'active' AND pushed_at IS NULL
+    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, pushed_at, ai
+     FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
+    new Date(Date.now() - 7 * 86_400_000).toISOString(),
   );
 
   const instant: string[] = [];
@@ -644,6 +666,7 @@ export function previewPush(limit = 6): {
       isFree: r.is_free === 1,
       aiKeep,
       category: r.category,
+      obtain: r.obtain,
       summary: r.summary,
     };
     if (!passesPushFilters(fresh, s)) continue;

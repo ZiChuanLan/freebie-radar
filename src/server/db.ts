@@ -154,6 +154,17 @@ const MIGRATIONS: string[] = [
   `
   CREATE INDEX IF NOT EXISTS idx_items_status_score ON items(status, score DESC);
   `,
+
+  /* v10：获取方式 —— 区分「直接白嫖」与抽奖/试用/推广/有条件，单独隔离 */
+  `
+  ALTER TABLE items ADD COLUMN obtain TEXT;
+  CREATE INDEX IF NOT EXISTS idx_items_obtain ON items(obtain);
+  `,
+
+  /* v11：保鲜期查询要按 COALESCE(published_at, first_seen_at) 过滤，普通索引覆盖不到 */
+  `
+  CREATE INDEX IF NOT EXISTS idx_items_effective_time ON items(COALESCE(published_at, first_seen_at));
+  `,
 ];
 
 export function dbPath(): string {
