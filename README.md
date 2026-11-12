@@ -6,7 +6,7 @@
 
 ## 特性
 
-- **57 个源**：LINUX DO、V2EX、NodeSeek、什么值得买、吾爱破解、GitHub awesome 仓库、GamerPower、Epic 官方接口、Reddit、Bluesky、Telegram 频道、知乎 / 小红书 / 小黑盒（登录态本机采集）
+- **57 个源**：LINUX DO、V2EX、NodeSeek、什么值得买、吾爱破解、GitHub awesome 仓库、GamerPower、Epic 官方接口、Reddit、Bluesky、Telegram 频道，以及知乎 / 小红书 / 小黑盒（登录态采集，本地或远程均可）
 - **获取方式分级**：区分「直接白嫖 / 有条件 / 抽奖 / 试用 / 推广 / 需付费」，抽奖和广告不会混进真福利
 - **AI 二审**：任意 OpenAI 兼容网关，判定「到底能拿到什么」，网页可改端点、模型、提示词、送审上限，改完立即生效
 - **低延迟**：分源采集间隔（热门源 90 秒）+ 采集后即时推送，从发帖到 Telegram 约 2 分钟
@@ -35,7 +35,7 @@
 | `src/server/digest.ts` | 每日精选生成 |
 | `src/server/routes.ts` | 全部 REST 端点 |
 | `src/web/src/` | 前端：资源流 / 每日精选 / 订阅与屏蔽 / 推送规则 / AI 引擎 / 数据源运维 |
-| `scripts/pw-collect.mjs` | 本机登录态采集（知乎、小红书、小黑盒），需人工触发 |
+| `scripts/pw-collect.mjs` | 登录态站点采集（知乎、小红书、小黑盒），本地或远程部署均可，需人工触发 |
 
 ## 快速开始
 
@@ -76,16 +76,31 @@ AI 二审在「AI 引擎」页配置，只填端点、模型、Key 三项即可�
 
 ## 部署注意事项
 
-采集必须在**能直连境外服务**的机器上跑（linux.do / V2EX / Reddit / Epic / GamerPower 从国内家庭宽带会超时），并且需要一台常驻的 [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 过 Cloudflare。
+### 出网要求
 
-知乎 / 小红书 / 小黑盒需要**你自己浏览器里的登录态**，只能在本地跑：
+公开源（linux.do / V2EX / Reddit / Epic / GamerPower 等）从国内家庭宽带会超时，采集服务要放在**能直连境外**的机器上，并且需要一台常驻的 [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 过 Cloudflare。也可以把 `HTTP_PROXY` 指向一个境外出口。
+
+### 登录态站点（知乎 / 小红书 / 小黑盒）
+
+这三个站要登录态和前端签名，抓取由 `scripts/pw-collect.mjs` 用**持久化 Chrome profile** 完成。脚本本身不关心运行在哪，只认两个环境变量：`PROFILE_DIR`（登录态所在目录）和 `SERVER_URL`（结果回传到哪里）。
+
+**本地跑** —— profile 在你自己的机器上，第一次运行会打开浏览器让你登录一次，登录态留在本地磁盘：
 
 ```bash
-# 先在本机启动站点，或把 INGEST_TOKEN 指向远端服务器
 scripts\local-collect.cmd
 ```
 
-采集结果通过 `POST /api/ingest` 带 `INGEST_TOKEN` 回传，服务端按 `(source_id, external_id)` 去重写入。
+**远程跑** —— 把 profile 目录放到服务器上（或第一次在服务器上登录一次），定时任务照常跑：
+
+```bash
+PROFILE_DIR=/data/profile SERVER_URL=http://127.0.0.1:8788 HEADLESS=1 INGEST_TOKEN=xxx node scripts/pw-collect.mjs
+```
+
+两种方式的结果都走 `POST /api/ingest`，带 `INGEST_TOKEN` 鉴权，服务端按 `(source_id, external_id)` 去重写入。
+
+### 数据边界
+
+无论哪种部署方式，回传的只有**公开帖子的标题、链接、摘要**。服务端不保存 cookie、账号密码或任何登录凭据——登录态始终只存在于 `PROFILE_DIR` 这个本地目录里，删掉即失效。数据库里也没有用户身份字段。
 
 ## CLI
 
