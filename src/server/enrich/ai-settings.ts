@@ -43,6 +43,7 @@ const DEFAULT_PROMPT = [
   "",
   "判 keep=false 的情况：",
   "- 新闻、资讯、政策解读、行业报告（例：某组织制定 AI 使用新规、某公司发布财报）",
+  "- 软件版本发布/更新公告、开源项目介绍、技术教程、评测对比、故障排查（例：微软发布 PowerShell 7.7、某工具开源实现、如何配置 XX）",
   "- 求助/提问/求推荐/求优惠券（例：谁有 XX 优惠券、求推荐便宜 VPS）",
   "- 纯讨论、吐槽、测评、比价心得",
   "- 二手交易、账号共享、盗版",
@@ -124,6 +125,8 @@ export function aiReady(s = getAiSettings()): boolean {
 /** 给前端的安全视图：密钥打码。 */
 export function publicAiSettings(s = getAiSettings()) {
   return {
+    // 密钥永远不回传，前端表单靠 hasKey/keyHint 判断
+    apiKey: "",
     enabled: s.enabled,
     baseUrl: s.baseUrl,
     model: s.model,

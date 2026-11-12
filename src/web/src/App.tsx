@@ -3,6 +3,7 @@ import {
   Activity,
   AlignJustify,
   Bell,
+  Bot,
   Check,
   ChevronDown,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
+import { AiPanel } from "./components/AiPanel.tsx";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
@@ -30,6 +32,7 @@ import type {
   BlockRule,
   Item,
   PushLogItem,
+  AiPayload,
   PushPayload,
   PushSettings,
   Run,
@@ -64,7 +67,7 @@ const SOURCE_LABEL: Record<string, string> = {
 let SOURCE_NAMES: Record<string, string> = { ...SOURCE_LABEL };
 const sourceName = (id: string) => SOURCE_NAMES[id] ?? SOURCE_LABEL[id] ?? id;
 
-type Tab = "feed" | "digest" | "rules" | "push" | "ops";
+type Tab = "feed" | "digest" | "rules" | "push" | "ai" | "ops";
 
 function useApi<T>(url: string | null): { data: T | null; loading: boolean; error: string | null; reload: () => void } {
   const [data, setData] = useState<T | null>(null);
@@ -122,7 +125,7 @@ export function App() {
   const initialTab = (): Tab => {
     if (typeof location === "undefined") return "feed";
     const h = location.hash.replace("#", "");
-    return h === "digest" || h === "rules" || h === "push" || h === "ops" ? (h as Tab) : "feed";
+    return h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed";
   };
 
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -168,7 +171,7 @@ export function App() {
   useEffect(() => {
     const onHash = () => {
       const h = location.hash.replace("#", "");
-      setTab(h === "digest" || h === "rules" || h === "push" || h === "ops" ? (h as Tab) : "feed");
+      setTab(h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed");
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -237,6 +240,7 @@ export function App() {
   const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>("/api/block-rules");
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
   const push = useApi<PushPayload>("/api/push");
+  const ai = useApi<AiPayload>(tab === "ai" ? "/api/ai" : null);
   const pushLogs = useApi<{ logs: PushLogItem[] }>(tab === "push" ? "/api/push/log?limit=40" : null);
   const [pushPreview, setPushPreview] = useState<{
     instant: string[];
@@ -349,6 +353,7 @@ export function App() {
     { key: "digest", label: "每日精选", icon: Radar },
     { key: "rules", label: "订阅与屏蔽", icon: ShieldBan, badge: stats.data?.totals.blockRules },
     { key: "push", label: "推送规则", icon: Zap, badge: push.data?.stats.queued },
+    { key: "ai", label: "AI 引擎", icon: Bot },
     { key: "ops", label: "数据源运维", icon: Wrench },
   ];
 
@@ -912,6 +917,7 @@ export function App() {
             />
           )}
 
+          {tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} />}
           {tab === "ops" && (
             <OpsPanel
               sources={sources.data?.sources ?? []}

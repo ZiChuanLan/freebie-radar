@@ -186,8 +186,15 @@ function langAllowed(item: { title: string }, s: PushSettings): boolean {
   return detectLang(item.title) === s.langMode;
 }
 
-export function priceAllowed(item: { price?: number | null; isFree?: boolean }, maxPrice: number | null): boolean {
+export function priceAllowed(
+  item: { price?: number | null; isFree?: boolean; obtain?: string | null },
+  maxPrice: number | null,
+): boolean {
   if (maxPrice === null) return true;
+  // AI 判定「要实付钱」的，别信 is_free 规则——标题里的「免费试用/首单 0 元」会被价格抽取误当成 0 元
+  if (item.obtain === "paid") return false;
+  // 抽奖/试用/推广不是「白嫖」，即使标价 0 元也不该进最高价筛选
+  if (maxPrice === 0 && item.obtain && item.obtain !== "free" && item.obtain !== "conditional") return false;
   const free = item.isFree === true || item.price === 0;
   if (maxPrice === 0) return free;
   if (free) return true;

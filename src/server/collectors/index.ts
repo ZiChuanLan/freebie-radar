@@ -74,7 +74,8 @@ export const SEEDS: SourceSeed[] = [
   { id: "bsky-plugins", name: "Bluesky · 免费插件与综合", kind: "bsky", enabled: true, intervalSec: 1800, config: { actors: ["plugindeals.net", "frugalfreebies.bsky.social", "freebies.bsky.social"], limitPerActor: 10 } },
   { id: "v2ex-deals", name: "V2EX · 优惠信息", kind: "v2ex", enabled: true, intervalSec: 300, config: { node: "deals" } },
   { id: "v2ex-share", name: "V2EX · 分享发现", kind: "v2ex", enabled: true, intervalSec: 600, config: { node: "share" } },
-  { id: "v2ex-promotions", name: "V2EX · 推广与注册送", kind: "v2ex", enabled: true, intervalSec: 600, config: { node: "promotions" } },
+  // 纯广告节点：24 条里 9 条被判「福利」，全是代理/中转服务商的引流帖，默认关闭
+  { id: "v2ex-promotions", name: "V2EX · 推广与注册送", kind: "v2ex", enabled: false, intervalSec: 600, config: { node: "promotions" } },
   { id: "v2ex-cloud", name: "V2EX · 云计算", kind: "v2ex", enabled: true, intervalSec: 1800, config: { node: "cloud" } },
   { id: "rss-nodeseek", name: "NodeSeek · 官方动态", kind: "rss", enabled: true, intervalSec: 180, config: { feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", limit: 30 }] } },
   { id: "rss-lowendbox", name: "LowEndBox · VPS 优惠", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "lowendbox", url: "https://lowendbox.com/feed/", limit: 20 }] } },

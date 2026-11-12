@@ -18,6 +18,14 @@ import {
   type PushSettings,
 } from "./push.ts";
 import {
+  aiStats,
+  backfillAi,
+  publicAiSettings,
+  saveAiSettings,
+  testAiConnection,
+  type AiSettings,
+} from "./ai-admin.ts";
+import {
   compileRule,
   loadActiveBlockRules,
   matchBlockRules,
@@ -611,6 +619,31 @@ export function registerApi(app: Hono) {
     if (!body) return c.json({ error: "无效的请求体" }, 400);
     const settings = savePushSettings(body);
     return c.json({ settings, stats: pushStats(), quiet: inQuietHoursZoned(settings.quietHours, settings.timezone) });
+  });
+
+  /* ---------------------------------------------------------------- *
+   * AI 二审配置：端点/模型/Key/送审上限/提示词都可以网页改，改完立即生效
+   * ---------------------------------------------------------------- */
+
+  app.get("/api/ai", (c) => {
+    return c.json({ settings: publicAiSettings(), stats: aiStats() });
+  });
+
+  app.patch("/api/ai", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as Partial<AiSettings> | null;
+    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    const saved = saveAiSettings(body);
+    return c.json({ settings: publicAiSettings(saved), stats: aiStats() });
+  });
+
+  app.post("/api/ai/test", async (c) => {
+    return c.json(await testAiConnection());
+  });
+
+  app.post("/api/ai/backfill", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number };
+    const limit = Math.min(Math.max(Number(body.limit ?? 200), 1), 2000);
+    return c.json(await backfillAi(limit));
   });
 
   app.get("/api/push/preview", (c) => {

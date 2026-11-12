@@ -140,6 +140,37 @@ export type PushPayload = {
   quiet: boolean;
 };
 
+/* --- AI 二审配置 --- */
+
+export type AiSettings = {
+  enabled: boolean;
+  baseUrl: string;
+  /** 只在本地表单里用；服务端返回的是打码值 */
+  apiKey: string;
+  model: string;
+  maxItems: number;
+  /** 空字符串表示用内置默认 */
+  systemPrompt: string;
+  hasKey: boolean;
+  keyHint: string;
+  ready: boolean;
+  promptIsDefault: boolean;
+  defaultPrompt: string;
+};
+
+export type AiStats = {
+  kept: number;
+  rejected: number;
+  pending: number;
+  byCategory: { category: string; n: number }[];
+  recent: { id: number; title: string; score: number; keep: boolean | null; reason: string; category: string }[];
+};
+
+export type AiPayload = {
+  settings: AiSettings;
+  stats: AiStats;
+};
+
 export type PushLogItem = {
   id: number;
   kind: string;
