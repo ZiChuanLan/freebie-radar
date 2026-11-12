@@ -2,6 +2,7 @@ import { aiEnabled, config } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
 import { enrichItem } from "../enrich/index.ts";
 import { reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
+import { enqueueForAi } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
 import { pushInstant } from "../instant.ts";
 import { createHttp, type HttpClient } from "../http.ts";
@@ -102,6 +103,12 @@ export function ingestItems(sourceId: string, items: RawItem[]): { inserted: num
   const runId = Number(runRow.lastInsertRowid);
   try {
     const saved = persist(sourceId, items, null);
+    // 本机采集回传的条目同样走异步二审队列，不阻塞响应
+    if (shouldReview() && saved.fresh.length) {
+      enqueueForAi(
+        saved.fresh.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+      );
+    }
     const durationMs = Date.now() - t0;
     run(
       "UPDATE runs SET finished_at = ?, status = 'ok', fetched = ?, inserted = ?, skipped = ?, duration_ms = ? WHERE id = ?",
@@ -360,23 +367,27 @@ export async function runSource(
       log: (m) => log(`[${sourceId}] ${m}`),
     });
     fetched = result.items.length;
-    let aiMap: Map<number, AiVerdict> | null = null;
-    if (shouldReview() && result.items.length) {
-      try {
-        aiMap = await reviewItems(result.items);
-        if (aiMap) {
-          const rejected = [...aiMap.values()].filter((v) => !v.keep).length;
-          log(`[${sourceId}] AI 二审 ${aiMap.size} 条，判定非福利 ${rejected} 条`);
-        }
-      } catch (err) {
-        log(`[${sourceId}] AI 二审失败，降级为规则模式: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    const saved = persist(sourceId, result.items, aiMap);
+    fetched = result.items.length;
+    // 不再同步等 AI 二审：MG 是反代网页，单批 1.6-9 秒、偶发 49 秒，
+    // 同步送审会把 linux.do 一轮采集拖到 33 秒以上，送码帖早被抢光。
+    // 改成：规则判定 → 立即入库 → 立即推送 → 后台队列补 AI 结论。
+    const saved = persist(sourceId, result.items, null);
     inserted = saved.inserted;
     skipped = saved.skipped;
     // 有新条目就立刻判断是否值得即时推送（送码类 1 分钟就没了）
     if (saved.fresh.length) await pushInstant(sourceId, saved.fresh);
+    // 新条目丢进 AI 队列，结论回填到 items.ai_keep，供列表筛选与后续推送用
+    if (shouldReview() && saved.fresh.length) {
+      enqueueForAi(
+        saved.fresh.map((f) => ({
+          itemId: f.id,
+          url: f.url,
+          title: f.title,
+          summary: f.summary ?? "",
+        })),
+      );
+      log(`[${sourceId}] ${saved.fresh.length} 条入 AI 待审队列`);
+    }
     if (result.cursor !== undefined) cursor = result.cursor;
     if (result.degraded) {
       status = "degraded";
