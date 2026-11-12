@@ -30,7 +30,9 @@ export type AiSettings = {
 
 const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
-const BATCH = 20;
+const BATCH = 6;
+/** 同时送审的批数。MG 侧实测能扛 4 路并发，再多会开始排队。 */
+const CONCURRENCY = 4;
 
 const DEFAULT_PROMPT = [
   "你是福利信息审核员。给定一组帖子标题与摘要，判断每一条是否真的是「现在就能拿到手」的免费资源或权益。",
@@ -193,15 +195,35 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
   const merged = new Map<number, AiVerdict>();
   let ok = 0;
 
+  // 实测 MG + mercury-3 判 20 条要 47 秒，串行送 25 条会撞满 60 秒超时，
+  // 所以缩批 + 并发：每批 6 条、同时跑 4 批。
+  type Job = { start: number; payload: { index: number; title: string; summary: string }[] };
+  const jobs: Job[] = [];
   for (let start = 0; start < total; start += BATCH) {
     const chunk = items.slice(start, Math.min(start + BATCH, total));
-    const payload = chunk.map((it, i) => ({
-      index: start + i,
-      title: (it.title ?? "").slice(0, 140),
-      summary: (it.summary ?? "").slice(0, 200),
-    }));
-    const map = await callOnce(payload, s);
-    if (map) {
+    jobs.push({
+      start,
+      payload: chunk.map((it, i) => ({
+        index: start + i,
+        title: (it.title ?? "").slice(0, 140),
+        summary: (it.summary ?? "").slice(0, 200),
+      })),
+    });
+  }
+
+  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    const wave = jobs.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      wave.map(async (job) => {
+        try {
+          return await callOnce(job.payload, s);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const map of results) {
+      if (!map) continue;
       for (const [k, v] of map) merged.set(k, v);
       ok += 1;
     }
