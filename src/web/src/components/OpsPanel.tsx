@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Loader2, Play, Plus, Rss, Send } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Play, Plus, Rss, Search, Send, Trash2 } from "lucide-react";
 import { formatInterval, timeAgo } from "../lib/sources.ts";
-import type { Run, Source } from "../types.ts";
+import type { RetentionSettings, Run, Source } from "../types.ts";
 
 const INTERVAL_OPTIONS = [
   { label: "60 秒", sec: 60 },
@@ -54,8 +54,136 @@ export function OpsPanel({
 
   const errorCount = sources.filter((s) => s.enabled && (s.last_status === "failed" || s.last_status === "degraded")).length;
 
+  const [retention, setRetention] = useState<RetentionSettings | null>(null);
+  const [retCounts, setRetCounts] = useState<{ total: number; active: number; ignored: number; starred: number } | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanPreview, setCleanPreview] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/retention")
+      .then((r) => r.json())
+      .then((j: { settings: RetentionSettings; counts: typeof retCounts }) => {
+        setRetention(j.settings);
+        setRetCounts(j.counts);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const saveRetentionField = async (patch: Partial<RetentionSettings>) => {
+    if (!retention) return;
+    setRetention({ ...retention, ...patch });
+    const r = await fetch("/api/retention", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) {
+      const j = (await r.json()) as { settings: RetentionSettings; counts: typeof retCounts };
+      setRetention(j.settings);
+      setRetCounts(j.counts);
+    }
+  };
+
+  const previewCleanup = async () => {
+    const r = await fetch("/api/retention/preview", { method: "POST" });
+    if (r.ok) setCleanPreview(((await r.json()) as { deleted: Record<string, number> }).deleted);
+  };
+
+  const doCleanup = async () => {
+    setCleaning(true);
+    try {
+      const r = await fetch("/api/retention/run", { method: "POST" });
+      if (r.ok) {
+        const j = (await r.json()) as { deleted: Record<string, number>; counts: typeof retCounts };
+        setCleanPreview(j.deleted);
+        setRetCounts(j.counts);
+      }
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
+      {/* 数据保留与清理 */}
+      <div className="panel space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink-950">
+            <Trash2 size={15} className="text-brand" /> 数据保留与清理
+          </div>
+          {retCounts && (
+            <span className="text-[11.5px] text-ink-500">
+              在库 <span className="font-mono font-medium text-ink-800">{retCounts.total}</span> · 收藏{" "}
+              <span className="font-mono font-medium text-amber-700">{retCounts.starred}</span> · 已关闭{" "}
+              <span className="font-mono font-medium">{retCounts.ignored}</span>
+            </span>
+          )}
+        </div>
+
+        {retention && (
+          <div className="grid gap-2 sm:grid-cols-5">
+            {[
+              { key: "itemDays" as const, label: "非福利条目", hint: "天" },
+              { key: "keptDays" as const, label: "AI 判福利", hint: "天" },
+              { key: "ignoredDays" as const, label: "手动关闭", hint: "天" },
+              { key: "pushLogDays" as const, label: "推送日志", hint: "天" },
+              { key: "digestDays" as const, label: "每日精选", hint: "天" },
+            ].map((f) => (
+              <label key={f.key} className="block">
+                <span className="mb-1 block text-[11.5px] text-ink-600">{f.label}</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={retention[f.key]}
+                    onChange={(e) => saveRetentionField({ [f.key]: Number(e.target.value) } as Partial<RetentionSettings>)}
+                    className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
+                  />
+                  <span className="text-[11px] text-ink-500">{f.hint}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[12px] text-ink-700">
+            <input
+              type="checkbox"
+              checked={retention?.auto ?? true}
+              onChange={(e) => saveRetentionField({ auto: e.target.checked })}
+              className="h-3.5 w-3.5 accent-brand"
+            />
+            每天自动清理（收藏的永不删）
+          </label>
+          <button
+            type="button"
+            onClick={previewCleanup}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
+          >
+            <Search size={13} /> 预演
+          </button>
+          <button
+            type="button"
+            onClick={doCleanup}
+            disabled={cleaning}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-alert-border bg-alert-subtle px-3 py-1.5 text-[12.5px] font-medium text-alert hover:bg-red-100/80 disabled:opacity-60"
+          >
+            {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} 立即清理
+          </button>
+        </div>
+
+        {cleanPreview && (
+          <div className="rounded-lg border border-ink-200 bg-surface p-2.5 text-[12px] text-ink-700">
+            将清理：
+            {Object.entries(cleanPreview)
+              .filter(([, n]) => n > 0)
+              .map(([k, n]) => `${k} ${n} 条`)
+              .join(" · ") || "没有需要清理的条目"}
+          </div>
+        )}
+      </div>
       {/* 顶部功能栏：添加自定义 RSS + 概览 */}
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="panel space-y-3 p-4 lg:col-span-8">

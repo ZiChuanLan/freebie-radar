@@ -170,7 +170,16 @@ export type AiPayload = {
   settings: AiSettings;
   stats: AiStats;
 };
+/* --- 数据保留策略 --- */
 
+export type RetentionSettings = {
+  itemDays: number;
+  keptDays: number;
+  ignoredDays: number;
+  pushLogDays: number;
+  digestDays: number;
+  auto: boolean;
+};
 export type PushLogItem = {
   id: number;
   kind: string;

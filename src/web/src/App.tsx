@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   ShieldBan,
+  RotateCcw,
   SlidersHorizontal,
   Sparkles,
   Tag,
@@ -143,12 +144,13 @@ export function App() {
   const [sort, setSort] = useState("score");
   const [range, setRange] = useState("all");
   const [priceCap, setPriceCap] = useState("all");
+  const [minScore, setMinScore] = useState("all");
   const [obtain, setObtain] = useState("");
   const [preset, setPreset] = useState("verified");
   const [viewMode, setViewMode] = useState<"compact" | "card">("compact");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [showAllSources, setShowAllSources] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -230,13 +232,31 @@ export function App() {
     else if (priceCap !== "all") p.set("maxPrice", priceCap);
     // 手动选获取方式时覆盖预设的默认值（预设已各自设好，这里只在用户主动切换时生效）
     if (obtain) p.set("obtain", obtain);
+    if (minScore !== "all") p.set("minScore", minScore);
+    if (unreadOnly) p.set("unread", "1");
     const DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "30d": 30 };
     const days = DAYS[range];
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "100");
     return p.toString();
-  }, [debounced, source, category, sort, range, priceCap, preset, obtain]);
-
+  }, [debounced, source, category, sort, range, priceCap, preset, obtain, minScore, unreadOnly]);
+  // 已启用的筛选条件数（用于「清除 N」）与一键重置
+  const activeFilterCount =
+    [source, category, debounced, minScore !== "all", unreadOnly, priceCap !== "all", obtain, range !== "all"].filter(
+      Boolean,
+    ).length;
+  const resetFilters = useCallback(() => {
+    setSource("");
+    setCategory("");
+    setSearch("");
+    setDebounced("");
+    setMinScore("all");
+    setUnreadOnly(false);
+    setPriceCap("all");
+    setObtain("");
+    setRange("all");
+    setPreset("verified");
+  }, []);
   const stats = useApi<Stats>("/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
   const subs = useApi<{ subscriptions: Subscription[] }>("/api/subscriptions");
@@ -469,14 +489,16 @@ export function App() {
               <div className="panel p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-semibold tracking-wide text-ink-500 uppercase">快速筛选</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced((v) => !v)}
-                    className="inline-flex items-center gap-0.5 text-[11px] font-medium text-brand hover:underline"
-                    title="展开更多高级条件"
-                  >
-                    <SlidersHorizontal size={11} /> 更多
-                  </button>
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="inline-flex items-center gap-0.5 text-[11px] font-medium text-brand hover:underline"
+                      title="清除全部筛选条件"
+                    >
+                      <RotateCcw size={11} /> 清除 {activeFilterCount}
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-1">
                   {PRESETS.map((p) => (
@@ -577,8 +599,41 @@ export function App() {
                 </select>
               </div>
 
-              {showAdvanced && (
-                <div className="panel space-y-3 p-3">
+              <div className="panel space-y-3 p-3">
+                <div>
+                  <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">最低评分</div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { k: "all", label: "不限" },
+                      { k: "50", label: "≥50" },
+                      { k: "60", label: "≥60" },
+                      { k: "70", label: "≥70" },
+                    ].map((o) => (
+                      <button
+                        key={o.k}
+                        type="button"
+                        onClick={() => setMinScore(o.k)}
+                        className={
+                          "rounded-lg border py-1 text-[12px] font-medium transition-colors " +
+                          (minScore === o.k
+                            ? "border-brand bg-brand text-white"
+                            : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
+                        }
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-600">
+                    <input
+                      type="checkbox"
+                      checked={unreadOnly}
+                      onChange={(e) => setUnreadOnly(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-brand"
+                    />
+                    只看未读
+                  </label>
+                </div>
                   <div>
                     <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">分类</div>
                     <div className="flex flex-wrap gap-1">
@@ -628,8 +683,7 @@ export function App() {
                       </select>
                     </label>
                   </div>
-                </div>
-              )}
+              </div>
 
               <div className="panel p-3">
                 <div className="mb-1.5 flex items-center justify-between">

@@ -26,6 +26,13 @@ import {
   type AiSettings,
 } from "./ai-admin.ts";
 import {
+  getRetention,
+  itemCounts,
+  runCleanup,
+  saveRetention,
+  type RetentionSettings,
+} from "./retention.ts";
+import {
   compileRule,
   loadActiveBlockRules,
   matchBlockRules,
@@ -134,6 +141,14 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
   if (q.aiOnly === "1") where.push("ai_keep = 1");
   // 用 IS NOT 而不是 (IS NULL OR != 0)：OR 会让索引失效，5671 行要 27 秒
   if (q.hideRejected === "1") where.push("ai_keep IS NOT 0");
+  // 综合评分下限：走 idx_items_status_score，和 sort=score 同一个索引方向
+  if (q.minScore) {
+    const n = Math.min(Math.max(Number(q.minScore), 0), 100);
+    if (Number.isFinite(n) && n > 0) {
+      where.push("score >= ?");
+      params.push(n);
+    }
+  }
   if (q.search) {
     where.push("(title LIKE ? OR COALESCE(summary,'') LIKE ?)");
     params.push(`%${q.search}%`, `%${q.search}%`);
@@ -645,6 +660,30 @@ export function registerApi(app: Hono) {
     const body = (await c.req.json().catch(() => ({}))) as { limit?: number };
     const limit = Math.min(Math.max(Number(body.limit ?? 200), 1), 2000);
     return c.json(await backfillAi(limit));
+  });
+
+  /* ---------------------------------------------------------------- *
+   * 数据保留：过期条目、推送日志、日报的自动清理
+   * ---------------------------------------------------------------- */
+
+  app.get("/api/retention", (c) => {
+    return c.json({ settings: getRetention(), counts: itemCounts() });
+  });
+
+  app.patch("/api/retention", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as Partial<RetentionSettings> | null;
+    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    return c.json({ settings: saveRetention(body), counts: itemCounts() });
+  });
+
+  app.post("/api/retention/preview", (c) => {
+    // 只统计不删，让用户先看清会清掉多少
+    return c.json(runCleanup(getRetention(), true));
+  });
+
+  app.post("/api/retention/run", (c) => {
+    const report = runCleanup(getRetention(), false);
+    return c.json({ ...report, counts: itemCounts() });
   });
 
   app.get("/api/push/preview", (c) => {

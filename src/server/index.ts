@@ -12,6 +12,7 @@ import { runAll } from "./collectors/index.ts";
 import { startPushScheduler } from "./push.ts";
 import { runDaily } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
+import { getRetention, runCleanup } from "./retention.ts";
 
 migrate();
 const app = new Hono();
@@ -76,7 +77,23 @@ if (config.enableScheduler) {
     collect: async () => undefined,
     daily: () => runDaily(),
   });
+
+  // 数据清理：每天跑一次，按保留策略删掉过期条目与日志（收藏的永不删）
+  const tickCleanup = () => {
+    try {
+      const cfg = getRetention();
+      if (!cfg.auto) return;
+      const r = runCleanup(cfg);
+      const total = Object.values(r.deleted).reduce((a, b) => a + b, 0);
+      if (total > 0) console.log("[cleanup]", JSON.stringify(r.deleted), "剩余", r.remaining);
+    } catch (err) {
+      console.error("[cleanup] 失败:", err instanceof Error ? err.message : err);
+    }
+  };
+  tickCleanup();
+  setInterval(tickCleanup, 12 * 3600_000);
 }
+
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`[radar] listening on http://${config.host}:${info.port}`);
 });
