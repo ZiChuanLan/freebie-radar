@@ -8,6 +8,7 @@ import {
   Clock3,
   Copy,
   Eye,
+  EyeOff,
   ShieldAlert,
   Sparkles,
   Star,
@@ -227,6 +228,14 @@ export function CompactRow({
         >
           <Ban size={14} />
         </button>
+        <button
+          type="button"
+          onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
+          className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+          title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
+        >
+          <EyeOff size={14} />
+        </button>
       </div>
     </div>
   );
@@ -351,6 +360,14 @@ export function ItemCard({
               title="屏蔽"
             >
               <Ban size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
+              className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+              title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
+            >
+              <EyeOff size={14} />
             </button>
           </div>
         </div>
@@ -583,6 +600,17 @@ export function ItemDetailDrawer({
             className="inline-flex items-center gap-1 rounded-xl border border-alert-border bg-alert-subtle px-3 py-2 text-[13px] text-alert hover:bg-red-100/80"
           >
             <ShieldAlert size={14} /> 屏蔽
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onPatch(item.id, { status: "ignored" });
+              onClose();
+            }}
+            className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-700 hover:bg-ink-100"
+            title="单纯不想看，不进屏蔽词"
+          >
+            <EyeOff size={14} /> 关闭
           </button>
         </div>
       </aside>

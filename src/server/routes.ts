@@ -107,6 +107,7 @@ const SORTS: Record<string, string> = {
   score: "score DESC, COALESCE(published_at, first_seen_at) DESC",
   newest: "COALESCE(published_at, first_seen_at) DESC",
   oldest: "COALESCE(published_at, first_seen_at) ASC",
+  expiring: "CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END ASC, expires_at ASC, score DESC",
   price_asc: "CASE WHEN is_free = 1 THEN 0 WHEN price IS NOT NULL THEN price ELSE 999999 END ASC, score DESC",
 };
 

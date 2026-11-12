@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  EyeOff,
   LayoutGrid,
   Loader2,
   Radar,
@@ -119,6 +120,7 @@ const PRESETS: Preset[] = [
   { key: "urgent", label: "今日截止", icon: Bell },
   { key: "starred", label: "我的收藏", icon: Check },
   { key: "all", label: "全部收录", icon: AlignJustify },
+  { key: "hidden", label: "已关闭", icon: EyeOff },
 ];
 
 export function App() {
@@ -219,6 +221,9 @@ export function App() {
       p.set("expiring", "1");
     } else if (preset === "starred") {
       p.set("starred", "1");
+    } else if (preset === "hidden") {
+      // 「已关闭」：纯手动隐藏的条目，可以在这里找回来
+      p.set("status", "ignored");
     }
     if (preset === "all") p.set("hideRejected", "1");
     if (priceCap === "free") p.set("freeOnly", "1");
@@ -557,6 +562,21 @@ export function App() {
                 </div>
               </div>
 
+              <div className="panel p-3">
+                <div className="mb-2 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">排序</div>
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value)}
+                  className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                >
+                  <option value="score">综合评分</option>
+                  <option value="newest">最新发布</option>
+                  <option value="oldest">最早发布</option>
+                  <option value="expiring">截止时间最近</option>
+                  <option value="price_asc">价格从低到高</option>
+                </select>
+              </div>
+
               {showAdvanced && (
                 <div className="panel space-y-3 p-3">
                   <div>
@@ -605,19 +625,6 @@ export function App() {
                         <option value="3d">3 天内</option>
                         <option value="7d">一周内</option>
                         <option value="30d">一个月内</option>
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] text-ink-500">排序</span>
-                      <select
-                        value={sort}
-                        onChange={(e) => setSort(e.target.value)}
-                        className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
-                      >
-                        <option value="score">综合评分</option>
-                        <option value="newest">最新发布</option>
-                        <option value="oldest">最早发布</option>
-                        <option value="price_asc">价格从低到高</option>
                       </select>
                     </label>
                   </div>
