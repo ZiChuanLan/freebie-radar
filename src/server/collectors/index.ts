@@ -183,6 +183,8 @@ export type FreshItem = {
   price?: number | null;
   /** 明确免费 */
   isFree?: boolean;
+  /** AI 二审结论：false 表示判定不是福利，任何情况下都不推送 */
+  aiKeep?: boolean | null;
 };
 
 function persist(
@@ -280,6 +282,7 @@ function persist(
           expiresAt: e.expiresAt,
           price: e.price,
           isFree: e.isFree,
+          aiKeep: verdict ? verdict.keep : null,
         });
       } catch (err) {
         if (/UNIQUE/i.test(String(err))) {

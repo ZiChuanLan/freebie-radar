@@ -267,6 +267,8 @@ type Decision = { push: boolean; reason: string; urgent: boolean };
 function decide(item: FreshItem, s: PushSettings): Decision {
   // 噪音标题一律不推：即使带「送」字（「球迷送医」）或被评分顶上来
   if (NOISE_TITLE.test(item.title)) return { push: false, reason: "", urgent: false };
+  // AI 二审说不是福利的，评分再高也不推
+  if (item.aiKeep === false) return { push: false, reason: "", urgent: false };
   if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: "含兑换码", urgent: true };
   // 手慢无的也要有个及格线，否则「限时优惠」这种广告词会把新闻顶上来
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
@@ -394,7 +396,8 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
       continue;
     }
     // 进攒批也要过噪音与福利信号，否则新闻会跟着排队一起发出去
-    const noisy = NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title);
+    const noisy =
+      NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title) || it.aiKeep === false;
     if (!noisy && (it.score >= s.batchScore || d.push)) {
       batched.push({ id: it.id, sourceId, item: it });
       if (key) seenTitles.add(key);
@@ -535,8 +538,9 @@ export function previewPush(limit = 6): { instant: string[]; batch: string[]; qu
     is_free: number;
     expires_at: string | null;
     pushed_at: string | null;
+    ai: string | null;
   }>(
-    `SELECT id, source_id, title, url, score, codes, price, is_free, expires_at, pushed_at
+    `SELECT id, source_id, title, url, score, codes, price, is_free, expires_at, pushed_at, ai
      FROM items WHERE status = 'active' AND pushed_at IS NULL
      ORDER BY score DESC LIMIT 120`,
   );
@@ -551,6 +555,14 @@ export function previewPush(limit = 6): { instant: string[]; batch: string[]; qu
     } catch {
       codes = [];
     }
+    let aiKeep: boolean | null = null;
+    if (r.ai) {
+      try {
+        aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null;
+      } catch {
+        aiKeep = null;
+      }
+    }
     const fresh: FreshItem = {
       id: r.id,
       title: r.title,
@@ -560,6 +572,7 @@ export function previewPush(limit = 6): { instant: string[]; batch: string[]; qu
       expiresAt: r.expires_at,
       price: r.price,
       isFree: r.is_free === 1,
+      aiKeep,
     };
     if (!langAllowed(fresh, s)) continue;
     const d = decide(fresh, s);
