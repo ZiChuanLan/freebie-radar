@@ -39,6 +39,7 @@ import type {
   PushLogItem,
   AiPayload,
   PushPayload,
+  PushPreview,
   PushSettings,
   Run,
   Source,
@@ -340,16 +341,9 @@ export function App() {
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
   // 管理接口只在就绪后请求，避免公开区刷出一堆 401，也避免无密码模式卡住加载
   const push = useApi<PushPayload>(adminReady ? "/api/push" : null);
-  const ai = useApi<AiPayload>(adminReady && (tab === "ai" || tab === "push") ? "/api/ai" : null);
+  const ai = useApi<AiPayload>(adminReady && tab === "ai" ? "/api/ai" : null);
   const pushLogs = useApi<{ logs: PushLogItem[] }>(adminReady && tab === "push" ? "/api/push/log?limit=40" : null);
-  const [pushPreview, setPushPreview] = useState<{
-    instant: string[];
-    batch: string[];
-    queued: number;
-    scanned?: number;
-    matched?: number;
-  } | null>(null);
-
+  const [pushPreview, setPushPreview] = useState<PushPreview | null>(null);
   const [pickedDate, setPickedDate] = useState<string | null>(null);
   const activeDate = pickedDate ?? digests.data?.digests?.[0]?.date ?? null;
   const digestDetail = useApi<{
@@ -705,8 +699,8 @@ export function App() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   { key: "rules" as Tab, label: "订阅与屏蔽", desc: "关键词订阅、屏蔽词防火墙", icon: ShieldBan },
-                  { key: "push" as Tab, label: "推送规则", desc: "阈值、静默时段、语言与去重", icon: Zap },
-                  { key: "ai" as Tab, label: "AI 引擎", desc: "二审模型、提示词、判定统计", icon: Bot },
+                  { key: "push" as Tab, label: "推送规则", desc: "推送时机、阈值、格式与免打扰", icon: Zap },
+                  { key: "ai" as Tab, label: "AI 引擎", desc: "规则初筛、审核模型、提示词与补审", icon: Bot },
                   { key: "ops" as Tab, label: "数据源运维", desc: "采集开关、间隔、数据清理", icon: Wrench },
                 ].map((entry) => (
                   <button
@@ -1235,6 +1229,7 @@ export function App() {
               payload={push.data}
               preview={pushPreview}
               logs={pushLogs.data?.logs ?? []}
+              sources={sources.data?.sources ?? []}
               onSave={async (p: Partial<PushSettings>) => {
                 const res = await fetch("/api/push", {
                   method: "PATCH",
@@ -1251,9 +1246,7 @@ export function App() {
               }}
               onPreview={async () => {
                 const res = await fetch("/api/push/preview?limit=6");
-                setPushPreview(
-                  (await res.json()) as { instant: string[]; batch: string[]; queued: number; scanned?: number; matched?: number },
-                );
+                setPushPreview((await res.json()) as PushPreview);
               }}
               onFlush={async () => {
                 const res = await fetch("/api/push/flush", { method: "POST" });
@@ -1268,24 +1261,17 @@ export function App() {
                 notify(res.ok ? "测试消息已发送到 Telegram" : "推送未启用或缺少凭据");
                 pushLogs.reload();
               }}
-              aiReviewBeforePush={ai.data?.settings.reviewBeforePush}
-              onToggleReviewBeforePush={async (v) => {
-                const res = await fetch("/api/ai", {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ reviewBeforePush: v }),
-                });
-                if (!res.ok) {
-                  notify("保存失败");
-                  return;
-                }
-                ai.reload();
-                notify(v ? "已切为：推送前先过 AI 二审" : "已切为：先即时推送再后台补审");
-              }}
             />
           )}
 
-          {adminReady && tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} onNotify={notify} />}
+          {adminReady && tab === "ai" && (
+            <AiPanel
+              data={ai.data}
+              sources={sources.data?.sources ?? []}
+              reload={ai.reload}
+              onNotify={notify}
+            />
+          )}
           {adminReady && tab === "ops" && (
             <OpsPanel
               sources={sources.data?.sources ?? []}

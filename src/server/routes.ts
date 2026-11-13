@@ -9,7 +9,7 @@ import {
   DEFAULT_SETTINGS,
   flushBatch,
   getPushSettings,
-  inQuietHoursZoned,
+  isQuietNow,
   previewPush,
   pushStats,
   queueSize,
@@ -21,10 +21,12 @@ import {
   aiStats,
   backfillAi,
   feedbackStats,
+  getAiSettings,
   publicAiSettings,
   saveAiSettings,
   testAiConnection,
   type AiSettings,
+  type BackfillMode,
 } from "./ai-admin.ts";
 import {
   getRetention,
@@ -722,16 +724,14 @@ export function registerApi(app: Hono) {
 
   // ---- 推送设置 / 预览 / 记录 ----
   app.get("/api/push", (c) => {
+    const s = getPushSettings();
     return c.json({
-      settings: getPushSettings(),
+      settings: s,
       defaults: DEFAULT_SETTINGS,
       stats: pushStats(),
       channel: config.pushChannel,
       ready: pushEnabled,
-      quiet: (() => {
-        const s = getPushSettings();
-        return inQuietHoursZoned(s.quietHours, s.timezone);
-      })(),
+      quiet: isQuietNow(s),
     });
   });
 
@@ -739,32 +739,49 @@ export function registerApi(app: Hono) {
     const body = (await c.req.json().catch(() => null)) as Partial<PushSettings> | null;
     if (!body) return c.json({ error: "无效的请求体" }, 400);
     const settings = savePushSettings(body);
-    return c.json({ settings, stats: pushStats(), quiet: inQuietHoursZoned(settings.quietHours, settings.timezone) });
+    return c.json({ settings, stats: pushStats(), quiet: isQuietNow(settings) });
   });
 
   /* ---------------------------------------------------------------- *
-   * AI 二审配置：端点/模型/Key/送审上限/提示词都可以网页改，改完立即生效
+   * AI 语义审核配置：开关/规则初筛/送审范围/连接与性能/提示词/测试/补审
    * ---------------------------------------------------------------- */
 
   app.get("/api/ai", (c) => {
-    return c.json({ settings: publicAiSettings(), stats: aiStats(), feedback: feedbackStats() });
+    const aiS = getAiSettings();
+    const pushS = getPushSettings();
+    return c.json({
+      settings: { ...publicAiSettings(aiS), reviewBeforePush: pushS.pushTiming === "wait_ai" },
+      stats: aiStats(),
+      feedback: feedbackStats(aiS.feedbackLimit),
+    });
   });
 
   app.patch("/api/ai", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as Partial<AiSettings> | null;
+    const body = (await c.req.json().catch(() => null)) as (Partial<AiSettings> & { reviewBeforePush?: boolean }) | null;
     if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (typeof body.reviewBeforePush === "boolean") {
+      savePushSettings({ pushTiming: body.reviewBeforePush ? "wait_ai" : "instant_first" });
+    }
     const saved = saveAiSettings(body);
-    return c.json({ settings: publicAiSettings(saved), stats: aiStats(), feedback: feedbackStats() });
+    const pushS = getPushSettings();
+    return c.json({
+      settings: { ...publicAiSettings(saved), reviewBeforePush: pushS.pushTiming === "wait_ai" },
+      stats: aiStats(),
+      feedback: feedbackStats(saved.feedbackLimit),
+    });
   });
 
   app.post("/api/ai/test", async (c) => {
-    return c.json(await testAiConnection());
+    const draft = (await c.req.json().catch(() => ({}))) as Partial<AiSettings>;
+    return c.json(await testAiConnection(draft));
   });
 
   app.post("/api/ai/backfill", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { limit?: number };
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; mode?: string };
     const limit = Math.min(Math.max(Number(body.limit ?? 200), 1), 2000);
-    return c.json(await backfillAi(limit));
+    const mode: BackfillMode =
+      body.mode === "recent" || body.mode === "rejected" ? body.mode : "pending";
+    return c.json(await backfillAi(limit, mode));
   });
 
   /* ---------------------------------------------------------------- *

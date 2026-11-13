@@ -1,7 +1,8 @@
 import { config } from "../config.ts";
 import { all, get, run } from "../db.ts";
 import type { RawItem } from "../collectors/types.ts";
-
+import { NOISE_TITLE } from "./noise.ts";
+import { FREEBIE_ONLY_SOURCES } from "./index.ts";
 import type { ObtainMode } from "./obtain.ts";
 
 export type AiVerdict = {
@@ -15,6 +16,8 @@ export type AiVerdict = {
   quality?: number;
 };
 
+export type AiSourceMode = "all" | "exclude" | "only";
+
 export type AiSettings = {
   /** 总开关：关掉后采集不再自动送审 */
   enabled: boolean;
@@ -24,21 +27,36 @@ export type AiSettings = {
   apiKey: string;
   /** 模型名 */
   model: string;
-  /** 每轮最多送审多少条（按 20 条一批切分） */
+  /** 每轮最多送审多少条（20-500） */
   maxItems: number;
-  /** 自定义提示词；留空用内置 */
+  /** 每批发送条数（2-20，默认 6） */
+  batchSize: number;
+  /** 并发批数（1-8，默认 4） */
+  concurrency: number;
+  /** 单批请求超时秒数（5-60，默认 15） */
+  timeoutSec: number;
+  /** 第一道规则初筛开关：开启后自动跳过求助/问价/版本更新等硬噪音，不浪费 AI 额度 */
+  preFilterEnabled: boolean;
+  /** 用户自定义入口拦截关键词：命中直接跳过送审且不主动直推 */
+  customNoiseKeywords: string[];
+  /** 纯白嫖专源（Epic/Steam/GamerPower 等）免送 AI，直接视作真福利 */
+  skipFreebieSources: boolean;
+  /** 送审数据源范围：all 全部 / exclude 排除指定源 / only 仅审指定源 */
+  sourceMode: AiSourceMode;
+  /** 配合 sourceMode 使用的数据源 ID 列表 */
+  sourceIds: string[];
+  /** 补充审核规则（追加在系统默认口径后，不破坏 JSON 输出要求） */
+  extraPrompt: string;
+  /** 高级：完全自定义主提示词；留空用内置默认 */
   systemPrompt: string;
-  /** true = 推送前先等 AI 一审（更准但多 1-3 秒）；false = 先即时推再后台补审（极速抢码） */
-  reviewBeforePush: boolean;
-  /** true = 自动从用户收藏（正例）与手动关闭（负例）学习偏好，无需维护复杂提示词 */
+  /** true = 自动从用户收藏（正例）与手动关闭（负例）学习偏好 */
   learnFromFeedback: boolean;
+  /** 正负样本各抽取最近几条（1-15，默认 6） */
+  feedbackLimit: number;
 };
 
 const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
-const BATCH = 6;
-/** 同时送审的批数。MG 侧实测能扛 4 路并发，再多会开始排队。 */
-const CONCURRENCY = 4;
 
 const DEFAULT_PROMPT = [
   "你是福利信息审核员。判断每一条是否值得推送给用户，用户只想要「现在动手就能拿到手、而且过了这村没这店」的东西。",
@@ -94,9 +112,18 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   apiKey: config.aiApiKey,
   model: config.aiModel,
   maxItems: DEFAULT_MAX_ITEMS,
+  batchSize: 6,
+  concurrency: 4,
+  timeoutSec: 15,
+  preFilterEnabled: true,
+  customNoiseKeywords: [],
+  skipFreebieSources: false,
+  sourceMode: "all",
+  sourceIds: [],
+  extraPrompt: "",
   systemPrompt: "",
-  reviewBeforePush: true,
   learnFromFeedback: true,
+  feedbackLimit: 6,
 };
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
@@ -105,21 +132,53 @@ function numOr(v: unknown, fallback: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(n), min), max);
 }
 
+function normalizeStringList(v: unknown, maxLen = 40, maxCount = 80): string[] {
+  if (!Array.isArray(v)) return [];
+  return [
+    ...new Set(
+      v
+        .filter((x): x is string => typeof x === "string")
+        .map((x) => x.trim().slice(0, maxLen))
+        .filter(Boolean),
+    ),
+  ].slice(0, maxCount);
+}
+
+function normalizeSourceMode(v: unknown): AiSourceMode {
+  return v === "exclude" || v === "only" ? v : "all";
+}
+
+function normalizeSettings(raw: Partial<AiSettings>, base: AiSettings): AiSettings {
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl.trim() : base.baseUrl,
+    apiKey:
+      typeof raw.apiKey === "string" && raw.apiKey.trim() && !raw.apiKey.startsWith("••••")
+        ? raw.apiKey.trim()
+        : base.apiKey,
+    model: typeof raw.model === "string" ? raw.model.trim() : base.model,
+    maxItems: numOr(raw.maxItems, base.maxItems, 20, 500),
+    batchSize: numOr(raw.batchSize, base.batchSize, 2, 20),
+    concurrency: numOr(raw.concurrency, base.concurrency, 1, 8),
+    timeoutSec: numOr(raw.timeoutSec, base.timeoutSec, 5, 60),
+    preFilterEnabled: typeof raw.preFilterEnabled === "boolean" ? raw.preFilterEnabled : base.preFilterEnabled,
+    customNoiseKeywords: "customNoiseKeywords" in raw ? normalizeStringList(raw.customNoiseKeywords) : base.customNoiseKeywords,
+    skipFreebieSources: typeof raw.skipFreebieSources === "boolean" ? raw.skipFreebieSources : base.skipFreebieSources,
+    sourceMode: "sourceMode" in raw ? normalizeSourceMode(raw.sourceMode) : base.sourceMode,
+    sourceIds: "sourceIds" in raw ? normalizeStringList(raw.sourceIds, 60, 200) : base.sourceIds,
+    extraPrompt: typeof raw.extraPrompt === "string" ? raw.extraPrompt : base.extraPrompt,
+    systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : base.systemPrompt,
+    learnFromFeedback: typeof raw.learnFromFeedback === "boolean" ? raw.learnFromFeedback : base.learnFromFeedback,
+    feedbackLimit: numOr(raw.feedbackLimit, base.feedbackLimit, 1, 15),
+  };
+}
+
 export function getAiSettings(): AiSettings {
   const row = get<{ value: string }>("SELECT value FROM settings WHERE key = ?", SETTINGS_KEY);
   if (!row) return { ...DEFAULT_AI_SETTINGS };
   try {
     const raw = JSON.parse(row.value) as Partial<AiSettings>;
-    return {
-      enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_AI_SETTINGS.enabled,
-      baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
-      apiKey: typeof raw.apiKey === "string" ? raw.apiKey : DEFAULT_AI_SETTINGS.apiKey,
-      model: typeof raw.model === "string" ? raw.model : DEFAULT_AI_SETTINGS.model,
-      maxItems: numOr(raw.maxItems, DEFAULT_AI_SETTINGS.maxItems, 20, 500),
-      systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : "",
-      reviewBeforePush: raw.reviewBeforePush !== false,
-      learnFromFeedback: raw.learnFromFeedback !== false,
-    };
+    return normalizeSettings(raw, DEFAULT_AI_SETTINGS);
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
   }
@@ -127,16 +186,7 @@ export function getAiSettings(): AiSettings {
 
 export function saveAiSettings(patch: Partial<AiSettings>): AiSettings {
   const cur = getAiSettings();
-  const next: AiSettings = {
-    enabled: typeof patch.enabled === "boolean" ? patch.enabled : cur.enabled,
-    baseUrl: typeof patch.baseUrl === "string" ? patch.baseUrl.trim() : cur.baseUrl,
-    apiKey: typeof patch.apiKey === "string" && patch.apiKey.trim() && patch.apiKey !== "••••" ? patch.apiKey.trim() : cur.apiKey,
-    model: typeof patch.model === "string" ? patch.model.trim() : cur.model,
-    maxItems: numOr(patch.maxItems ?? cur.maxItems, cur.maxItems, 20, 500),
-    systemPrompt: typeof patch.systemPrompt === "string" ? patch.systemPrompt : cur.systemPrompt,
-    reviewBeforePush: typeof patch.reviewBeforePush === "boolean" ? patch.reviewBeforePush : cur.reviewBeforePush,
-    learnFromFeedback: typeof patch.learnFromFeedback === "boolean" ? patch.learnFromFeedback : cur.learnFromFeedback,
-  };
+  const next = normalizeSettings(patch, cur);
   run(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     SETTINGS_KEY,
@@ -151,18 +201,69 @@ export function aiReady(s = getAiSettings()): boolean {
   return s.enabled && Boolean(s.baseUrl && s.model);
 }
 
+/** 是否命中入口噪音初筛（求助/问价/版本更新补丁 + 用户自定义噪音词）。 */
+export function matchesEntryNoise(title: string, s = getAiSettings()): boolean {
+  if (!s.preFilterEnabled) return false;
+  if (NOISE_TITLE.test(title)) return true;
+  if (s.customNoiseKeywords.length) {
+    const lower = title.toLowerCase();
+    if (s.customNoiseKeywords.some((kw) => lower.includes(kw.toLowerCase()))) return true;
+  }
+  return false;
+}
+
+/** 该数据源是否需要送入 AI 审核。返回 false 且非噪音时，纯白嫖源可视作自动通过。 */
+export function shouldPassSourceToAi(sourceId: string, s = getAiSettings()): boolean {
+  if (s.skipFreebieSources && FREEBIE_ONLY_SOURCES.has(sourceId)) return false;
+  if (s.sourceMode === "exclude" && s.sourceIds.includes(sourceId)) return false;
+  if (s.sourceMode === "only" && !s.sourceIds.includes(sourceId)) return false;
+  return true;
+}
+
+export function feedbackStats(limit = 6): {
+  positive: number;
+  negative: number;
+  positiveSamples: string[];
+  negativeSamples: string[];
+} {
+  const n = Math.min(Math.max(Math.round(limit), 1), 15);
+  try {
+    const pos = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE starred = 1")?.n ?? 0;
+    const neg = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE status = 'ignored'")?.n ?? 0;
+    const positiveSamples = all<{ title: string }>(
+      "SELECT title FROM items WHERE starred = 1 ORDER BY last_seen_at DESC LIMIT ?",
+      n,
+    ).map((r) => r.title.slice(0, 80));
+    const negativeSamples = all<{ title: string }>(
+      "SELECT title FROM items WHERE status = 'ignored' ORDER BY last_seen_at DESC LIMIT ?",
+      n,
+    ).map((r) => r.title.slice(0, 80));
+    return { positive: pos, negative: neg, positiveSamples, negativeSamples };
+  } catch {
+    return { positive: 0, negative: 0, positiveSamples: [], negativeSamples: [] };
+  }
+}
+
 /** 给前端的安全视图：密钥打码。 */
 export function publicAiSettings(s = getAiSettings()) {
   return {
-    // 密钥永远不回传，前端表单靠 hasKey/keyHint 判断
     apiKey: "",
     enabled: s.enabled,
     baseUrl: s.baseUrl,
     model: s.model,
     maxItems: s.maxItems,
+    batchSize: s.batchSize,
+    concurrency: s.concurrency,
+    timeoutSec: s.timeoutSec,
+    preFilterEnabled: s.preFilterEnabled,
+    customNoiseKeywords: s.customNoiseKeywords,
+    skipFreebieSources: s.skipFreebieSources,
+    sourceMode: s.sourceMode,
+    sourceIds: s.sourceIds,
+    extraPrompt: s.extraPrompt,
     systemPrompt: s.systemPrompt,
-    reviewBeforePush: s.reviewBeforePush,
     learnFromFeedback: s.learnFromFeedback,
+    feedbackLimit: s.feedbackLimit,
     hasKey: Boolean(s.apiKey),
     keyHint: s.apiKey ? "••••" + s.apiKey.slice(-4) : "",
     ready: aiReady(s),
@@ -171,41 +272,35 @@ export function publicAiSettings(s = getAiSettings()) {
   };
 }
 
-export function feedbackStats(): { positive: number; negative: number } {
-  const pos = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE starred = 1")?.n ?? 0;
-  const neg = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE status = 'ignored'")?.n ?? 0;
-  return { positive: pos, negative: neg };
-}
-
 function buildSystemPrompt(s: AiSettings): string {
-  const base = s.systemPrompt.trim() || DEFAULT_PROMPT;
-  if (!s.learnFromFeedback) return base;
-  try {
-    const likes = all<{ title: string }>(
-      "SELECT title FROM items WHERE starred = 1 ORDER BY last_seen_at DESC LIMIT 6",
-    ).map((r) => r.title.slice(0, 80));
-    const dislikes = all<{ title: string }>(
-      "SELECT title FROM items WHERE status = 'ignored' ORDER BY last_seen_at DESC LIMIT 6",
-    ).map((r) => r.title.slice(0, 80));
-    if (!likes.length && !dislikes.length) return base;
-    const lines = [base, "", "以下来自用户近期真实操作（优先贴合这些偏好）："];
-    if (likes.length) lines.push("用户收藏的正样本（类似应判 keep=true）：" + likes.map((t) => `「${t}」`).join("、"));
-    if (dislikes.length) lines.push("用户手动关闭的负样本（类似应判 keep=false）：" + dislikes.map((t) => `「${t}」`).join("、"));
-    return lines.join("\n");
-  } catch {
-    return base;
+  const parts: string[] = [s.systemPrompt.trim() || DEFAULT_PROMPT];
+  if (s.extraPrompt.trim()) {
+    parts.push("", "补充审核规则（务必优先遵守）：", s.extraPrompt.trim());
   }
+  if (!s.learnFromFeedback) return parts.join("\n");
+  try {
+    const fb = feedbackStats(s.feedbackLimit);
+    if (!fb.positiveSamples.length && !fb.negativeSamples.length) return parts.join("\n");
+    parts.push("", "以下来自用户近期真实操作（优先贴合这些偏好）：");
+    if (fb.positiveSamples.length) {
+      parts.push("用户收藏的正样本（类似应判 keep=true）：" + fb.positiveSamples.map((t) => `「${t}」`).join("、"));
+    }
+    if (fb.negativeSamples.length) {
+      parts.push("用户手动关闭的负样本（类似应判 keep=false）：" + fb.negativeSamples.map((t) => `「${t}」`).join("、"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return parts.join("\n");
 }
 
 async function callOnce(
   payload: { index: number; title: string; summary: string }[],
   s: AiSettings,
-  timeoutMs = 15_000,
 ): Promise<Map<number, AiVerdict> | null> {
   const endpoint = s.baseUrl.replace(/\/+$/, "") + "/chat/completions";
+  const timeoutMs = s.timeoutSec * 1000;
   const ac = new AbortController();
-  // 实测正常批次 2-5 秒，但 MG 偶发长尾能拖到 49 秒。
-  // 与其等长尾，不如 15 秒就放弃、让上层重试或拆小——重试通常立刻就快。
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const t0 = Date.now();
   const tag = `[ai] batch n=${payload.length} idx=${payload[0]?.index ?? "-"}`;
@@ -246,7 +341,7 @@ async function callOnce(
 
 /**
  * 送审并返回 index → verdict 的映射。未启用或全部失败返回 null。
- * 条目多于 maxItems 时分批送审，保证上限内每个新条目都有结论。
+ * 条目多于 maxItems 时按 maxItems 截断送审，按 batchSize / concurrency 并发执行。
  */
 export async function reviewItems(items: RawItem[], settings?: AiSettings): Promise<Map<number, AiVerdict> | null> {
   const s = settings ?? getAiSettings();
@@ -256,12 +351,10 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
   const merged = new Map<number, AiVerdict>();
   let ok = 0;
 
-  // 实测 MG + mercury-3 判 20 条要 47 秒，串行送 25 条会撞满 60 秒超时，
-  // 所以缩批 + 并发：每批 6 条、同时跑 4 批。
   type Job = { start: number; payload: { index: number; title: string; summary: string }[] };
   const jobs: Job[] = [];
-  for (let start = 0; start < total; start += BATCH) {
-    const chunk = items.slice(start, Math.min(start + BATCH, total));
+  for (let start = 0; start < total; start += s.batchSize) {
+    const chunk = items.slice(start, Math.min(start + s.batchSize, total));
     jobs.push({
       start,
       payload: chunk.map((it, i) => ({
@@ -272,10 +365,6 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
     });
   }
 
-  /**
-   * 单批带重试：MG 偶发长尾（实测某批 49 秒而其余 2-5 秒），
-   * 15 秒超时后立刻重试一次，命中长尾的概率很低，重试基本能拿到。
-   */
   const runJob = async (job: Job): Promise<Map<number, AiVerdict> | null> => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -292,8 +381,8 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
     return null;
   };
 
-  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
-    const wave = jobs.slice(i, i + CONCURRENCY);
+  for (let i = 0; i < jobs.length; i += s.concurrency) {
+    const wave = jobs.slice(i, i + s.concurrency);
     const results = await Promise.all(wave.map(runJob));
     for (const map of results) {
       if (!map) continue;
@@ -305,15 +394,23 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
   return ok > 0 ? merged : null;
 }
 
-/** 连通性测试：用固定样本跑一次，返回模型原话与耗时。 */
-export async function testAiConnection(settings?: AiSettings): Promise<{
+/** 连通性测试：支持传入表单草稿直接测试（无需先保存），返回完整判定维度与耗时。 */
+export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   ok: boolean;
   ms: number;
   model: string;
-  results: { title: string; keep: boolean; category: string; reason: string }[];
+  results: { title: string; keep: boolean; category: string; obtain: string; quality: number | null; reason: string }[];
   error?: string;
 }> {
-  const s = settings ?? getAiSettings();
+  const cur = getAiSettings();
+  const s: AiSettings = {
+    ...normalizeSettings(draft ?? {}, cur),
+    enabled: true, // 测试接口允许在开启总开关前先验证连通性
+  };
+  if (!s.baseUrl || !s.model) {
+    return { ok: false, ms: 0, model: s.model, results: [], error: "请先填写 API 端点与模型名" };
+  }
+
   const samples: RawItem[] = [
     { externalId: "t1", url: "https://example.com/1", title: "【福利】送 5 个 500M 动态IP测试，先到先得", summary: "回复即可" },
     { externalId: "t2", url: "https://example.com/2", title: "88% 受访开发者点头赞成：FreeBSD 组建工作组制定 AI 使用新规", summary: "行业新闻" },
@@ -324,7 +421,7 @@ export async function testAiConnection(settings?: AiSettings): Promise<{
   try {
     const map = await reviewItems(samples, s);
     const ms = Date.now() - t0;
-    if (!map) return { ok: false, ms, model: s.model, results: [], error: "未返回有效结论" };
+    if (!map) return { ok: false, ms, model: s.model, results: [], error: "模型未返回有效结论（请检查端点/Key/模型名或超时设置）" };
     return {
       ok: true,
       ms,
@@ -335,6 +432,8 @@ export async function testAiConnection(settings?: AiSettings): Promise<{
           title: it.title,
           keep: v?.keep ?? false,
           category: v?.category ?? "-",
+          obtain: v?.obtain ?? "-",
+          quality: typeof v?.quality === "number" ? v.quality : null,
           reason: v?.reason ?? "（无结论）",
         };
       }),

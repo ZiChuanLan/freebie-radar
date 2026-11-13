@@ -3,7 +3,7 @@ import { all, get, run } from "./db.ts";
 import { CATEGORY_LABEL, dedupeByTitle, type DedupeEntry } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
-import { getPushSettings, passesPushFilters } from "./push.ts";
+import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
 export { sendTelegram };
 export type DigestItem = {
@@ -73,6 +73,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const pushed = recentDigestPushed(dayKey(date));
   const rules = loadActiveBlockRules();
   const settings = getPushSettings();
+  const aiKeepMap = new Map<number, boolean | null>();
   const fresh = rows.filter((r) => {
     if (pushed.ids.has(r.id) || isBlocked(r, rules)) return false;
     let codes: string[] = [];
@@ -81,9 +82,11 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
     if (r.ai) {
       try { aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null; } catch { aiKeep = null; }
     }
-    if (aiKeep === false) return false;
+    aiKeepMap.set(r.id, aiKeep);
+    if (settings.aiFallbackMode !== "ignore_ai" && aiKeep === false) return false;
     if (!settings.applyToDigest) return true;
     return passesPushFilters({
+      sourceId: r.source_id,
       title: r.title,
       score: r.score,
       codes,
@@ -92,29 +95,21 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
       aiKeep,
       category: r.category,
       obtain: r.obtain ?? null,
+      publishedAt: r.published_at,
     }, settings);
   });
 
-  const strictRaw = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title));
+  const hasDealSignal = (r: DigestItem) => aiKeepMap.get(r.id) === true || DEAL_HINT.test(r.title);
+  const strictRaw = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && hasDealSignal(r) && !NOISE_TITLE.test(r.title));
   const strict = dedupeByTitle(strictRaw, pushed.seeds);
   if (strict.length >= Math.min(6, topN)) return strict.slice(0, topN);
 
-  const relaxedRaw = fresh.filter((r) => DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
+  const relaxedRaw = fresh.filter((r) => hasDealSignal(r) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
   const relaxed = dedupeByTitle(relaxedRaw, pushed.seeds);
   return relaxed.slice(0, topN);
 }
 const MIN_DIGEST_SCORE = 55;
 
-const SOURCE_SHORT: Record<string, string> = {
-  "linuxdo-welfare": "LINUX DO 福利",
-  "linuxdo-resource": "LINUX DO 资源",
-  "v2ex-free": "V2EX",
-  "github-free-for-dev": "GitHub",
-  "rss-fuliba": "福利吧",
-  "rss-52pojie": "吾爱破解",
-  "rss-smzdm": "什么值得买",
-  "tg-channels": "Telegram",
-};
 
 function daysLeft(iso: string | null): string | null {
   if (!iso) return null;
@@ -132,13 +127,13 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
   items.forEach((it, i) => {
     const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
     const exp = daysLeft(it.expires_at);
-    const meta = [SOURCE_SHORT[it.source_id] ?? it.source_id, cat, exp].filter(Boolean).join(" · ");
+    const meta = [sourceLabel(it.source_id), cat, exp].filter(Boolean).join(" · ");
     lines.push(i + 1 + ". " + it.title.slice(0, 100));
     lines.push("   " + meta);
     lines.push("   " + it.url);
     lines.push("");
   });
-  lines.push("来源：LINUX DO / V2EX / GitHub / RSS");
+  lines.push("来源：白嫖雷达多源聚合");
   return lines.join("\n");
 }
 

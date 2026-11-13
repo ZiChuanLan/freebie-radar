@@ -1,13 +1,14 @@
 import { aiEnabled, config, pushEnabled } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
-import { enrichItem } from "../enrich/index.ts";
+import { enrichItem, FREEBIE_ONLY_SOURCES } from "../enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
-import { getAiSettings, reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
-import { enqueueForAi, reviewFreshNow } from "../enrich/ai-queue.ts";
+import { getAiSettings, matchesEntryNoise, shouldPassSourceToAi, shouldReview, type AiVerdict } from "../enrich/ai.ts";
+import { enqueueForAi, reviewFreshNow, setPostReviewHandler } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
-import { NOISE_TITLE } from "../enrich/noise.ts";
 import { getRetention } from "../retention.ts";
-import { pushInstant } from "../instant.ts";
+import { getPushSettings, pushInstant, pushReviewedByIds } from "../instant.ts";
+
+setPostReviewHandler(pushReviewedByIds);
 import { createHttp, type HttpClient } from "../http.ts";
 import { mockCollector } from "./mock.ts";
 import { linuxdoCollector } from "./linuxdo.ts";
@@ -98,21 +99,13 @@ export const SEEDS: SourceSeed[] = [
 ];
 
 /** 供本机 Playwright 采集器把结果回传到服务器；同时补写 runs / sources 状态，保证 /status 有记录。 */
-const SYNC_PRE_PUSH_LIMIT = 12;
-
 /**
- * 零关键词门禁 AI 一审：已停用低留存泛资讯源，其余源仅在入口挡掉求助/更新补丁等硬噪音，
- * 全量直通 AI 一审判断（不再依赖正面关键词匹配）。
- */
-function shouldSendToAi(_sourceId: string, item: FreshItem): boolean {
-  return !NOISE_TITLE.test(item.title);
-}
-
-/**
- * 新条目一审与推送调度：
- * - 无关键词门禁：除硬噪音（求助/版本更新）外全部直通 AI 一审
- * - reviewBeforePush=true（默认）：先同步过 AI 一审再即时推送，未审到的进后台队列
- * - reviewBeforePush=false（极速抢码）：先按规则即时推送，AI 结论随后在后台队列补齐
+ * 新条目一审预筛、AI 语义审核与推送调度：
+ * - 规则初筛（matchesEntryNoise）：开关开启时先过滤求助/更新补丁/自定义噪音词
+ * - 按源分流（shouldPassSourceToAi）：支持纯白嫖专源免审直通、或排除/仅审指定源
+ * - 推送时机由 PushSettings.pushTiming 决定：
+ *   - wait_ai（默认）：前 syncPrePushLimit 条同步过 AI 后再推，其余进后台队列并在审完后自动补推
+ *   - instant_first（极速抢码）：按规则先推，需要审的进后台队列补审（审完通过且未推过可自动补推）
  */
 async function dispatchFresh(
   sourceId: string,
@@ -122,17 +115,53 @@ async function dispatchFresh(
   if (!fresh.length) return;
   const reviewOn = shouldReview();
   const aiSettings = reviewOn ? getAiSettings() : null;
-  const aiCandidates = reviewOn ? fresh.filter((f) => shouldSendToAi(sourceId, f)) : [];
+  const pushSettings = getPushSettings();
 
-  if (reviewOn && aiSettings?.reviewBeforePush) {
-    if (!aiCandidates.length) return;
-    const ranked = [...aiCandidates].sort(
+  if (!reviewOn || !aiSettings) {
+    await pushInstant(sourceId, fresh);
+    return;
+  }
+
+  const nonNoise = fresh.filter((f) => !matchesEntryNoise(f.title, aiSettings));
+  if (!nonNoise.length) return;
+
+  if (!shouldPassSourceToAi(sourceId, aiSettings)) {
+    if (aiSettings.skipFreebieSources && FREEBIE_ONLY_SOURCES.has(sourceId)) {
+      const autoReason = "纯白嫖专源免审直通";
+      tx(() => {
+        for (const f of nonNoise) {
+          const verdict = {
+            index: 0,
+            keep: true,
+            category: f.category ?? "other",
+            obtain: (f.obtain as ObtainMode | undefined) ?? "free",
+            quality: 4,
+            reason: autoReason,
+          };
+          f.aiKeep = true;
+          f.aiReason = autoReason;
+          run(
+            "UPDATE items SET ai = ?, ai_keep = 1, obtain = COALESCE(obtain, 'free') WHERE id = ? AND ai IS NULL",
+            JSON.stringify(verdict),
+            f.id,
+          );
+        }
+      });
+      log(`[${sourceId}] 白嫖专源免送 AI，${nonNoise.length} 条直接放行`);
+    }
+    await pushInstant(sourceId, nonNoise);
+    return;
+  }
+
+  if (pushSettings.pushTiming === "wait_ai") {
+    const ranked = [...nonNoise].sort(
       (a, b) => (b.codes.length > 0 ? 1 : 0) - (a.codes.length > 0 ? 1 : 0) || b.score - a.score,
     );
-    const syncBatch = ranked.slice(0, SYNC_PRE_PUSH_LIMIT);
-    const restBatch = ranked.slice(SYNC_PRE_PUSH_LIMIT);
+    const limit = pushSettings.syncPrePushLimit;
+    const syncBatch = ranked.slice(0, limit);
+    const restBatch = ranked.slice(limit);
     const verdicts = await reviewFreshNow(
-      syncBatch.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+      syncBatch.map((f) => ({ itemId: f.id, sourceId, url: f.url, title: f.title, summary: f.summary ?? "" })),
     );
     for (const f of syncBatch) {
       const v = verdicts.get(f.id);
@@ -140,13 +169,21 @@ async function dispatchFresh(
       f.aiKeep = v.aiKeep;
       if (v.category) f.category = v.category;
       if (v.obtain) f.obtain = v.obtain;
+      if (v.reason) f.aiReason = v.reason;
       f.score = v.score;
     }
     log(`[${sourceId}] 推送前 AI 审核 ${syncBatch.length} 条（拦截 ${syncBatch.filter((f) => f.aiKeep === false).length} 条）`);
     await pushInstant(sourceId, syncBatch);
     if (restBatch.length) {
       enqueueForAi(
-        restBatch.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+        restBatch.map((f) => ({
+          itemId: f.id,
+          sourceId,
+          url: f.url,
+          title: f.title,
+          summary: f.summary ?? "",
+          pushOnApprove: pushSettings.pushAfterBackfill,
+        })),
       );
       log(`[${sourceId}] 其余 ${restBatch.length} 条入 AI 后台队列`);
     }
@@ -154,12 +191,17 @@ async function dispatchFresh(
   }
 
   await pushInstant(sourceId, fresh);
-  if (reviewOn && aiCandidates.length) {
-    enqueueForAi(
-      aiCandidates.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
-    );
-    log(`[${sourceId}] ${aiCandidates.length}/${fresh.length} 条入 AI 待审队列`);
-  }
+  enqueueForAi(
+    nonNoise.map((f) => ({
+      itemId: f.id,
+      sourceId,
+      url: f.url,
+      title: f.title,
+      summary: f.summary ?? "",
+      pushOnApprove: pushSettings.pushAfterBackfill,
+    })),
+  );
+  log(`[${sourceId}] ${nonNoise.length}/${fresh.length} 条入 AI 异步审核队列`);
 }
 export function ingestItems(sourceId: string, items: RawItem[]): { inserted: number; skipped: number } {
   ensureSources();
@@ -255,8 +297,10 @@ export type FreshItem = {
   price?: number | null;
   /** 明确免费 */
   isFree?: boolean;
-  /** AI 二审结论：false 表示判定不是福利，任何情况下都不推送 */
+  /** AI 语义审核结论：false 表示判定不是福利 */
   aiKeep?: boolean | null;
+  /** AI 一句话理由，用于推送展示 */
+  aiReason?: string | null;
   /** 归一化分类，用于推送分类过滤 */
   category?: string | null;
   /** 获取方式：free 才算完全白嫖，抽奖/试用/推广默认不推 */
@@ -298,18 +342,28 @@ function persist(
       const status = e.keep ? "active" : "expired";
       const titleKey = resolveDbMergeKey(e.title);
 
-      const existing = get<{ id: number; ai_keep: number | null; obtain: string | null }>(
-        "SELECT id, ai_keep, obtain FROM items WHERE source_id = ? AND external_id = ?",
+      const existing = get<{ id: number; ai_keep: number | null; obtain: string | null; ai: string | null }>(
+        "SELECT id, ai_keep, obtain, ai FROM items WHERE source_id = ? AND external_id = ?",
         sourceId,
         e.externalId,
       );
       if (existing) {
+        let existingQuality: number | null = null;
+        if (existing.ai) {
+          try {
+            const q = (JSON.parse(existing.ai) as { quality?: number }).quality;
+            if (typeof q === "number") existingQuality = q;
+          } catch {
+            existingQuality = null;
+          }
+        }
         const nextScore = verdict
           ? score
           : calibrateScoreByObtain(
               e.score,
               existing.obtain,
               existing.ai_keep === null ? null : existing.ai_keep === 1,
+              existingQuality,
             );
         run(
           `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
@@ -392,7 +446,9 @@ function persist(
           price: e.price,
           isFree: e.isFree,
           aiKeep: verdict ? verdict.keep : null,
+          aiReason: verdict?.reason ?? null,
           category: verdict?.category || e.category,
+          obtain: effectiveObtain,
           summary: e.summary ?? null,
           publishedAt: e.publishedAt ?? null,
         });

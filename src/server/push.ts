@@ -1,8 +1,9 @@
 import { config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
-import { shouldReview } from "./enrich/ai.ts";
+import { matchesEntryNoise, shouldReview } from "./enrich/ai.ts";
 import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
+import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
@@ -11,14 +12,29 @@ import type { FreshItem } from "./collectors/index.ts";
  * 推送设置（存在 settings 表，网页可改，无需重启）
  * ------------------------------------------------------------------ */
 
+export type PushTiming = "wait_ai" | "instant_first";
+export type AiFallbackMode = "strict" | "rule_fallback" | "ignore_ai";
+export type PushSourceMode = "all" | "include" | "exclude";
+export type QuietAction = "batch" | "drop";
+
 export type PushSettings = {
   /** 总开关；关掉后即时和攒批都不发，日报仍可单独触发 */
   enabled: boolean;
+  /** 推送时机：wait_ai = 先过 AI 审核再推（防误推）；instant_first = 极速抢码先推再后台补审 */
+  pushTiming: PushTiming;
+  /** wait_ai 时每轮推送前最多同步等几条过 AI（5-60）；超出部分进后台队列并在审完后自动补推 */
+  syncPrePushLimit: number;
+  /** 后台 AI 补审（超出同步上限或极速模式补审）判定为真福利后，自动补进推送管道 */
+  pushAfterBackfill: boolean;
+  /** AI 未出结果/被拒绝时的处理：strict = 必须 AI 验真；rule_fallback = 未审到按强信号放行；ignore_ai = 忽略 AI 仅用规则 */
+  aiFallbackMode: AiFallbackMode;
+  /** 兼容旧字段：等同于 aiFallbackMode !== "ignore_ai" */
+  onlyAiKeep: boolean;
   /** 立即推送的评分阈值 */
   instantScore: number;
   /** 进攒批队列的评分阈值 */
   batchScore: number;
-  /** 含兑换码/邀请码是否立即推 */
+  /** 含兑换码是否立即推 */
   instantOnCodes: boolean;
   /** 标题含「限量/先到先得」等词是否立即推 */
   instantOnUrgent: boolean;
@@ -30,34 +46,55 @@ export type PushSettings = {
   batchIntervalMin: number;
   /** 一批最多合并几条 */
   maxPerBatch: number;
-  /** 静默时段 "23:30-08:00"，静默期内的立即推送转入攒批 */
+  /** 是否开启夜间免打扰 */
+  quietEnabled: boolean;
+  /** 静默时段 "23:30-08:00" */
   quietHours: string;
+  /** 静默时段行为：batch = 转入攒批早上发；drop = 静默期内不发送也不攒批 */
+  quietAction: QuietAction;
   /** 静默时段按哪个时区算 */
   timezone: string;
+  /** 新帖时效上限（小时）；0 表示不限，默认 72 小时 */
+  maxAgeHours: number;
   /** 语言偏好：all 全部 / zh 只看中文 / en 只看英文 */
   langMode: "all" | "zh" | "en";
+  /** 数据源过滤模式：all 全部 / include 仅推指定源 / exclude 排除指定源 */
+  sourceMode: PushSourceMode;
+  /** 配合 sourceMode 使用的数据源 ID 列表 */
+  sourceIds: string[];
   /** 推送里是否带价格 */
   includePrice: boolean;
   /** 推送里是否带截止时间 */
   includeDeadline: boolean;
+  /** 推送里是否带综合评分 */
+  includeScore: boolean;
+  /** 推送里是否带获取方式标签（如 有条件/抽奖） */
+  includeObtain: boolean;
+  /** 推送里是否附带 AI 推荐理由 */
+  includeAiReason: boolean;
+  /** 自定义即时/攒批消息头前缀（留空使用默认） */
+  customHeader: string;
   /** 是否按标题去重（同一游戏被多个源报道只推一次） */
   dedupeByTitle: boolean;
   /** 最高价格上限：null 不限 / 0 仅完全白嫖 / 正数为人民币上限 */
   maxPrice: number | null;
-  /** 只推 AI 判定真福利（以及无 AI 结论时的强福利信号） */
-  onlyAiKeep: boolean;
   /** 允许推送的获取方式；空数组表示不限制。默认只推 free */
   obtainModes: string[];
   /** 允许推送的分类白名单；空数组表示全部允许 */
   categories: string[];
   /** 命中「我的订阅」关键词时优先走即时推送 */
   prioritizeSubscribed: boolean;
-  /** 将价格、分类、语言、AI 筛选同步应用到每日精选 */
+  /** 将价格、分类、语言、源、AI 筛选同步应用到每日精选 */
   applyToDigest: boolean;
 };
 
 export const DEFAULT_SETTINGS: PushSettings = {
   enabled: true,
+  pushTiming: "wait_ai",
+  syncPrePushLimit: 20,
+  pushAfterBackfill: true,
+  aiFallbackMode: "rule_fallback",
+  onlyAiKeep: true,
   instantScore: 70,
   batchScore: 60,
   instantOnCodes: true,
@@ -66,14 +103,22 @@ export const DEFAULT_SETTINGS: PushSettings = {
   maxPerInstant: 5,
   batchIntervalMin: 30,
   maxPerBatch: 8,
+  quietEnabled: true,
   quietHours: "23:30-08:00",
+  quietAction: "batch",
   timezone: "Asia/Shanghai",
+  maxAgeHours: 72,
   langMode: "all",
+  sourceMode: "all",
+  sourceIds: [],
   includePrice: true,
   includeDeadline: true,
+  includeScore: true,
+  includeObtain: true,
+  includeAiReason: true,
+  customHeader: "",
   dedupeByTitle: true,
   maxPrice: null,
-  onlyAiKeep: true,
   obtainModes: ["free"],
   categories: [],
   prioritizeSubscribed: true,
@@ -82,6 +127,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
 
 const SETTINGS_KEY = "push";
 const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
+const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
   const n = Number(v);
@@ -101,36 +147,64 @@ function normalizeCategories(v: unknown): string[] {
   return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_CATEGORIES.has(x)))];
 }
 
-const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
-
 function normalizeObtain(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_OBTAIN.has(x)))];
 }
 
-function normalizeSettings(raw: Partial<PushSettings>): PushSettings {
+function normalizeSourceIds(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean))].slice(0, 200);
+}
+
+function normalizeSettings(raw: Partial<PushSettings>, base: PushSettings = DEFAULT_SETTINGS): PushSettings {
+  const instantScore = numOr(raw.instantScore, base.instantScore, 0, 100);
+  const rawBatchScore = numOr(raw.batchScore, base.batchScore, 0, 100);
+  const batchScore = Math.min(rawBatchScore, instantScore);
+
+  let aiFallbackMode: AiFallbackMode = base.aiFallbackMode;
+  if (raw.aiFallbackMode === "strict" || raw.aiFallbackMode === "rule_fallback" || raw.aiFallbackMode === "ignore_ai") {
+    aiFallbackMode = raw.aiFallbackMode;
+  } else if (typeof raw.onlyAiKeep === "boolean") {
+    if (!raw.onlyAiKeep) aiFallbackMode = "ignore_ai";
+    else if (base.aiFallbackMode === "ignore_ai") aiFallbackMode = "rule_fallback";
+  }
+
   return {
-    enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_SETTINGS.enabled,
-    instantScore: numOr(raw.instantScore, DEFAULT_SETTINGS.instantScore, 0, 100),
-    batchScore: numOr(raw.batchScore, DEFAULT_SETTINGS.batchScore, 0, 100),
-    instantOnCodes: raw.instantOnCodes !== false,
-    instantOnUrgent: raw.instantOnUrgent !== false,
-    maxPerHour: numOr(raw.maxPerHour, DEFAULT_SETTINGS.maxPerHour, 1, 200),
-    maxPerInstant: numOr(raw.maxPerInstant, DEFAULT_SETTINGS.maxPerInstant, 1, 10),
-    batchIntervalMin: numOr(raw.batchIntervalMin, DEFAULT_SETTINGS.batchIntervalMin, 0, 720),
-    maxPerBatch: numOr(raw.maxPerBatch, DEFAULT_SETTINGS.maxPerBatch, 1, 20),
-    quietHours: typeof raw.quietHours === "string" ? raw.quietHours : DEFAULT_SETTINGS.quietHours,
-    timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : DEFAULT_SETTINGS.timezone,
-    langMode: raw.langMode === "zh" || raw.langMode === "en" ? raw.langMode : "all",
-    includePrice: raw.includePrice !== false,
-    includeDeadline: raw.includeDeadline !== false,
-    dedupeByTitle: raw.dedupeByTitle !== false,
-    maxPrice: "maxPrice" in raw ? normalizeMaxPrice(raw.maxPrice) : DEFAULT_SETTINGS.maxPrice,
-    onlyAiKeep: raw.onlyAiKeep !== false,
-    obtainModes: "obtainModes" in raw ? normalizeObtain(raw.obtainModes) : DEFAULT_SETTINGS.obtainModes,
-    categories: "categories" in raw ? normalizeCategories(raw.categories) : DEFAULT_SETTINGS.categories,
-    prioritizeSubscribed: raw.prioritizeSubscribed !== false,
-    applyToDigest: raw.applyToDigest !== false,
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    pushTiming: raw.pushTiming === "instant_first" || raw.pushTiming === "wait_ai" ? raw.pushTiming : base.pushTiming,
+    syncPrePushLimit: numOr(raw.syncPrePushLimit, base.syncPrePushLimit, 5, 60),
+    pushAfterBackfill: typeof raw.pushAfterBackfill === "boolean" ? raw.pushAfterBackfill : base.pushAfterBackfill,
+    aiFallbackMode,
+    onlyAiKeep: aiFallbackMode !== "ignore_ai",
+    instantScore,
+    batchScore,
+    instantOnCodes: typeof raw.instantOnCodes === "boolean" ? raw.instantOnCodes : base.instantOnCodes,
+    instantOnUrgent: typeof raw.instantOnUrgent === "boolean" ? raw.instantOnUrgent : base.instantOnUrgent,
+    maxPerHour: numOr(raw.maxPerHour, base.maxPerHour, 1, 200),
+    maxPerInstant: numOr(raw.maxPerInstant, base.maxPerInstant, 1, 10),
+    batchIntervalMin: numOr(raw.batchIntervalMin, base.batchIntervalMin, 0, 720),
+    maxPerBatch: numOr(raw.maxPerBatch, base.maxPerBatch, 1, 20),
+    quietEnabled: typeof raw.quietEnabled === "boolean" ? raw.quietEnabled : base.quietEnabled,
+    quietHours: typeof raw.quietHours === "string" ? raw.quietHours : base.quietHours,
+    quietAction: raw.quietAction === "drop" || raw.quietAction === "batch" ? raw.quietAction : base.quietAction,
+    timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : base.timezone,
+    maxAgeHours: numOr(raw.maxAgeHours, base.maxAgeHours, 0, 720),
+    langMode: raw.langMode === "zh" || raw.langMode === "en" || raw.langMode === "all" ? raw.langMode : base.langMode,
+    sourceMode: raw.sourceMode === "include" || raw.sourceMode === "exclude" || raw.sourceMode === "all" ? raw.sourceMode : base.sourceMode,
+    sourceIds: "sourceIds" in raw ? normalizeSourceIds(raw.sourceIds) : base.sourceIds,
+    includePrice: typeof raw.includePrice === "boolean" ? raw.includePrice : base.includePrice,
+    includeDeadline: typeof raw.includeDeadline === "boolean" ? raw.includeDeadline : base.includeDeadline,
+    includeScore: typeof raw.includeScore === "boolean" ? raw.includeScore : base.includeScore,
+    includeObtain: typeof raw.includeObtain === "boolean" ? raw.includeObtain : base.includeObtain,
+    includeAiReason: typeof raw.includeAiReason === "boolean" ? raw.includeAiReason : base.includeAiReason,
+    customHeader: typeof raw.customHeader === "string" ? raw.customHeader.trim().slice(0, 60) : base.customHeader,
+    dedupeByTitle: typeof raw.dedupeByTitle === "boolean" ? raw.dedupeByTitle : base.dedupeByTitle,
+    maxPrice: "maxPrice" in raw ? normalizeMaxPrice(raw.maxPrice) : base.maxPrice,
+    obtainModes: "obtainModes" in raw ? normalizeObtain(raw.obtainModes) : base.obtainModes,
+    categories: "categories" in raw ? normalizeCategories(raw.categories) : base.categories,
+    prioritizeSubscribed: typeof raw.prioritizeSubscribed === "boolean" ? raw.prioritizeSubscribed : base.prioritizeSubscribed,
+    applyToDigest: typeof raw.applyToDigest === "boolean" ? raw.applyToDigest : base.applyToDigest,
   };
 }
 
@@ -138,20 +212,23 @@ export function getPushSettings(): PushSettings {
   const row = get<{ value: string }>("SELECT value FROM settings WHERE key = ?", SETTINGS_KEY);
   if (!row) return { ...DEFAULT_SETTINGS };
   try {
-    return normalizeSettings(JSON.parse(row.value) as Partial<PushSettings>);
+    return normalizeSettings(JSON.parse(row.value) as Partial<PushSettings>, DEFAULT_SETTINGS);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
 export function savePushSettings(patch: Partial<PushSettings>): PushSettings {
-  const merged = normalizeSettings({ ...getPushSettings(), ...patch });
+  const cur = getPushSettings();
+  const merged = normalizeSettings(patch, cur);
   run(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     SETTINGS_KEY,
     JSON.stringify(merged),
     new Date().toISOString(),
   );
+  // 热更新攒批定时器：避免从 0 改成 10 分钟或缩短周期后要重启或干等上一周期
+  if (schedulerStarted) rescheduleFlush();
   return merged;
 }
 
@@ -168,12 +245,6 @@ export function detectLang(text: string): "zh" | "en" {
   return cjk / Math.max(cjk + latin, 1) > 0.15 ? "zh" : "en";
 }
 
-/** 标题归一化：去掉【】/[]、价格标签、emoji 与标点，用于跨源去重。 */
-/**
- * 推送去重指纹，与列表合并共用一套算法（enrich/mergeKey）。
- * 原来这里是「全标题归一化」，对措辞不同的多源报道无效——
- * 同一款 Epic 免费游戏十几个源写法各异，去重形同虚设。
- */
 export function titleKey(title: string): string {
   return mergeKey(title);
 }
@@ -183,14 +254,19 @@ function langAllowed(item: { title: string }, s: PushSettings): boolean {
   return detectLang(item.title) === s.langMode;
 }
 
+export function sourceAllowed(sourceId: string | undefined, s: PushSettings): boolean {
+  if (s.sourceMode === "all" || !sourceId) return true;
+  if (s.sourceMode === "include") return s.sourceIds.includes(sourceId);
+  if (s.sourceMode === "exclude") return !s.sourceIds.includes(sourceId);
+  return true;
+}
+
 export function priceAllowed(
   item: { price?: number | null; isFree?: boolean; obtain?: string | null },
   maxPrice: number | null,
 ): boolean {
   if (maxPrice === null) return true;
-  // AI 判定「要实付钱」的，别信 is_free 规则——标题里的「免费试用/首单 0 元」会被价格抽取误当成 0 元
   if (item.obtain === "paid") return false;
-  // 抽奖/试用/推广不是「白嫖」，即使标价 0 元也不该进最高价筛选
   if (maxPrice === 0 && item.obtain && item.obtain !== "free" && item.obtain !== "conditional") return false;
   const free = item.isFree === true || item.price === 0;
   if (maxPrice === 0) return free;
@@ -200,13 +276,21 @@ export function priceAllowed(
 
 export function aiAllowed(
   item: { title: string; score: number; codes: string[]; aiKeep?: boolean | null },
-  onlyAiKeep: boolean,
+  onlyAiKeepOrSettings: boolean | PushSettings,
 ): boolean {
+  const mode: AiFallbackMode =
+    typeof onlyAiKeepOrSettings === "boolean"
+      ? onlyAiKeepOrSettings
+        ? "rule_fallback"
+        : "ignore_ai"
+      : onlyAiKeepOrSettings.aiFallbackMode;
+
+  if (mode === "ignore_ai") return true;
   if (item.aiKeep === false) return false;
-  if (!onlyAiKeep) return true;
   if (item.aiKeep === true) return true;
-  // 还没有 AI 结论的（比如 AI 未开或推送后补审模式）：如果有兑换码或高分+福利信号才放行
+  // 还没有 AI 结论（aiKeep === null | undefined）
   if (!shouldReview()) return true;
+  if (mode === "strict") return false;
   return item.codes.length > 0 || (item.score >= 70 && DEAL_HINT.test(item.title));
 }
 
@@ -215,24 +299,53 @@ export function categoryAllowed(category: string | null | undefined, allow: stri
   return Boolean(category && allow.includes(category));
 }
 
-/** 获取方式白名单：空数组不限制；无结论的条目按 free 处理（关键词兜底已覆盖多数）。 */
 export function obtainAllowed(obtain: string | null | undefined, allow: string[]): boolean {
   if (!allow.length) return true;
   return allow.includes(obtain ?? "free");
 }
 
-const MAX_PUSH_AGE_MS = 72 * 3_600_000;
-
-export function freshEnoughForPush(publishedAt: string | null | undefined, nowMs = Date.now()): boolean {
-  if (!publishedAt) return true;
+export function freshEnoughForPush(
+  publishedAt: string | null | undefined,
+  maxAgeHours = 72,
+  nowMs = Date.now(),
+): boolean {
+  if (maxAgeHours <= 0 || !publishedAt) return true;
   const ts = Date.parse(publishedAt);
   if (Number.isNaN(ts)) return true;
-  return nowMs - ts <= MAX_PUSH_AGE_MS;
+  return nowMs - ts <= maxAgeHours * 3_600_000;
 }
 
-/** 推送与日报共用的筛选检查：时效 / 语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
+export type FilterRejectReason = "stale" | "source" | "lang" | "category" | "price" | "ai" | "obtain";
+
+export function checkPushFilter(
+  item: {
+    sourceId?: string;
+    title: string;
+    score: number;
+    codes: string[];
+    price?: number | null;
+    isFree?: boolean;
+    aiKeep?: boolean | null;
+    category?: string | null;
+    obtain?: string | null;
+    publishedAt?: string | null;
+  },
+  s: PushSettings,
+): FilterRejectReason | null {
+  if (!freshEnoughForPush(item.publishedAt, s.maxAgeHours)) return "stale";
+  if (!sourceAllowed(item.sourceId, s)) return "source";
+  if (!langAllowed(item, s)) return "lang";
+  if (!categoryAllowed(item.category, s.categories)) return "category";
+  if (!priceAllowed(item, s.maxPrice)) return "price";
+  if (!aiAllowed(item, s)) return "ai";
+  if (!obtainAllowed(item.obtain, s.obtainModes)) return "obtain";
+  return null;
+}
+
+/** 推送与日报共用的筛选检查：时效 / 源 / 语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
 export function passesPushFilters(
   item: {
+    sourceId?: string;
     title: string;
     score: number;
     codes: string[];
@@ -245,13 +358,7 @@ export function passesPushFilters(
   },
   s: PushSettings,
 ): boolean {
-  if (!freshEnoughForPush(item.publishedAt)) return false;
-  if (!langAllowed(item, s)) return false;
-  if (!categoryAllowed(item.category, s.categories)) return false;
-  if (!priceAllowed(item, s.maxPrice)) return false;
-  if (!aiAllowed(item, s.onlyAiKeep)) return false;
-  if (!obtainAllowed(item.obtain, s.obtainModes)) return false;
-  return true;
+  return checkPushFilter(item, s) === null;
 }
 
 function matchSubscriptions(item: { title: string; summary?: string | null }, keywords: string[]): string[] {
@@ -278,7 +385,7 @@ function fmtDeadline(item: FreshItem): string | null {
   return null;
 }
 
-const SOURCE_SHORT: Record<string, string> = {
+export const SOURCE_SHORT: Record<string, string> = {
   "linuxdo-welfare": "LINUX DO 福利",
   "linuxdo-resource": "LINUX DO 资源",
   "v2ex-free": "V2EX 免费赠送",
@@ -292,11 +399,29 @@ const SOURCE_SHORT: Record<string, string> = {
   gamerpower: "GamerPower",
   "epic-free": "Epic 喜加一",
   "steam-free": "Steam 限免",
+  "gog-free": "GOG 限免",
   "cheapshark-free": "CheapShark",
   "rss-isthereanydeal": "ITAD 喜加一",
-  "rss-reddit-freegames": "Reddit",
-  "rss-reddit-freegamesonsteam": "Reddit",
+  "rss-indiegamebundles": "IndieGameBundles",
+  "rss-ggdeals": "GG.deals",
+  "rss-reddit-freegames": "Reddit 游戏",
+  "rss-reddit-freegamesonsteam": "Reddit Steam",
+  "rss-reddit-efreebies": "Reddit 电子福利",
+  "rss-reddit-gamedeals": "Reddit GameDeals",
+  "rss-reddit-freebies": "Reddit Freebies",
+  "rss-reddit-apphookup": "AppHookup 限免",
+  "rss-reddit-freeebooks": "Reddit 电子书",
+  "rss-reddit-googleplay": "GooglePlay 限免",
   "rss-keylol": "其乐",
+  "rss-slickdeals": "Slickdeals",
+  "rss-heyitsfree": "HeyItsFree",
+  "rss-freebieshark": "FreebieShark",
+  "rss-giveawayoftheday": "今日限免软件",
+  "rss-vonbeau": "VonBeau",
+  "rss-hip2save": "Hip2Save",
+  "rss-ozbargain": "OzBargain",
+  "rss-lowendbox": "LowEndBox",
+  "rss-iplaysoft": "异次元软件",
   "tg-freegames": "TG 游戏情报",
   "tg-cn-deals": "TG 中文羊毛",
   "bsky-gamedeals": "Bluesky 游戏",
@@ -304,12 +429,15 @@ const SOURCE_SHORT: Record<string, string> = {
   "rss-nodeseek": "NodeSeek",
   "rss-sharewareonsale": "正版限免",
   "rss-tickcoupon": "终身限免",
+  "rss-fuliba": "福利吧",
+  "rss-52pojie": "吾爱破解",
+  "rss-smzdm": "什么值得买",
+  "github-free-for-dev": "GitHub",
 };
 
-function sourceLabel(id: string): string {
+export function sourceLabel(id: string): string {
   return SOURCE_SHORT[id] ?? id;
 }
-
 
 /* ------------------------------------------------------------------ *
  * 静默时段
@@ -362,6 +490,11 @@ export function inQuietHoursZoned(quiet: string, timezone: string, at = new Date
   return now >= a || now < b;
 }
 
+export function isQuietNow(s = getPushSettings(), at = new Date()): boolean {
+  if (!s.quietEnabled) return false;
+  return inQuietHoursZoned(s.quietHours, s.timezone, at);
+}
+
 /* ------------------------------------------------------------------ *
  * 候选筛选
  * ------------------------------------------------------------------ */
@@ -369,8 +502,8 @@ export function inQuietHoursZoned(quiet: string, timezone: string, at = new Date
 type Decision = { push: boolean; reason: string; urgent: boolean };
 
 function decide(item: FreshItem, s: PushSettings, subHits: string[]): Decision {
-  if (NOISE_TITLE.test(item.title)) return { push: false, reason: "", urgent: false };
-  if (item.aiKeep === false) return { push: false, reason: "", urgent: false };
+  if (matchesEntryNoise(item.title)) return { push: false, reason: "", urgent: false };
+  if (s.aiFallbackMode !== "ignore_ai" && item.aiKeep === false) return { push: false, reason: "", urgent: false };
   if (s.prioritizeSubscribed && subHits.length > 0) {
     return { push: true, reason: "订阅命中：" + subHits.join("/"), urgent: true };
   }
@@ -380,6 +513,15 @@ function decide(item: FreshItem, s: PushSettings, subHits: string[]): Decision {
   }
   if (item.score >= s.instantScore) return { push: true, reason: "高分 " + Math.round(item.score), urgent: false };
   return { push: false, reason: "", urgent: false };
+}
+
+function canEnterBatch(item: FreshItem, s: PushSettings, d: Decision): boolean {
+  if (matchesEntryNoise(item.title)) return false;
+  if (s.aiFallbackMode !== "ignore_ai" && item.aiKeep === false) return false;
+  // 已通过 AI 验真的条目不必受限于中文 DEAL_HINT 词库
+  const hasDealSignal = item.aiKeep === true || DEAL_HINT.test(item.title);
+  if (!hasDealSignal && !d.push) return false;
+  return item.score >= s.batchScore || d.push;
 }
 
 function recentPushedSeeds(includeQueue = true): DedupeEntry[] {
@@ -407,6 +549,7 @@ function pushedLastHour(): number {
 type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[] };
 let queue: QueueItem[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
+let schedulerStarted = false;
 
 export function queueSize(): number {
   return queue.length;
@@ -421,7 +564,7 @@ function enqueue(entries: QueueItem[]): void {
 function scheduleFlush(): void {
   if (flushTimer) return;
   const s = getPushSettings();
-  if (s.batchIntervalMin <= 0) return;
+  if (!s.enabled || !pushEnabled || s.batchIntervalMin <= 0) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void flushBatch();
@@ -430,7 +573,16 @@ function scheduleFlush(): void {
   flushTimer.unref?.();
 }
 
+function rescheduleFlush(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  scheduleFlush();
+}
+
 export function startPushScheduler(): void {
+  schedulerStarted = true;
   const s = getPushSettings();
   if (!s.enabled || !pushEnabled) return;
   scheduleFlush();
@@ -441,20 +593,39 @@ export function startPushScheduler(): void {
  * 消息组装
  * ------------------------------------------------------------------ */
 
+function parseAiMeta(aiRaw: string | null): { aiKeep: boolean | null; aiReason: string | null } {
+  if (!aiRaw) return { aiKeep: null, aiReason: null };
+  try {
+    const parsed = JSON.parse(aiRaw) as { keep?: boolean; reason?: string };
+    return {
+      aiKeep: typeof parsed.keep === "boolean" ? parsed.keep : null,
+      aiReason: typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : null,
+    };
+  } catch {
+    return { aiKeep: null, aiReason: null };
+  }
+}
+
 function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: number, subHits: string[] = []): string[] {
   const lines: string[] = [];
   const prefix = seq === undefined ? "" : seq + ". ";
   const meta: string[] = [sourceLabel(sourceId)];
   const price = s.includePrice ? fmtPrice(it) : null;
   if (price) meta.push(price);
+  if (s.includeObtain && it.obtain && it.obtain !== "free") {
+    meta.push(OBTAIN_LABEL[it.obtain as keyof typeof OBTAIN_LABEL] ?? it.obtain);
+  }
   if (s.includeDeadline) {
     const dl = fmtDeadline(it);
     if (dl) meta.push(dl);
   }
   if (subHits.length) meta.push("订阅：" + subHits.join("/"));
   if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
+  if (s.includeScore && it.score) meta.push(Math.round(it.score) + " 分");
+
   lines.push(prefix + it.title.slice(0, 110));
-  lines.push("   " + meta.join(" · ") + (it.score ? " · " + Math.round(it.score) + " 分" : ""));
+  lines.push("   " + meta.join(" · "));
+  if (s.includeAiReason && it.aiReason) lines.push("   💡 " + it.aiReason);
   if (it.codes.length) lines.push("   码：" + it.codes.join(" / "));
   lines.push("   " + it.url);
   return lines;
@@ -474,13 +645,13 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
   const candidates = fresh.filter((it) => {
     if (isBlocked({ ...it, sourceId }, rules)) return false;
-    return passesPushFilters(it, s);
+    return passesPushFilters({ ...it, sourceId }, s);
   });
   const deduper = s.dedupeByTitle ? new TitleDeduper(candidates, recentPushedSeeds(true)) : null;
 
   const instant: { it: FreshItem; reason: string; subHits: string[] }[] = [];
   const batched: QueueItem[] = [];
-  const quiet = inQuietHoursZoned(s.quietHours, s.timezone);
+  const quiet = isQuietNow(s);
 
   for (const it of candidates) {
     if (deduper?.isDuplicate(it)) continue;
@@ -492,25 +663,28 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
       deduper?.markSeen(it);
       continue;
     }
-    const noisy = NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title) || it.aiKeep === false;
-    if (!noisy && (it.score >= s.batchScore || d.push)) {
+    if (quiet && s.quietAction === "drop") continue;
+    if (canEnterBatch(it, s, d)) {
       batched.push({ id: it.id, sourceId, item: it, subHits });
       deduper?.markSeen(it);
     }
   }
 
-  if (batched.length) enqueue(batched);
+  if (batched.length && s.batchIntervalMin > 0) enqueue(batched);
   if (quiet && (instant.length || batched.length)) {
-    console.log("[push] 静默时段 " + s.quietHours + "，" + (instant.length + batched.length) + " 条转入攒批");
+    console.log(
+      `[push] 静默时段 ${s.quietHours}（${s.quietAction === "drop" ? "已跳过" : "转入攒批 " + batched.length + " 条"}）`,
+    );
   }
 
   const budget = Math.max(0, s.maxPerHour - pushedLastHour());
   const picked = instant.slice(0, Math.min(s.maxPerInstant, budget));
   if (!picked.length) return 0;
 
+  const headPrefix = s.customHeader ? s.customHeader + " · " : "⚡ 新羊毛 · ";
   let sent = 0;
   for (const { it, reason, subHits } of picked) {
-    const lines = ["⚡ 新羊毛 · " + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
+    const lines = [headPrefix + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
     const text = lines.join("\n");
     try {
       await sendTelegram(text);
@@ -529,23 +703,148 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   return sent;
 }
 
+/** 供后台 AI 补审队列调用：对刚审完通过、尚未推送过的条目触发一次推送判定。 */
+export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Promise<number> {
+  if (!itemIds.length) return 0;
+  const s = getPushSettings();
+  if (!s.enabled || !s.pushAfterBackfill || !pushEnabled) return 0;
+
+  const ph = itemIds.map(() => "?").join(",");
+  const rows = all<{
+    id: number;
+    title: string;
+    summary: string | null;
+    url: string;
+    category: string | null;
+    score: number;
+    codes: string;
+    price: number | null;
+    is_free: number;
+    obtain: string | null;
+    expires_at: string | null;
+    published_at: string | null;
+    ai: string | null;
+  }>(
+    `SELECT id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, published_at, ai
+       FROM items
+      WHERE id IN (${ph}) AND status = 'active' AND pushed_at IS NULL`,
+    ...itemIds,
+  );
+  if (!rows.length) return 0;
+
+  const fresh: FreshItem[] = rows.map((r) => {
+    let codes: string[] = [];
+    try {
+      codes = JSON.parse(r.codes ?? "[]") as string[];
+    } catch {
+      codes = [];
+    }
+    const aiMeta = parseAiMeta(r.ai);
+    return {
+      id: r.id,
+      title: r.title,
+      url: r.url,
+      score: r.score,
+      codes,
+      expiresAt: r.expires_at,
+      publishedAt: r.published_at,
+      price: r.price,
+      isFree: r.is_free === 1,
+      aiKeep: aiMeta.aiKeep,
+      aiReason: aiMeta.aiReason,
+      category: r.category,
+      obtain: r.obtain,
+      summary: r.summary,
+    };
+  });
+
+  return pushInstant(sourceId, fresh);
+}
+
 /* ------------------------------------------------------------------ *
- * 攒批推送
+ * 攒批推送（发送前二次回查 DB 最新状态 / 最新屏蔽词 / 最新推送规则）
  * ------------------------------------------------------------------ */
 
 export async function flushBatch(force = false): Promise<number> {
   if (!queue.length) return 0;
   const s = getPushSettings();
   if (!s.enabled || !pushEnabled) return 0;
-  if (!force && inQuietHoursZoned(s.quietHours, s.timezone)) return 0;
+  if (!force && isQuietNow(s)) return 0;
 
   const budget = Math.max(0, s.maxPerHour - pushedLastHour());
   if (!budget) return 0;
 
   const rawTake = queue.splice(0, Math.min(s.maxPerBatch, budget));
-  let take = rawTake;
-  if (s.dedupeByTitle && rawTake.length) {
-    const entries = rawTake.map((q) => ({ title: q.item.title, q }));
+  if (!rawTake.length) return 0;
+
+  // 二次回查 DB，避免「队列等待期间被用户关闭 / 加了屏蔽词 / 后台 AI 判非福利」仍然发出去
+  const ids = rawTake.map((q) => q.id);
+  const ph = ids.map(() => "?").join(",");
+  const dbRows = all<{
+    id: number;
+    source_id: string;
+    title: string;
+    summary: string | null;
+    url: string;
+    category: string | null;
+    score: number;
+    codes: string;
+    price: number | null;
+    is_free: number;
+    obtain: string | null;
+    expires_at: string | null;
+    published_at: string | null;
+    pushed_at: string | null;
+    status: string;
+    ai: string | null;
+  }>(
+    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai
+       FROM items WHERE id IN (${ph})`,
+    ...ids,
+  );
+  const rowMap = new Map(dbRows.map((r) => [r.id, r]));
+  const rules = loadActiveBlockRules();
+  const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
+
+  const refreshed: QueueItem[] = [];
+  for (const q of rawTake) {
+    const r = rowMap.get(q.id);
+    // 若 DB 中已不存在（如测试/手动删除）或已关闭/已推，跳过；若是在库中则严格按最新状态重检
+    if (!r || r.status !== "active" || r.pushed_at !== null) continue;
+    if (isBlocked(r, rules)) continue;
+    let codes: string[] = [];
+    try {
+      codes = JSON.parse(r.codes ?? "[]") as string[];
+    } catch {
+      codes = [];
+    }
+    const aiMeta = parseAiMeta(r.ai);
+    const fresh: FreshItem = {
+      id: r.id,
+      title: r.title,
+      url: r.url,
+      score: r.score,
+      codes,
+      expiresAt: r.expires_at,
+      publishedAt: r.published_at,
+      price: r.price,
+      isFree: r.is_free === 1,
+      aiKeep: aiMeta.aiKeep,
+      aiReason: aiMeta.aiReason,
+      category: r.category,
+      obtain: r.obtain,
+      summary: r.summary,
+    };
+    if (!passesPushFilters({ ...fresh, sourceId: r.source_id }, s)) continue;
+    const subHits = matchSubscriptions(fresh, subKeywords);
+    const d = decide(fresh, s, subHits);
+    if (!canEnterBatch(fresh, s, d)) continue;
+    refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits });
+  }
+
+  let take = refreshed;
+  if (s.dedupeByTitle && refreshed.length) {
+    const entries = refreshed.map((q) => ({ title: q.item.title, q }));
     const deduper = new TitleDeduper(entries, recentPushedSeeds(false));
     take = [];
     for (const entry of entries) {
@@ -561,7 +860,10 @@ export async function flushBatch(force = false): Promise<number> {
     blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1, q.subHits ?? []));
     blocks.push("");
   });
-  const text = ["📦 本轮新发现 " + take.length + " 条", "", ...blocks].join("\n").trim();
+  const batchTitle = s.customHeader
+    ? `${s.customHeader} · 汇总 ${take.length} 条`
+    : `📦 本轮新发现 ${take.length} 条`;
+  const text = [batchTitle, "", ...blocks].join("\n").trim();
 
   try {
     await sendTelegram(text);
@@ -626,7 +928,7 @@ export function pushStats() {
 }
 
 /* ------------------------------------------------------------------ *
- * 预览：按当前全套推送筛选条件算一遍
+ * 预览：按当前全套推送筛选条件算一遍，并给出各维度拦截诊断
  * ------------------------------------------------------------------ */
 
 export function previewPush(limit = 6): {
@@ -635,10 +937,23 @@ export function previewPush(limit = 6): {
   queued: number;
   scanned: number;
   matched: number;
+  rejectedBy: {
+    blocked: number;
+    duplicate: number;
+    stale: number;
+    source: number;
+    lang: number;
+    category: number;
+    price: number;
+    ai: number;
+    obtain: number;
+    lowScore: number;
+  };
 } {
   const s = getPushSettings();
   const rules = loadActiveBlockRules();
   const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
+  const lookbackHours = s.maxAgeHours > 0 ? Math.min(s.maxAgeHours, 168) : 168;
   const rows = all<{
     id: number;
     source_id: string;
@@ -659,31 +974,42 @@ export function previewPush(limit = 6): {
     `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai
      FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
-    new Date(Date.now() - 7 * 86_400_000).toISOString(),
+    new Date(Date.now() - lookbackHours * 3_600_000).toISOString(),
   );
 
   const instant: string[] = [];
   const batch: string[] = [];
   let matched = 0;
+  const rejectedBy = {
+    blocked: 0,
+    duplicate: 0,
+    stale: 0,
+    source: 0,
+    lang: 0,
+    category: 0,
+    price: 0,
+    ai: 0,
+    obtain: 0,
+    lowScore: 0,
+  };
   const deduper = s.dedupeByTitle ? new TitleDeduper(rows, recentPushedSeeds(true)) : null;
 
   for (const r of rows) {
-    if (isBlocked(r, rules)) continue;
-    if (deduper?.isDuplicate(r)) continue;
+    if (isBlocked(r, rules)) {
+      rejectedBy.blocked += 1;
+      continue;
+    }
+    if (deduper?.isDuplicate(r)) {
+      rejectedBy.duplicate += 1;
+      continue;
+    }
     let codes: string[] = [];
     try {
       codes = JSON.parse(r.codes ?? "[]") as string[];
     } catch {
       codes = [];
     }
-    let aiKeep: boolean | null = null;
-    if (r.ai) {
-      try {
-        aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null;
-      } catch {
-        aiKeep = null;
-      }
-    }
+    const aiMeta = parseAiMeta(r.ai);
     const fresh: FreshItem = {
       id: r.id,
       title: r.title,
@@ -694,29 +1020,31 @@ export function previewPush(limit = 6): {
       publishedAt: r.published_at,
       price: r.price,
       isFree: r.is_free === 1,
-      aiKeep,
+      aiKeep: aiMeta.aiKeep,
+      aiReason: aiMeta.aiReason,
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
     };
-    if (!passesPushFilters(fresh, s)) continue;
+    const reject = checkPushFilter({ ...fresh, sourceId: r.source_id }, s);
+    if (reject) {
+      rejectedBy[reject] = (rejectedBy[reject] ?? 0) + 1;
+      continue;
+    }
 
     matched += 1;
     const subHits = matchSubscriptions(fresh, subKeywords);
     const d = decide(fresh, s, subHits);
     const block = itemBlock(r.source_id, fresh, s, undefined, subHits).join("\n");
     if (d.push && instant.length < limit) {
-      instant.push("⚡ " + d.reason + "\n" + block);
+      instant.push((s.customHeader ? s.customHeader + " · " : "⚡ ") + d.reason + "\n" + block);
       deduper?.markSeen(r);
-    } else if (
-      !NOISE_TITLE.test(fresh.title) &&
-      DEAL_HINT.test(fresh.title) &&
-      fresh.score >= s.batchScore &&
-      batch.length < limit
-    ) {
+    } else if (canEnterBatch(fresh, s, d) && batch.length < limit) {
       batch.push(block);
       deduper?.markSeen(r);
+    } else if (!d.push && !canEnterBatch(fresh, s, d)) {
+      rejectedBy.lowScore += 1;
     }
   }
-  return { instant, batch, queued: queue.length, scanned: rows.length, matched };
+  return { instant, batch, queued: queue.length, scanned: rows.length, matched, rejectedBy };
 }

@@ -176,7 +176,7 @@ function ageDays(iso: string | null): number {
 }
 
 /** 纯免费/喜加一专用源（标题有时省略 "Free" 字样，如 r/FreeGameFindings）。 */
-const FREEBIE_ONLY_SOURCES = new Set([
+export const FREEBIE_ONLY_SOURCES = new Set([
   "epic-free",
   "steam-free",
   "gamerpower",

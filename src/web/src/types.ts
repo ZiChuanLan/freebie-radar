@@ -24,7 +24,7 @@ export type Item = {
   read: boolean;
   status: string;
   starred: boolean;
-  ai: { keep?: boolean; reason?: string; category?: string } | null;
+  ai: { keep?: boolean; reason?: string; category?: string; obtain?: string; quality?: number } | null;
   first_seen_at: string;
   last_seen_at: string;
   /** 同一福利被多少个源报道（1 = 只有这一条） */
@@ -102,8 +102,18 @@ export type Subscription = {
   last_hit_at: string | null;
 };
 
+export type PushTiming = "wait_ai" | "instant_first";
+export type AiFallbackMode = "strict" | "rule_fallback" | "ignore_ai";
+export type PushSourceMode = "all" | "include" | "exclude";
+export type QuietAction = "batch" | "drop";
+
 export type PushSettings = {
   enabled: boolean;
+  pushTiming: PushTiming;
+  syncPrePushLimit: number;
+  pushAfterBackfill: boolean;
+  aiFallbackMode: AiFallbackMode;
+  onlyAiKeep: boolean;
   instantScore: number;
   batchScore: number;
   instantOnCodes: boolean;
@@ -112,18 +122,35 @@ export type PushSettings = {
   maxPerInstant: number;
   batchIntervalMin: number;
   maxPerBatch: number;
+  quietEnabled: boolean;
   quietHours: string;
+  quietAction: QuietAction;
   timezone: string;
+  maxAgeHours: number;
   langMode: "all" | "zh" | "en";
+  sourceMode: PushSourceMode;
+  sourceIds: string[];
   includePrice: boolean;
   includeDeadline: boolean;
+  includeScore: boolean;
+  includeObtain: boolean;
+  includeAiReason: boolean;
+  customHeader: string;
   dedupeByTitle: boolean;
   maxPrice: number | null;
-  onlyAiKeep: boolean;
   obtainModes: string[];
   categories: string[];
   prioritizeSubscribed: boolean;
   applyToDigest: boolean;
+};
+
+export type PushPreview = {
+  instant: string[];
+  batch: string[];
+  queued: number;
+  scanned: number;
+  matched: number;
+  rejectedBy?: Record<string, number>;
 };
 
 export type PushPayload = {
@@ -142,7 +169,9 @@ export type PushPayload = {
   quiet: boolean;
 };
 
-/* --- AI 二审配置 --- */
+/* --- AI 语义审核配置 --- */
+
+export type AiSourceMode = "all" | "exclude" | "only";
 
 export type AiSettings = {
   enabled: boolean;
@@ -151,10 +180,19 @@ export type AiSettings = {
   apiKey: string;
   model: string;
   maxItems: number;
+  batchSize: number;
+  concurrency: number;
+  timeoutSec: number;
+  preFilterEnabled: boolean;
+  customNoiseKeywords: string[];
+  skipFreebieSources: boolean;
+  sourceMode: AiSourceMode;
+  sourceIds: string[];
+  extraPrompt: string;
   /** 空字符串表示用内置默认 */
   systemPrompt: string;
-  reviewBeforePush: boolean;
   learnFromFeedback: boolean;
+  feedbackLimit: number;
   hasKey: boolean;
   keyHint: string;
   ready: boolean;
@@ -166,15 +204,32 @@ export type AiStats = {
   kept: number;
   rejected: number;
   pending: number;
+  queue?: { queued: number; processed: number; dropped: number; running: boolean };
   byCategory: { category: string; n: number }[];
-  recent: { id: number; title: string; score: number; keep: boolean | null; reason: string; category: string }[];
+  recent: {
+    id: number;
+    sourceId?: string;
+    title: string;
+    score: number;
+    keep: boolean | null;
+    reason: string;
+    category: string;
+    obtain?: string;
+    quality?: number | null;
+  }[];
 };
 
 export type AiPayload = {
   settings: AiSettings;
   stats: AiStats;
-  feedback?: { positive: number; negative: number };
+  feedback?: {
+    positive: number;
+    negative: number;
+    positiveSamples?: string[];
+    negativeSamples?: string[];
+  };
 };
+
 /* --- 数据保留策略 --- */
 
 export type RetentionSettings = {
@@ -185,6 +240,7 @@ export type RetentionSettings = {
   digestDays: number;
   auto: boolean;
 };
+
 export type PushLogItem = {
   id: number;
   kind: string;

@@ -340,3 +340,126 @@ test("GET /api/items 支持多选分类与中英文语言筛选，且 /api/ai �
   assert.ok(dataAi.feedback.positive >= 1);
   assert.ok(dataAi.feedback.negative >= 1);
 });
+
+test("AI 规则初筛开关、自定义噪音词、按源分流与扩展配置持久化", async () => {
+  const {
+    getAiSettings,
+    matchesEntryNoise,
+    saveAiSettings,
+    shouldPassSourceToAi,
+  } = await import("../src/server/enrich/ai-settings.ts");
+
+  saveAiSettings({
+    preFilterEnabled: true,
+    customNoiseKeywords: ["拼车", "代购"],
+    skipFreebieSources: true,
+    sourceMode: "exclude",
+    sourceIds: ["v2ex-deals"],
+    batchSize: 8,
+    concurrency: 3,
+    timeoutSec: 20,
+    extraPrompt: "只看直接可用的免费福利",
+    feedbackLimit: 4,
+  });
+
+  const s = getAiSettings();
+  assert.equal(s.preFilterEnabled, true);
+  assert.deepEqual(s.customNoiseKeywords, ["拼车", "代购"]);
+  assert.equal(s.skipFreebieSources, true);
+  assert.equal(s.batchSize, 8);
+  assert.equal(s.concurrency, 3);
+  assert.equal(s.timeoutSec, 20);
+  assert.equal(s.feedbackLimit, 4);
+
+  // 入口噪音初筛：内置 + 自定义词
+  assert.equal(matchesEntryNoise("请问哪里有免费节点", s), true);
+  assert.equal(matchesEntryNoise("某服务拼车找人", s), true);
+  assert.equal(matchesEntryNoise("Epic 本周免费游戏领", s), false);
+
+  // 关掉规则初筛后不再拦截
+  const off = saveAiSettings({ preFilterEnabled: false });
+  assert.equal(matchesEntryNoise("某服务拼车找人", off), false);
+
+  // 纯白嫖专源免送 AI + exclude 过滤
+  assert.equal(shouldPassSourceToAi("epic-free", s), false);
+  assert.equal(shouldPassSourceToAi("v2ex-deals", s), false);
+  assert.equal(shouldPassSourceToAi("linuxdo-welfare", s), true);
+
+  // 恢复默认避免影响后续测试
+  saveAiSettings({
+    preFilterEnabled: true,
+    customNoiseKeywords: [],
+    skipFreebieSources: false,
+    sourceMode: "all",
+    sourceIds: [],
+    extraPrompt: "",
+  });
+});
+
+test("推送策略：AI 兜底模式、时效/开关/阈值联动、preview 拦截诊断与 pickDaily 放行 AI 真福利", async () => {
+  const {
+    aiAllowed,
+    getPushSettings,
+    isQuietNow,
+    previewPush,
+    savePushSettings,
+    DEFAULT_SETTINGS,
+  } = await import("../src/server/push.ts");
+  const { saveAiSettings } = await import("../src/server/enrich/ai-settings.ts");
+  const { pickDaily } = await import("../src/server/digest.ts");
+
+  saveAiSettings({ enabled: true, baseUrl: "https://example.com/v1", model: "test-model" });
+  savePushSettings({
+    ...DEFAULT_SETTINGS,
+    pushTiming: "instant_first",
+    instantScore: 65,
+    batchScore: 90, // 故意高于 instantScore，应被自动钳制 <= 65
+    quietEnabled: false,
+    quietHours: "00:00-23:59",
+  });
+
+  const ps = getPushSettings();
+  assert.equal(ps.pushTiming, "instant_first");
+  assert.equal(ps.batchScore, 65);
+  assert.equal(isQuietNow(ps), false); // quietEnabled=false 时不进入免打扰
+
+  // /api/ai 同步反映 pushTiming
+  const aiRes = await app.request("/api/ai");
+  const aiJson = (await aiRes.json()) as {
+    settings: { reviewBeforePush: boolean };
+    feedback: { positiveSamples: string[]; negativeSamples: string[] };
+  };
+  assert.equal(aiJson.settings.reviewBeforePush, false);
+  assert.ok(Array.isArray(aiJson.feedback.positiveSamples));
+
+  // 三种 AI 兜底模式行为
+  const unreviewedItem = { title: "某软件限时领取", score: 75, codes: [], aiKeep: null };
+  const rejectedItem = { title: "行业新闻", score: 80, codes: [], aiKeep: false };
+  assert.equal(aiAllowed(unreviewedItem, { ...ps, aiFallbackMode: "strict" }), false);
+  assert.equal(aiAllowed(unreviewedItem, { ...ps, aiFallbackMode: "rule_fallback" }), true);
+  assert.equal(aiAllowed(rejectedItem, { ...ps, aiFallbackMode: "rule_fallback" }), false);
+  assert.equal(aiAllowed(rejectedItem, { ...ps, aiFallbackMode: "ignore_ai" }), true);
+
+  // 无中文 DEAL_HINT 但 aiKeep=true 的条目不应被 pickDaily 或 previewPush 误杀
+  run("DELETE FROM items");
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, ai, ai_keep, first_seen_at, last_seen_at)
+     VALUES ('steam-free', 'ai-true-1', 'https://store.steampowered.com/app/123', 'steam/123', 'Portal 2 Giveaway Weekend', 'portal2', 'game', 72, ?, 'active', 1, 'free', '{"keep":true,"reason":"Steam 限免入库"}', 1, ?, ?)`,
+    now, now, now,
+  );
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, ai, ai_keep, first_seen_at, last_seen_at)
+     VALUES ('v2ex-free', 'ai-false-1', 'https://v2ex.com/t/999', 'v2ex/999', '行业报告：今年云计算市场增长 20%', 'cloudreport', 'cloud', 60, ?, 'active', 0, 'free', '{"keep":false,"reason":"行业报告"}', 0, ?, ?)`,
+    now, now, now,
+  );
+
+  savePushSettings({ ...DEFAULT_SETTINGS, aiFallbackMode: "rule_fallback", maxAgeHours: 72 });
+  const daily = pickDaily(new Date(), 10);
+  assert.ok(daily.some((d) => d.url.includes("123")));
+
+  const pv = previewPush(6);
+  assert.equal(pv.matched, 1);
+  assert.ok(pv.instant.some((t) => t.includes("Portal 2")));
+  assert.equal(pv.rejectedBy.ai, 1);
+});
