@@ -32,7 +32,7 @@ const RULES: Rule[] = [
   {
     category: "ai",
     weight: 1.15,
-    keywords: ["gpt", "chatgpt", "openai", "claude", "gemini", "grok", "llm", "大模型", "api", "token", "额度", "算力", "qwen", "deepseek", "kimi", "glm", "cursor", "copilot", "midjourney", "sora", "colab", "notebook", "gpu", "体验金", "中转", "codex", "积分", "多模型", "智能体", "llm", "ai 模型", "credits", "tokens"],
+    keywords: ["gpt", "chatgpt", "openai", "claude", "gemini", "grok", "llm", "大模型", "api", "token", "额度", "算力", "算力券", "代金券", "qwen", "deepseek", "kimi", "glm", "cursor", "copilot", "midjourney", "sora", "colab", "notebook", "gpu", "体验金", "中转", "codex", "积分", "多模型", "智能体", "ai 模型", "credits", "tokens", "codearts", "mcp", "skill", "agent"],
   },
   {
     category: "cloud",
@@ -82,7 +82,7 @@ const RULES: Rule[] = [
   },
 ];
 
-const DEAL_WORDS = ["免费", "白嫖", "领取", "赠送", "送", "0元", "零元", "试用", "体验", "兑换", "激活码", "福利", "优惠", "折扣", "开通", "送额度", "注册送", "限免", "free", "giveaway", "coupon"];
+const DEAL_WORDS = ["免费", "白嫖", "领取", "报名领", "领积分", "赠送", "送", "白送", "白给", "0元", "零元", "试用", "体验", "兑换", "激活码", "福利", "优惠", "折扣", "开通", "送额度", "注册送", "限免", "积分", "代金券", "算力", "free", "giveaway", "coupon", "credits", "tokens"];
 const SCARCITY_WORDS = ["限时", "限量", "仅限", "前100", "前 100", "名额", "抽奖", "开放注册", "先到先得", "今日", "今晚", "截止", "最后", "limited", "ends", "until", "last chance", "24h", "while supplies"];
 const NOISE_PATTERNS = [/怎么(?:领取|申请|弄|搞)/, /有没有/, /求(?:一个|个|推荐|问)/, /请问/, /值得买吗/, /是什么体验/, /怎么样/, /如何评价/];
 
@@ -130,6 +130,9 @@ const SOURCE_BONUS: Record<string, number> = {
   "rss-ithome": 3,
   "rss-smzdm": 3,
   "rss-fuliba": 2,
+  "zhihu-search": 4,
+  "xhs-search": 4,
+  "xiaoheihe-search": 4,
 };
 
 export type EnrichedItem = RawItem & {

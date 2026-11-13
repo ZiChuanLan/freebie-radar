@@ -11,7 +11,7 @@ export type PriceInfo = {
 
 const USD_TO_CNY = 7.2;
 
-const FREE = /免费|白嫖|(?:^|[^\d.])0(?:\.0+)?\s*元|零元|限免|白送|免单|不要钱|免费领|\bfree(?:bie)?\b/i;
+const FREE = /免费|白嫖|(?:^|[^\d.])0(?:\.0+)?\s*元|零元|限免|白送|白给|免单|不要钱|免费领|报名领|免费送|每天送|每日送|\bfree(?:bie)?\b/i;
 const FAKE_FREE = /\bfree\s+(?:shipping|delivery|returns?|pickup)\b|免运费|免邮|包邮/gi;
 
 /** 只有这几种表达才是「你要付的钱」，避免把「省 30 块」「200 元耳机怎么选」当成价格。 */

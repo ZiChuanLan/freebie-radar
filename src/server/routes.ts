@@ -816,6 +816,15 @@ export function registerApi(app: Hono) {
     return c.json(markSourceFailure(body.sourceId, body.reason, status));
   });
 
+  /** 供本地/远端 Playwright 采集器同步「我的订阅」关键词，主动去知乎/小红书/小黑盒定向搜索 */
+  app.get("/api/ingest/keywords", (c) => {
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置" }, 403);
+    const auth = c.req.header("authorization") ?? "";
+    if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
+    const rows = all<{ keyword: string }>("SELECT keyword FROM subscriptions ORDER BY id DESC LIMIT 20");
+    return c.json({ keywords: rows.map((r) => r.keyword) });
+  });
+
   app.get("/api/digests", (c) => {
     return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
   });

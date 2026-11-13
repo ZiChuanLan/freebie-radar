@@ -167,3 +167,42 @@ test("classify & score：URL/单词边界不误命中 cloud，免费游戏获得
   assert.equal(json.total, 1);
   assert.equal(json.items[0]!.dupCount, 3);
 });
+
+test("活动积分福利：「华为小红书Skill报名领codearts 每天1000积分」可过 DEAL_HINT 并正确打分分类", async () => {
+  const { DEAL_HINT } = await import("../src/server/enrich/noise.ts");
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+  const { config } = await import("../src/server/config.ts");
+
+  const title = "华为小红书Skill报名领codearts 每天1000积分";
+  assert.equal(DEAL_HINT.test(title), true);
+
+  const e = enrichItem(
+    {
+      externalId: "xhs-codearts-1",
+      url: "https://www.xiaohongshu.com/explore/codearts1",
+      title,
+      publishedAt: new Date().toISOString(),
+    },
+    "xhs-search",
+  )!;
+  assert.equal(e.isFree, true);
+  assert.equal(e.category, "ai");
+  assert.ok(e.score >= 65, `expected >=65, got ${e.score}`);
+
+  // 测试 /api/ingest/keywords 订阅词同步接口
+  run("INSERT OR IGNORE INTO subscriptions (keyword, created_at) VALUES ('codearts', ?)", new Date().toISOString());
+  const prevToken = config.ingestToken;
+  (config as { ingestToken: string }).ingestToken = "test-ingest-tok";
+  try {
+    const unauth = await app.request("/api/ingest/keywords");
+    assert.equal(unauth.status, 401);
+    const okRes = await app.request("/api/ingest/keywords", {
+      headers: { authorization: "Bearer test-ingest-tok" },
+    });
+    assert.equal(okRes.status, 200);
+    const data = (await okRes.json()) as { keywords: string[] };
+    assert.ok(data.keywords.includes("codearts"));
+  } finally {
+    (config as { ingestToken: string }).ingestToken = prevToken;
+  }
+});

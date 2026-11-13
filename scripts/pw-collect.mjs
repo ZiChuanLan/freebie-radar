@@ -22,11 +22,38 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const KEYWORDS = {
-  zhihu: ["免费领取", "免费额度", "白嫖"],
-  xhs: ["免费领取", "白嫖", "免费会员"],
+const CDP_URL = (process.env.CDP_URL || "").trim();
+const MAX_KEYWORDS = Math.min(Math.max(Number(process.env.MAX_KEYWORDS || 10), 2), 20);
+
+const BASE_KEYWORDS = {
+  zhihu: ["免费领取", "免费额度", "白嫖", "免费积分", "白嫖算力", "开发者福利"],
+  xhs: ["免费领取", "白嫖", "免费会员", "白嫖额度", "免费积分", "免费算力", "开发者福利"],
   xiaoheihe: ["免费领取", "Epic 喜加一"],
 };
+
+async function loadKeywords() {
+  let extra = [];
+  if (process.env.EXTRA_KEYWORDS) {
+    extra.push(...process.env.EXTRA_KEYWORDS.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean));
+  }
+  try {
+    const res = await fetch(SERVER + "/api/ingest/keywords", {
+      headers: { authorization: "Bearer " + TOKEN },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.keywords)) extra.push(...data.keywords.map((k) => String(k).trim()).filter(Boolean));
+    }
+  } catch { /* 拉取订阅词失败时退回内置词表 */ }
+  const uniq = (list) => [...new Set(list)].slice(0, MAX_KEYWORDS);
+  return {
+    zhihu: uniq([...BASE_KEYWORDS.zhihu, ...extra]),
+    xhs: uniq([...BASE_KEYWORDS.xhs, ...extra]),
+    xiaoheihe: uniq(BASE_KEYWORDS.xiaoheihe),
+  };
+}
+const KEYWORDS = await loadKeywords();
 
 const only = process.argv[2];
 const jobs = only ? [only] : ["zhihu", "xhs", "xiaoheihe"];
@@ -114,7 +141,10 @@ async function collectXhs(page) {
   const seen = new Map();
   for (const kw of KEYWORDS.xhs) {
     await page.goto("https://www.xiaohongshu.com/search_result?keyword=" + encodeURIComponent(kw) + "&source=web_search_result_notes", { waitUntil: "domcontentloaded" });
-    await sleep(4500);
+    await sleep(3500);
+    // 尽量切到「最新」排序，避免只抓到半年前的高赞旧帖而错过今日活动
+    await page.locator("text=最新").first().click({ timeout: 2000 }).catch(() => {});
+    await sleep(1500);
     for (let i = 0; i < 3; i += 1) {
       await page.mouse.wheel(0, 1800);
       await sleep(1200);
@@ -197,13 +227,16 @@ async function collectXiaoheihe(page) {
   })));
 }
 
-const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
-  channel: "chrome",
-  headless: process.env.HEADLESS === "1",
-  viewport: { width: 1440, height: 900 },
-  args: ["--no-first-run", "--no-default-browser-check", "--disable-blink-features=AutomationControlled"],
-});
-const page = ctx.pages()[0] ?? (await ctx.newPage());
+const browser = CDP_URL ? await chromium.connectOverCDP(CDP_URL) : null;
+const ctx = browser
+  ? (browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1440, height: 900 } })))
+  : await chromium.launchPersistentContext(PROFILE_DIR, {
+      channel: "chrome",
+      headless: process.env.HEADLESS === "1",
+      viewport: { width: 1440, height: 900 },
+      args: ["--no-first-run", "--no-default-browser-check", "--disable-blink-features=AutomationControlled"],
+    });
+const page = browser ? (await ctx.newPage()) : (ctx.pages()[0] ?? (await ctx.newPage()));
 page.setDefaultTimeout(45000);
 
 try {
@@ -218,7 +251,8 @@ try {
     }
   }
 } finally {
-  await ctx.close();
+  if (browser) await page.close().catch(() => {});
+  else await ctx.close();
 }
 
 console.log("SUMMARY", JSON.stringify(summary, null, 2));
