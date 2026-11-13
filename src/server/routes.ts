@@ -20,6 +20,7 @@ import {
 import {
   aiStats,
   backfillAi,
+  feedbackStats,
   publicAiSettings,
   saveAiSettings,
   testAiConnection,
@@ -132,9 +133,17 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
     params.push(q.source);
   }
   if (q.category) {
-    where.push("category = ?");
-    params.push(q.category);
+    const cats = q.category.split(",").map((s) => s.trim()).filter(Boolean);
+    if (cats.length === 1) {
+      where.push("category = ?");
+      params.push(cats[0]!);
+    } else if (cats.length > 1) {
+      where.push(`category IN (${cats.map(() => "?").join(",")})`);
+      params.push(...cats);
+    }
   }
+  if (q.lang === "zh") where.push("is_zh(title) = 1");
+  else if (q.lang === "en") where.push("is_zh(title) = 0");
   if (q.starred === "1") where.push("starred = 1");
   if (q.unread === "1") where.push("read_at IS NULL");
   if (q.hasCodes === "1") where.push("codes != '[]' AND codes != ''");
@@ -309,6 +318,18 @@ export function registerApi(app: Hono) {
     if (merge) {
       const subConds = ["x.title_key = items.title_key", "x.status = 'active'"];
       if (q.unread === "1") subConds.push("x.read_at IS NULL");
+      if (q.lang === "zh") subConds.push("is_zh(x.title) = 1");
+      else if (q.lang === "en") subConds.push("is_zh(x.title) = 0");
+      if (q.category) {
+        const cats = q.category.split(",").map((s) => s.trim()).filter(Boolean);
+        if (cats.length === 1) {
+          subConds.push("x.category = ?");
+          params.push(cats[0]!);
+        } else if (cats.length > 1) {
+          subConds.push(`x.category IN (${cats.map(() => "?").join(",")})`);
+          params.push(...cats);
+        }
+      }
       if (q.unexpired === "1") {
         const maxAgeDays = Math.min(Math.max(Number(q.maxAgeDays ?? 14), 1), 365);
         const now = new Date();
@@ -726,14 +747,14 @@ export function registerApi(app: Hono) {
    * ---------------------------------------------------------------- */
 
   app.get("/api/ai", (c) => {
-    return c.json({ settings: publicAiSettings(), stats: aiStats() });
+    return c.json({ settings: publicAiSettings(), stats: aiStats(), feedback: feedbackStats() });
   });
 
   app.patch("/api/ai", async (c) => {
     const body = (await c.req.json().catch(() => null)) as Partial<AiSettings> | null;
     if (!body) return c.json({ error: "无效的请求体" }, 400);
     const saved = saveAiSettings(body);
-    return c.json({ settings: publicAiSettings(saved), stats: aiStats() });
+    return c.json({ settings: publicAiSettings(saved), stats: aiStats(), feedback: feedbackStats() });
   });
 
   app.post("/api/ai/test", async (c) => {

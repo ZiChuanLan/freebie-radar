@@ -5,6 +5,7 @@ import {
   aiReady,
   DEFAULT_PROMPT,
   getAiSettings,
+  feedbackStats,
   publicAiSettings,
   reviewItems,
   saveAiSettings,
@@ -14,7 +15,7 @@ import {
 } from "./ai-settings.ts";
 
 export type { AiVerdict, AiSettings };
-export { reviewItems, aiReady, getAiSettings };
+export { reviewItems, aiReady, getAiSettings, feedbackStats };
 
 /** 采集器调用：是否该送审（读数据库里的开关，改配置立即生效）。 */
 export function shouldReview(): boolean {

@@ -60,10 +60,17 @@ export function AiPanel({
   useEffect(() => {
     if (data?.settings) {
       setForm((prev) =>
-        prev ? { ...prev, reviewBeforePush: data.settings.reviewBeforePush, enabled: data.settings.enabled } : prev,
+        prev
+          ? {
+              ...prev,
+              reviewBeforePush: data.settings.reviewBeforePush,
+              learnFromFeedback: data.settings.learnFromFeedback,
+              enabled: data.settings.enabled,
+            }
+          : prev,
       );
     }
-  }, [data?.settings?.reviewBeforePush, data?.settings?.enabled]);
+  }, [data?.settings?.reviewBeforePush, data?.settings?.learnFromFeedback, data?.settings?.enabled]);
 
   if (!data || !form) {
     return <div className="panel p-6 text-[13px] text-ink-500">正在读取 AI 配置…</div>;
@@ -302,10 +309,36 @@ export function AiPanel({
           </label>
         </div>
 
-        {/* 二审时机：推送前拦截 vs 推送后补审 */}
+        {/* 数据驱动偏好自适应：不用写复杂提示词，从收藏/关闭自动学习 */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-200 bg-surface p-3">
+          <div>
+            <div className="text-[12.5px] font-medium text-ink-900">从收藏与关闭自动学习偏好（零提示词自适应）</div>
+            <div className="mt-0.5 text-[11px] text-ink-500">
+              自动提取最近收藏（正样本 {data.feedback?.positive ?? 0} 条）与手动关闭（负样本 {data.feedback?.negative ?? 0} 条）作为一审参考，越用越准
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !form.learnFromFeedback;
+              setForm({ ...form, learnFromFeedback: next });
+              void save({ learnFromFeedback: next }, next ? "已开启偏好自适应" : "已关闭偏好自适应");
+            }}
+            className={
+              "rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors " +
+              (form.learnFromFeedback
+                ? "border-deal-border bg-deal-subtle text-deal"
+                : "border-ink-200 bg-ink-100 text-ink-600")
+            }
+          >
+            {form.learnFromFeedback ? "自动学习中" : "已关闭"}
+          </button>
+        </div>
+
+        {/* 一审时机：推送前拦截 vs 推送后补审 */}
         <div className="mt-3 rounded-lg border border-ink-200 bg-surface p-3">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[12px] font-medium text-ink-800">AI 二审时机</span>
+            <span className="text-[12px] font-medium text-ink-800">AI 一审时机（无关键词门禁全量直审）</span>
             <span className="text-[11px] text-ink-500">
               {form.reviewBeforePush ? "当前：发 Telegram 前先过模型审核" : "当前：命中规则先即时推送，随后后台补审"}
             </span>

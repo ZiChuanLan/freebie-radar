@@ -1,8 +1,10 @@
 import { all, get, run } from "./db.ts";
+import { calibrateScoreByObtain } from "./enrich/alias.ts";
 import { guessObtain } from "./enrich/obtain.ts";
 import {
   aiReady,
   DEFAULT_PROMPT,
+  feedbackStats,
   getAiSettings,
   publicAiSettings,
   saveAiSettings,
@@ -107,9 +109,9 @@ export async function backfillAi(limit = 200): Promise<{ reviewed: number; rejec
       if (!v.keep) rejected += 1;
       const ai = JSON.stringify(v);
       const keep = v.keep ? 1 : 0;
-      const score = v.keep ? row.score : Math.round(row.score * 0.5);
-      const category = v.category || row.category;
       const obtain = v.obtain ?? guessObtain(row.title, row.summary ?? "");
+      const score = calibrateScoreByObtain(row.score, obtain, v.keep, v.quality);
+      const category = v.category || row.category;
       updateAi(row.id, ai, keep, score, category, obtain);
     }
   }
@@ -117,5 +119,5 @@ export async function backfillAi(limit = 200): Promise<{ reviewed: number; rejec
   return { reviewed, rejected, scanned: rows.length };
 }
 
-export { publicAiSettings, saveAiSettings, testAiConnection, DEFAULT_PROMPT, aiReady, getAiSettings };
+export { publicAiSettings, saveAiSettings, testAiConnection, DEFAULT_PROMPT, aiReady, getAiSettings, feedbackStats };
 export type { AiSettings };

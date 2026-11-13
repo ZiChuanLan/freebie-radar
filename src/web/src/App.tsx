@@ -186,7 +186,10 @@ export function App() {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [source, setSource] = useState("");
-  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [catOpen, setCatOpen] = useState(false);
+  const catRef = useRef<HTMLDivElement | null>(null);
+  const [lang, setLang] = useState<"all" | "zh" | "en">("all");
   const [sort, setSort] = useState("score");
   const [range, setRange] = useState("auto");
   const [priceCap, setPriceCap] = useState("auto");
@@ -245,11 +248,21 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    if (!catOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [catOpen]);
+
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (debounced) p.set("search", debounced);
     if (source) p.set("source", source);
-    if (category) p.set("category", category);
+    if (categories.length) p.set("category", categories.join(","));
+    if (lang !== "all") p.set("lang", lang);
     if (sort) p.set("sort", sort);
 
     if (preset === "verified") {
@@ -286,12 +299,13 @@ export function App() {
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "100");
     return p.toString();
-  }, [debounced, source, category, sort, range, priceCap, preset, obtain, minScore, unreadOnly]);
+  }, [debounced, source, categories, lang, sort, range, priceCap, preset, obtain, minScore, unreadOnly]);
 
   const activeFilterCount =
     [
       source,
-      category,
+      categories.length > 0,
+      lang !== "all",
       debounced,
       minScore !== "all",
       unreadOnly,
@@ -303,7 +317,8 @@ export function App() {
 
   const resetFilters = useCallback(() => {
     setSource("");
-    setCategory("");
+    setCategories([]);
+    setLang("all");
     setSearch("");
     setDebounced("");
     setMinScore("all");
@@ -714,18 +729,81 @@ export function App() {
               {/* 顶部紧凑多维筛选栏：与左侧视图零冲突 */}
               <div className="panel mb-3 space-y-2.5 p-3">
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* 分类多选浮层 */}
+                  <div className="relative" ref={catRef}>
+                    <button
+                      type="button"
+                      onClick={() => setCatOpen((v) => !v)}
+                      className={
+                        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors " +
+                        (categories.length
+                          ? "border-brand bg-brand-subtle font-medium text-brand"
+                          : "border-ink-200 bg-surface text-ink-800 hover:bg-ink-100")
+                      }
+                    >
+                      <span>
+                        {categories.length === 0
+                          ? "全部分类"
+                          : categories.length === 1
+                            ? `分类：${CATEGORY_LABEL[categories[0]!] ?? categories[0]}`
+                            : `分类：已选 ${categories.length} 项`}
+                      </span>
+                      <ChevronDown size={12} />
+                    </button>
+                    {catOpen && (
+                      <div className="panel absolute top-full left-0 z-40 mt-1.5 w-[260px] p-2.5 shadow-lg">
+                        <div className="mb-2 flex items-center justify-between text-[11px] text-ink-500">
+                          <span>支持多选分类</span>
+                          {categories.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setCategories([])}
+                              className="font-medium text-brand hover:underline"
+                            >
+                              清空
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid max-h-[240px] grid-cols-2 gap-1 overflow-auto">
+                          {(stats.data?.byCategory ?? []).map((c) => {
+                            const key = c.category ?? "other";
+                            const checked = categories.includes(key);
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() =>
+                                  setCategories((cur) =>
+                                    cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key],
+                                  )
+                                }
+                                className={
+                                  "flex items-center justify-between rounded-md border px-2 py-1 text-left text-[11.5px] transition-colors " +
+                                  (checked
+                                    ? "border-brand bg-brand-subtle font-medium text-brand"
+                                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                                }
+                              >
+                                <span className="truncate">{CATEGORY_LABEL[key] ?? key}</span>
+                                <span className="ml-1 font-mono text-[10.5px] text-ink-400">{c.n}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 语言筛选 */}
                   <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    value={lang}
+                    onChange={(e) => setLang(e.target.value as "all" | "zh" | "en")}
                     className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
-                    title="按分类筛选"
+                    title="按标题语言筛选"
                   >
-                    <option value="">全部分类</option>
-                    {(stats.data?.byCategory ?? []).map((c) => (
-                      <option key={c.category ?? "other"} value={c.category ?? ""}>
-                        {CATEGORY_LABEL[c.category ?? "other"] ?? c.category} ({c.n})
-                      </option>
-                    ))}
+                    <option value="all">全部语言</option>
+                    <option value="zh">仅看中文</option>
+                    <option value="en">仅看英文</option>
                   </select>
 
                   <select
@@ -851,13 +929,23 @@ export function App() {
                         源：{sourceName(source)} ×
                       </button>
                     )}
-                    {category && (
+                    {categories.map((cat) => (
                       <button
+                        key={cat}
                         type="button"
-                        onClick={() => setCategory("")}
+                        onClick={() => setCategories((cur) => cur.filter((x) => x !== cat))}
                         className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
                       >
-                        分类：{CATEGORY_LABEL[category] ?? category} ×
+                        分类：{CATEGORY_LABEL[cat] ?? cat} ×
+                      </button>
+                    ))}
+                    {lang !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setLang("all")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        语言：{lang === "zh" ? "仅看中文" : "仅看英文"} ×
                       </button>
                     )}
                     {priceCap !== "auto" && (

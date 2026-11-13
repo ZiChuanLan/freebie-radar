@@ -88,6 +88,7 @@ async function viaCurl(url: string, opts: FetchOptions, timeoutMs: number, proxy
     "-w",
     "\n__STATUS__%{http_code}\n__CT__%{content_type}\n__URL__%{url_effective}",
   ];
+  if (opts.redirect !== "manual") args.push("-L", "--max-redirs", "5");
   if (proxy) args.push("-x", proxy);
   if ((opts.method ?? "GET") !== "GET") args.push("-X", opts.method!);
   for (const [k, v] of Object.entries(opts.headers ?? {})) args.push("-H", `${k}: ${v}`);

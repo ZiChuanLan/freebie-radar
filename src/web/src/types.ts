@@ -154,6 +154,7 @@ export type AiSettings = {
   /** 空字符串表示用内置默认 */
   systemPrompt: string;
   reviewBeforePush: boolean;
+  learnFromFeedback: boolean;
   hasKey: boolean;
   keyHint: string;
   ready: boolean;
@@ -172,6 +173,7 @@ export type AiStats = {
 export type AiPayload = {
   settings: AiSettings;
   stats: AiStats;
+  feedback?: { positive: number; negative: number };
 };
 /* --- 数据保留策略 --- */
 

@@ -187,6 +187,26 @@ const MIGRATIONS: string[] = [
      'github-selfhosted'
    );
   `,
+
+  /* v14：清理与 NodeSeek 重复的 tg-cn-deals 及实测 <1% 留存的泛资讯/静态源；Reddit 拉长周期防 429 */
+  `
+  UPDATE sources SET enabled = 0
+   WHERE id IN (
+     'tg-cn-deals',
+     'rss-smzdm',
+     'rss-ithome',
+     'linuxdo-resource',
+     'v2ex-share',
+     'rss-producthunt',
+     'rss-sspai',
+     'rss-appinn',
+     'rss-ruanyifeng',
+     'rss-iapps',
+     'github-free-for-dev'
+   );
+  UPDATE sources SET interval_sec = 2700
+   WHERE id LIKE 'rss-reddit-%' AND interval_sec < 2700;
+  `,
 ];
 
 export function dbPath(): string {
@@ -204,6 +224,15 @@ export function getDb(): DatabaseSync {
   // 调度器与手动 CLI 是两个进程共用一个 SQLite 文件，写锁竞争时多等一会儿，
   // 避免出现 "database is locked"（跑一次全量采集要几秒）。
   db.exec("PRAGMA busy_timeout = 20000;");
+  db.function("is_zh", { deterministic: true }, (v) => {
+    const t = typeof v === "string" ? v : "";
+    let zh = 0;
+    for (let i = 0; i < t.length; i++) {
+      const c = t.charCodeAt(i);
+      if (c >= 0x4e00 && c <= 0x9fff) zh += 1;
+    }
+    return zh >= 2 && zh / Math.max(t.length, 1) >= 0.12 ? 1 : 0;
+  });
   return db;
 }
 

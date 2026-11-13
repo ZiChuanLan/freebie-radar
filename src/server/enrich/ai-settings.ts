@@ -1,5 +1,5 @@
 import { config } from "../config.ts";
-import { get, run } from "../db.ts";
+import { all, get, run } from "../db.ts";
 import type { RawItem } from "../collectors/types.ts";
 
 import type { ObtainMode } from "./obtain.ts";
@@ -28,8 +28,10 @@ export type AiSettings = {
   maxItems: number;
   /** 自定义提示词；留空用内置 */
   systemPrompt: string;
-  /** true = 推送前先等 AI 二审（更准但多 1-3 秒）；false = 先即时推再后台补审（极速抢码） */
+  /** true = 推送前先等 AI 一审（更准但多 1-3 秒）；false = 先即时推再后台补审（极速抢码） */
   reviewBeforePush: boolean;
+  /** true = 自动从用户收藏（正例）与手动关闭（负例）学习偏好，无需维护复杂提示词 */
+  learnFromFeedback: boolean;
 };
 
 const SETTINGS_KEY = "ai";
@@ -94,6 +96,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   maxItems: DEFAULT_MAX_ITEMS,
   systemPrompt: "",
   reviewBeforePush: true,
+  learnFromFeedback: true,
 };
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
@@ -115,6 +118,7 @@ export function getAiSettings(): AiSettings {
       maxItems: numOr(raw.maxItems, DEFAULT_AI_SETTINGS.maxItems, 20, 500),
       systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : "",
       reviewBeforePush: raw.reviewBeforePush !== false,
+      learnFromFeedback: raw.learnFromFeedback !== false,
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -131,6 +135,7 @@ export function saveAiSettings(patch: Partial<AiSettings>): AiSettings {
     maxItems: numOr(patch.maxItems ?? cur.maxItems, cur.maxItems, 20, 500),
     systemPrompt: typeof patch.systemPrompt === "string" ? patch.systemPrompt : cur.systemPrompt,
     reviewBeforePush: typeof patch.reviewBeforePush === "boolean" ? patch.reviewBeforePush : cur.reviewBeforePush,
+    learnFromFeedback: typeof patch.learnFromFeedback === "boolean" ? patch.learnFromFeedback : cur.learnFromFeedback,
   };
   run(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -157,12 +162,39 @@ export function publicAiSettings(s = getAiSettings()) {
     maxItems: s.maxItems,
     systemPrompt: s.systemPrompt,
     reviewBeforePush: s.reviewBeforePush,
+    learnFromFeedback: s.learnFromFeedback,
     hasKey: Boolean(s.apiKey),
     keyHint: s.apiKey ? "••••" + s.apiKey.slice(-4) : "",
     ready: aiReady(s),
     promptIsDefault: !s.systemPrompt.trim(),
     defaultPrompt: DEFAULT_PROMPT,
   };
+}
+
+export function feedbackStats(): { positive: number; negative: number } {
+  const pos = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE starred = 1")?.n ?? 0;
+  const neg = get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE status = 'ignored'")?.n ?? 0;
+  return { positive: pos, negative: neg };
+}
+
+function buildSystemPrompt(s: AiSettings): string {
+  const base = s.systemPrompt.trim() || DEFAULT_PROMPT;
+  if (!s.learnFromFeedback) return base;
+  try {
+    const likes = all<{ title: string }>(
+      "SELECT title FROM items WHERE starred = 1 ORDER BY last_seen_at DESC LIMIT 6",
+    ).map((r) => r.title.slice(0, 80));
+    const dislikes = all<{ title: string }>(
+      "SELECT title FROM items WHERE status = 'ignored' ORDER BY last_seen_at DESC LIMIT 6",
+    ).map((r) => r.title.slice(0, 80));
+    if (!likes.length && !dislikes.length) return base;
+    const lines = [base, "", "以下来自用户近期真实操作（优先贴合这些偏好）："];
+    if (likes.length) lines.push("用户收藏的正样本（类似应判 keep=true）：" + likes.map((t) => `「${t}」`).join("、"));
+    if (dislikes.length) lines.push("用户手动关闭的负样本（类似应判 keep=false）：" + dislikes.map((t) => `「${t}」`).join("、"));
+    return lines.join("\n");
+  } catch {
+    return base;
+  }
 }
 
 async function callOnce(
@@ -188,7 +220,7 @@ async function callOnce(
         model: s.model,
         temperature: 0,
         messages: [
-          { role: "system", content: s.systemPrompt.trim() || DEFAULT_PROMPT },
+          { role: "system", content: buildSystemPrompt(s) },
           { role: "user", content: JSON.stringify(payload) },
         ],
       }),

@@ -291,3 +291,52 @@ test("陈旧旧帖禁止当新羊毛推送，且 OpenRouter 新免费模型可�
   assert.ok(calibrateScoreByObtain(orEnriched.score, "free", true, 4) >= 80);
   assert.ok(calibrateScoreByObtain(orEnriched.score, "free", false, 1) <= 35);
 });
+
+test("GET /api/items 支持多选分类与中英文语言筛选，且 /api/ai 返回反馈样本数", async () => {
+  const { Hono } = await import("hono");
+  const { registerApi } = await import("../src/server/routes.ts");
+  const app = new Hono();
+  registerApi(app);
+
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('linuxdo-welfare', 'cat-1', 'https://example.com/cat1', 'https://example.com/cat1', 'OpenRouter 免费模型福利', 'openrouter', '', 'ai', 80, 'active', 1, ?, ?, ?)`,
+    now, now, now,
+  );
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('epic-free', 'cat-2', 'https://example.com/cat2', 'https://example.com/cat2', 'Knightica Free on Epic Games', 'unique_test_game_xyz', '', 'game', 78, 'active', 0, ?, ?, ?)`,
+    now, now, now,
+  );
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('v2ex-free', 'cat-3', 'https://example.com/cat3', 'https://example.com/cat3', '送一个域名优惠码', 'domaincode', '', 'domain', 75, 'ignored', 0, ?, ?, ?)`,
+    now, now, now,
+  );
+
+  // 多选分类：ai,game
+  const resMulti = await app.request("/api/items?category=ai,game");
+  const dataMulti = (await resMulti.json()) as { items: { external_id: string }[] };
+  assert.ok(dataMulti.items.some((i) => i.external_id === "cat-1"));
+  assert.ok(dataMulti.items.some((i) => i.external_id === "cat-2"));
+  assert.ok(!dataMulti.items.some((i) => i.external_id === "cat-3"));
+
+  // 语言筛选：zh vs en
+  const resZh = await app.request("/api/items?category=ai,game&lang=zh");
+  const dataZh = (await resZh.json()) as { items: { external_id: string }[] };
+  assert.ok(dataZh.items.some((i) => i.external_id === "cat-1"));
+  assert.ok(!dataZh.items.some((i) => i.external_id === "cat-2"));
+
+  const resEn = await app.request("/api/items?category=ai,game&lang=en");
+  const dataEn = (await resEn.json()) as { items: { external_id: string }[] };
+  assert.ok(dataEn.items.some((i) => i.external_id === "cat-2"));
+  assert.ok(!dataEn.items.some((i) => i.external_id === "cat-1"));
+
+  // /api/ai 返回 learnFromFeedback 与 feedback 样本数
+  const resAi = await app.request("/api/ai");
+  const dataAi = (await resAi.json()) as { settings: { learnFromFeedback: boolean }; feedback: { positive: number; negative: number } };
+  assert.equal(dataAi.settings.learnFromFeedback, true);
+  assert.ok(dataAi.feedback.positive >= 1);
+  assert.ok(dataAi.feedback.negative >= 1);
+});
