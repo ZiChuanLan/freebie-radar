@@ -1,6 +1,6 @@
 import { config } from "./config.ts";
 import { all, get, run } from "./db.ts";
-import { CATEGORY_LABEL } from "./enrich/index.ts";
+import { CATEGORY_LABEL, dedupeByTitle, type DedupeEntry } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters } from "./push.ts";
@@ -20,6 +20,7 @@ export type DigestItem = {
   obtain?: string | null;
   ai?: string | null;
   codes?: string;
+  urlKey?: string | null;
 };
 
 export type Digest = {
@@ -35,20 +36,26 @@ function dayKey(d: Date): string {
   return y + "-" + m + "-" + day;
 }
 
-function alreadyPushed(day: string): Set<number> {
+function recentDigestPushed(day: string): { ids: Set<number>; seeds: DedupeEntry[] } {
   const rows = all<{ item_ids: string }>(
     "SELECT item_ids FROM digests WHERE date >= ?",
     new Date(new Date(day).getTime() - 3 * 86_400_000).toISOString().slice(0, 10),
   );
-  const set = new Set<number>();
+  const ids = new Set<number>();
   for (const r of rows) {
     try {
-      for (const id of JSON.parse(r.item_ids) as number[]) set.add(id);
+      for (const id of JSON.parse(r.item_ids) as number[]) ids.add(id);
     } catch {
       /* 忽略损坏的历史记录 */
     }
   }
-  return set;
+  if (!ids.size) return { ids, seeds: [] };
+  const placeholders = [...ids].map(() => "?").join(",");
+  const seeds = all<DedupeEntry>(
+    `SELECT title, url_key AS urlKey FROM items WHERE id IN (${placeholders})`,
+    ...ids,
+  );
+  return { ids, seeds };
 }
 
 export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestItem[] {
@@ -58,16 +65,16 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, url, category, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
+    "SELECT id, source_id, title, url, url_key AS urlKey, category, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
 
-  const pushed = alreadyPushed(dayKey(date));
+  const pushed = recentDigestPushed(dayKey(date));
   const rules = loadActiveBlockRules();
   const settings = getPushSettings();
   const fresh = rows.filter((r) => {
-    if (pushed.has(r.id) || isBlocked(r, rules)) return false;
+    if (pushed.ids.has(r.id) || isBlocked(r, rules)) return false;
     let codes: string[] = [];
     try { codes = JSON.parse(r.codes ?? '[]') as string[]; } catch { codes = []; }
     let aiKeep: boolean | null = null;
@@ -88,10 +95,13 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
     }, settings);
   });
 
-  const strict = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title));
-  const relaxed = fresh.filter((r) => DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
-  const pool = strict.length >= Math.min(6, topN) ? strict : relaxed;
-  return pool.slice(0, topN);
+  const strictRaw = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title));
+  const strict = dedupeByTitle(strictRaw, pushed.seeds);
+  if (strict.length >= Math.min(6, topN)) return strict.slice(0, topN);
+
+  const relaxedRaw = fresh.filter((r) => DEAL_HINT.test(r.title) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
+  const relaxed = dedupeByTitle(relaxedRaw, pushed.seeds);
+  return relaxed.slice(0, topN);
 }
 const MIN_DIGEST_SCORE = 55;
 

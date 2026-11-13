@@ -137,7 +137,15 @@ export function OpsPanel({
                     min={1}
                     max={3650}
                     value={retention[f.key]}
-                    onChange={(e) => saveRetentionField({ [f.key]: Number(e.target.value) } as Partial<RetentionSettings>)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setRetention({ ...retention, [f.key]: Number.isFinite(v) ? v : 0 });
+                    }}
+                    onBlur={(e) => {
+                      const raw = Number(e.target.value);
+                      const clamped = Math.min(Math.max(Number.isFinite(raw) ? Math.round(raw) : 1, 1), 3650);
+                      void saveRetentionField({ [f.key]: clamped } as Partial<RetentionSettings>);
+                    }}
                     className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
                   />
                   <span className="text-[11px] text-ink-500">{f.hint}</span>

@@ -1,6 +1,6 @@
 import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
-import { mergeKey } from "./enrich/index.ts";
+import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { sendTelegram } from "./telegram.ts";
@@ -370,12 +370,13 @@ function decide(item: FreshItem, s: PushSettings, subHits: string[]): Decision {
   return { push: false, reason: "", urgent: false };
 }
 
-function recentTitleKeys(): Set<string> {
-  const rows = all<{ title_key: string | null }>(
-    "SELECT title_key FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ? AND title_key IS NOT NULL",
+function recentPushedSeeds(includeQueue = true): DedupeEntry[] {
+  const rows = all<{ title: string; urlKey: string | null }>(
+    "SELECT title, url_key AS urlKey FROM items WHERE pushed_at IS NOT NULL AND pushed_at >= ?",
     new Date(Date.now() - 86_400_000).toISOString(),
   );
-  return new Set(rows.map((r) => r.title_key ?? "").filter(Boolean));
+  if (!includeQueue || !queue.length) return rows;
+  return [...rows, ...queue.map((q) => ({ title: q.item.title }))];
 }
 
 function pushedLastHour(): number {
@@ -459,33 +460,30 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
 
   const rules = loadActiveBlockRules();
   const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
-  const seenTitles = s.dedupeByTitle ? recentTitleKeys() : new Set<string>();
-
   const candidates = fresh.filter((it) => {
     if (isBlocked({ ...it, sourceId }, rules)) return false;
     return passesPushFilters(it, s);
   });
+  const deduper = s.dedupeByTitle ? new TitleDeduper(candidates, recentPushedSeeds(true)) : null;
 
   const instant: { it: FreshItem; reason: string; subHits: string[] }[] = [];
   const batched: QueueItem[] = [];
   const quiet = inQuietHoursZoned(s.quietHours, s.timezone);
 
   for (const it of candidates) {
-    const key = titleKey(it.title);
+    if (deduper?.isDuplicate(it)) continue;
     const subHits = matchSubscriptions(it, subKeywords);
     const d = decide(it, s, subHits);
-    const dup = s.dedupeByTitle && key && seenTitles.has(key);
-    if (dup) continue;
 
     if (d.push && !quiet) {
       instant.push({ it, reason: d.reason, subHits });
-      if (key) seenTitles.add(key);
+      deduper?.markSeen(it);
       continue;
     }
     const noisy = NOISE_TITLE.test(it.title) || !DEAL_HINT.test(it.title) || it.aiKeep === false;
     if (!noisy && (it.score >= s.batchScore || d.push)) {
       batched.push({ id: it.id, sourceId, item: it, subHits });
-      if (key) seenTitles.add(key);
+      deduper?.markSeen(it);
     }
   }
 
@@ -532,7 +530,20 @@ export async function flushBatch(force = false): Promise<number> {
   const budget = Math.max(0, s.maxPerHour - pushedLastHour());
   if (!budget) return 0;
 
-  const take = queue.splice(0, Math.min(s.maxPerBatch, budget));
+  const rawTake = queue.splice(0, Math.min(s.maxPerBatch, budget));
+  let take = rawTake;
+  if (s.dedupeByTitle && rawTake.length) {
+    const entries = rawTake.map((q) => ({ title: q.item.title, q }));
+    const deduper = new TitleDeduper(entries, recentPushedSeeds(false));
+    take = [];
+    for (const entry of entries) {
+      if (deduper.isDuplicate(entry)) continue;
+      deduper.markSeen(entry);
+      take.push(entry.q);
+    }
+  }
+  if (!take.length) return 0;
+
   const blocks: string[] = [];
   take.forEach((q, i) => {
     blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1, q.subHits ?? []));
@@ -641,9 +652,11 @@ export function previewPush(limit = 6): {
   const instant: string[] = [];
   const batch: string[] = [];
   let matched = 0;
+  const deduper = s.dedupeByTitle ? new TitleDeduper(rows, recentPushedSeeds(true)) : null;
 
   for (const r of rows) {
     if (isBlocked(r, rules)) continue;
+    if (deduper?.isDuplicate(r)) continue;
     let codes: string[] = [];
     try {
       codes = JSON.parse(r.codes ?? "[]") as string[];
@@ -678,14 +691,17 @@ export function previewPush(limit = 6): {
     const subHits = matchSubscriptions(fresh, subKeywords);
     const d = decide(fresh, s, subHits);
     const block = itemBlock(r.source_id, fresh, s, undefined, subHits).join("\n");
-    if (d.push && instant.length < limit) instant.push("⚡ " + d.reason + "\n" + block);
-    else if (
+    if (d.push && instant.length < limit) {
+      instant.push("⚡ " + d.reason + "\n" + block);
+      deduper?.markSeen(r);
+    } else if (
       !NOISE_TITLE.test(fresh.title) &&
       DEAL_HINT.test(fresh.title) &&
       fresh.score >= s.batchScore &&
       batch.length < limit
     ) {
       batch.push(block);
+      deduper?.markSeen(r);
     }
   }
   return { instant, batch, queued: queue.length, scanned: rows.length, matched };

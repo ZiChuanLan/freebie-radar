@@ -6,15 +6,19 @@ import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import { config } from "./config.ts";
-import { getDb, migrate } from "./db.ts";
+import { getDb, migrate, run } from "./db.ts";
 import { registerApi } from "./routes.ts";
-import { runAll } from "./collectors/index.ts";
 import { startPushScheduler } from "./push.ts";
-import { runDaily } from "./digest.ts";
+import { digestExists, runDaily } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
 import { getRetention, runCleanup } from "./retention.ts";
 
 migrate();
+// 上次进程意外退出可能遗留 status='running' 的记录，启动时收口
+run(
+  "UPDATE runs SET status = 'failed', finished_at = ?, error = COALESCE(error, '进程重启中断') WHERE status = 'running'",
+  new Date().toISOString(),
+);
 const app = new Hono();
 app.use("*", logger());
 
@@ -75,7 +79,12 @@ if (config.enableScheduler) {
   // 日报：仍然按 DAILY_CRON 触发
   startScheduler({
     collect: async () => undefined,
-    daily: () => runDaily(),
+    daily: async () => {
+      const now = new Date();
+      const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      if (digestExists(day)) return;
+      await runDaily({ date: now });
+    },
   });
 
   // 数据清理：每天跑一次，按保留策略删掉过期条目与日志（收藏的永不删）

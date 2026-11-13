@@ -35,7 +35,10 @@ function textOf(v: unknown): string {
 function linkOf(v: unknown): string {
   if (typeof v === "string") return v;
   if (Array.isArray(v)) {
-    for (const item of v) {
+    const alternates = v.filter(
+      (item) => item && typeof item === "object" && (!("@_rel" in item) || (item as Record<string, unknown>)["@_rel"] === "alternate"),
+    );
+    for (const item of [...alternates, ...v]) {
       const l = linkOf(item);
       if (l && !l.includes("comments")) return l;
     }
@@ -107,7 +110,7 @@ export const rssCollector: Collector = {
           const published =
             textOf(it.pubDate) || textOf(it.published) || textOf(it.updated) || textOf(it["dc:date"]);
           items.push({
-            externalId: String(it.guid ? textOf(it.guid) : link),
+            externalId: (it.guid ? textOf(it.guid) : "") || textOf(it.id) || link,
             url: link,
             title: cleanText(title, 200),
             summary: cleanText(summary, 400),

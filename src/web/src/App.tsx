@@ -82,7 +82,10 @@ function useApi<T>(url: string | null): { data: T | null; loading: boolean; erro
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
-    if (!url) return;
+    if (!url) {
+      setLoading(false);
+      return;
+    }
     const ac = new AbortController();
     setLoading(true);
     fetch(url, { signal: ac.signal })
@@ -164,13 +167,21 @@ export function App() {
     };
   }, [relatedOpen, relatedMap]);
   // 服务端是否启用管理密码（决定是否拦截管理区）
+  const [authChecked, setAuthChecked] = useState(false);
   const [protectedMode, setProtectedMode] = useState(false);
+  const [adminAuthed, setAdminAuthed] = useState(() => Boolean(getToken()));
   useEffect(() => {
     fetch("/api/auth/check")
       .then((r) => r.json())
-      .then((j: { protected?: boolean }) => setProtectedMode(Boolean(j.protected)))
-      .catch(() => undefined);
+      .then((j: { protected?: boolean }) => {
+        const prot = Boolean(j.protected);
+        setProtectedMode(prot);
+        if (!prot) setAdminAuthed(true);
+      })
+      .catch(() => undefined)
+      .finally(() => setAuthChecked(true));
   }, []);
+  const adminReady = authChecked && (!protectedMode || adminAuthed);
 
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -294,17 +305,17 @@ export function App() {
   }, []);
   const stats = useApi<Stats>("/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
-  const subs = useApi<{ subscriptions: Subscription[] }>("/api/subscriptions");
+  const subs = useApi<{ subscriptions: Subscription[] }>(adminReady ? "/api/subscriptions" : null);
   const sources = useApi<{ sources: Source[] }>("/api/sources");
-  const runs = useApi<{ runs: Run[] }>(getToken() ? "/api/runs?limit=40" : null);
+  const runs = useApi<{ runs: Run[] }>(adminReady ? "/api/runs?limit=40" : null);
   const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>(
-    getToken() ? "/api/block-rules" : null,
+    adminReady ? "/api/block-rules" : null,
   );
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
-  // 管理接口只在已登录时请求，避免公开区刷出一堆 401
-  const push = useApi<PushPayload>(getToken() ? "/api/push" : null);
-  const ai = useApi<AiPayload>(tab === "ai" ? "/api/ai" : null);
-  const pushLogs = useApi<{ logs: PushLogItem[] }>(tab === "push" ? "/api/push/log?limit=40" : null);
+  // 管理接口只在就绪后请求，避免公开区刷出一堆 401，也避免无密码模式卡住加载
+  const push = useApi<PushPayload>(adminReady ? "/api/push" : null);
+  const ai = useApi<AiPayload>(adminReady && tab === "ai" ? "/api/ai" : null);
+  const pushLogs = useApi<{ logs: PushLogItem[] }>(adminReady && tab === "push" ? "/api/push/log?limit=40" : null);
   const [pushPreview, setPushPreview] = useState<{
     instant: string[];
     batch: string[];
@@ -360,6 +371,7 @@ export function App() {
       items.reload();
       stats.reload();
       setBlockedPreview(null);
+      setRelatedMap({});
     },
     [blockRules, items, stats, notify],
   );
@@ -400,6 +412,7 @@ export function App() {
     sources.reload();
     runs.reload();
     blockRules.reload();
+    setRelatedMap({});
   }, [items, stats, sources, runs, blockRules]);
 
   const visible = items.data?.items ?? [];
@@ -411,12 +424,11 @@ export function App() {
     sources: enabledSources.filter((s) => groupOfSource(s) === g.key),
   })).filter((g) => g.sources.length > 0);
 
-  const authed = Boolean(getToken());
   // 公开区只显示「资源流 / 每日精选」，其余 Tab 只有进管理区后才出现
   const tabs: { key: Tab | "admin"; label: string; icon: typeof Activity; badge?: number }[] = [
     { key: "feed", label: "资源流", icon: Activity },
     { key: "digest", label: "每日精选", icon: Radar },
-    ...(authed
+    ...(adminReady
       ? [
           { key: "rules" as Tab, label: "订阅与屏蔽", icon: ShieldBan, badge: stats.data?.totals.blockRules },
           { key: "push" as Tab, label: "推送规则", icon: Zap, badge: push.data?.stats.queued },
@@ -805,8 +817,8 @@ export function App() {
 
         {/* 主内容区 */}
         <main className="min-w-0 flex-1">
-          {(tab as string) === "admin" && (
-            <AdminGate protectedMode={protectedMode}>
+          {((tab as string) === "admin" || (ADMIN_TABS.has(tab) && !adminReady)) && (
+            <AdminGate protectedMode={protectedMode} onAuthChange={setAdminAuthed}>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   { key: "rules" as Tab, label: "订阅与屏蔽", desc: "关键词订阅、屏蔽词防火墙", icon: ShieldBan },
@@ -974,10 +986,8 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      resetFilters();
                       setPreset("all");
-                      setPriceCap("all");
-                      setCategory("");
-                      setSource("");
                     }}
                     className="mt-1 rounded-xl bg-brand px-4 py-2 text-[12.5px] font-medium text-white hover:bg-brand-hover"
                   >
@@ -994,6 +1004,7 @@ export function App() {
               detail={digestDetail}
               pickedDate={pickedDate}
               onPickDate={setPickedDate}
+              canAdmin={adminReady}
               onRunDaily={async () => {
                 notify("正在生成今日精选…");
                 const res = await fetch("/api/digests/run", { method: "POST" });
@@ -1012,7 +1023,7 @@ export function App() {
             />
           )}
 
-          {tab === "rules" && (
+          {adminReady && tab === "rules" && (
             <RulesPanel
               subscriptions={subs.data?.subscriptions ?? []}
               rules={blockRules.data?.rules ?? []}
@@ -1066,7 +1077,7 @@ export function App() {
             />
           )}
 
-          {tab === "push" && (
+          {adminReady && tab === "push" && (
             <PushPanel
               payload={push.data}
               preview={pushPreview}
@@ -1106,8 +1117,8 @@ export function App() {
             />
           )}
 
-          {tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} />}
-          {tab === "ops" && (
+          {adminReady && tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} />}
+          {adminReady && tab === "ops" && (
             <OpsPanel
               sources={sources.data?.sources ?? []}
               runs={runs.data?.runs ?? []}

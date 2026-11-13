@@ -8,9 +8,11 @@ import { getToken, setToken, clearToken, verifyToken } from "../lib/auth.ts";
  */
 export function AdminGate({
   protectedMode,
+  onAuthChange,
   children,
 }: {
   protectedMode: boolean;
+  onAuthChange?: (authed: boolean) => void;
   children: React.ReactNode;
 }) {
   const [authed, setAuthed] = useState(() => Boolean(getToken()));
@@ -36,6 +38,7 @@ export function AdminGate({
               onClick={() => {
                 clearToken();
                 setAuthed(false);
+                onAuthChange?.(false);
                 setInput("");
               }}
               className="text-[12px] font-medium text-brand hover:underline"
@@ -74,6 +77,7 @@ export function AdminGate({
               if (await verifyToken(v)) {
                 setToken(v);
                 setAuthed(true);
+                onAuthChange?.(true);
               } else {
                 setError("密码不对");
               }

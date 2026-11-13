@@ -304,10 +304,21 @@ export function registerApi(app: Hono) {
     const { where, params, subKeywords } = buildItemsQuery(q, rules, includeBlocked);
     // 同一福利常被十几个源同时报道（Epic 喜加一尤甚），列表默认按 title_key 收敛：
     // 每组只保留最早入库的那条，前端按 dup_count 显示「N 个来源」并可展开。
-    const merge = q.merge !== "0";
+    // 指定了单源或「我的收藏」时不做跨源合并，避免主记录落在别处导致本源条目被隐藏。
+    const merge = q.merge === "1" || (q.merge !== "0" && !q.source && q.starred !== "1");
     if (merge) {
+      const subConds = ["x.title_key = items.title_key", "x.status = 'active'"];
+      if (q.unread === "1") subConds.push("x.read_at IS NULL");
+      if (q.unexpired === "1") {
+        const maxAgeDays = Math.min(Math.max(Number(q.maxAgeDays ?? 14), 1), 365);
+        const now = new Date();
+        subConds.push("COALESCE(x.published_at, x.first_seen_at) >= ?");
+        params.push(new Date(now.getTime() - maxAgeDays * 86_400_000).toISOString());
+        subConds.push("(x.expires_at IS NULL OR x.expires_at > ?)");
+        params.push(now.toISOString());
+      }
       where.push(
-        "(title_key IS NULL OR title_key = '' OR LENGTH(title_key) < 6 OR category NOT IN ('game','goods') OR id = (SELECT MIN(x.id) FROM items x WHERE x.title_key = items.title_key AND x.status = 'active'))",
+        `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR category NOT IN ('game','goods') OR id = (SELECT MIN(x.id) FROM items x WHERE ${subConds.join(" AND ")}))`,
       );
     }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -316,7 +327,7 @@ export function registerApi(app: Hono) {
       merge
         ? `SELECT items.*, (SELECT COUNT(*) FROM items d
               WHERE d.title_key = items.title_key AND d.status = 'active'
-                AND LENGTH(items.title_key) >= 6 AND items.category IN ('game','goods')) AS dup_count
+                AND LENGTH(CAST(items.title_key AS BLOB)) >= 6 AND items.category IN ('game','goods')) AS dup_count
            FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`
         : `SELECT items.*, 1 AS dup_count FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
       ...params,
@@ -837,9 +848,11 @@ export function registerApi(app: Hono) {
     } catch {
       text = "";
     }
-    const items = ids.length
+    const rawItems = ids.length
       ? all<ItemRow>(`SELECT * FROM items WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids)
       : [];
+    const orderMap = new Map(ids.map((id, i) => [id, i]));
+    const items = [...rawItems].sort((a, b) => (orderMap.get(a.id) ?? 9999) - (orderMap.get(b.id) ?? 9999));
     const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
     return c.json({
       date: row.date,

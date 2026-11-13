@@ -48,15 +48,17 @@ function decode(bytes: Buffer, contentType: string): string {
   return bytes.toString("utf8");
 }
 
-let dispatcherPromise: Promise<unknown> | null = null;
+const dispatchers = new Map<string, Promise<unknown>>();
 async function getDispatcher(proxy: string): Promise<unknown> {
-  if (!dispatcherPromise) {
-    dispatcherPromise = (async () => {
+  let p = dispatchers.get(proxy);
+  if (!p) {
+    p = (async () => {
       const undici = (await import("undici")) as unknown as { ProxyAgent: new (url: string) => unknown };
       return new undici.ProxyAgent(proxy);
     })();
+    dispatchers.set(proxy, p);
   }
-  return dispatcherPromise;
+  return p;
 }
 /**
  * curl 优先：Node 的 undici 有独立 TLS 指纹，Cloudflare 会单独给它 403。
@@ -71,7 +73,7 @@ const CURL_OK = (() => {
   }
 })();
 
-async function viaCurl(url: string, opts: FetchOptions, timeoutMs: number): Promise<HttpResponse> {
+async function viaCurl(url: string, opts: FetchOptions, timeoutMs: number, proxy = ""): Promise<HttpResponse> {
   const args = [
     "-sS",
     "--compressed",
@@ -86,6 +88,7 @@ async function viaCurl(url: string, opts: FetchOptions, timeoutMs: number): Prom
     "-w",
     "\n__STATUS__%{http_code}\n__CT__%{content_type}\n__URL__%{url_effective}",
   ];
+  if (proxy) args.push("-x", proxy);
   if ((opts.method ?? "GET") !== "GET") args.push("-X", opts.method!);
   for (const [k, v] of Object.entries(opts.headers ?? {})) args.push("-H", `${k}: ${v}`);
   if (opts.body) args.push("--data-binary", opts.body);
@@ -149,7 +152,7 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
 
     if (CURL_OK) {
       try {
-        return await viaCurl(url, opts, timeout);
+        return await viaCurl(url, opts, timeout, proxy);
       } catch {
         /* curl 失败就落到 fetch */
       }
@@ -169,6 +172,7 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
       signal: ac.signal,
       body: opts.body,
     };
+    if (proxy) init.dispatcher = await getDispatcher(proxy);
     try {
       const res = await fetch(url, init);
       const bytes = Buffer.from(await res.arrayBuffer());

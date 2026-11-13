@@ -1,6 +1,9 @@
 import { reviewItems } from "./ai-settings.ts";
+import { isCategory } from "./index.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { run } from "../db.ts";
+
+const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 
 /**
  * AI 二审队列：采集不再等模型。
@@ -74,20 +77,29 @@ async function drain(): Promise<void> {
         continue;
       }
 
-      const at = new Date().toISOString();
       for (const [idx, verdict] of map) {
         const job = batch[idx];
         if (!job) continue;
+        const keep = verdict.keep ? 1 : 0;
+        const nextCategory = isCategory(verdict.category) ? verdict.category : null;
+        const nextObtain = verdict.obtain && VALID_OBTAIN.has(verdict.obtain) ? verdict.obtain : null;
         try {
-          // 注意：items 表没有 updated_at 列，别往 UPDATE 里塞，
-          // 之前写错这里导致整批回填静默失败（被 catch 吞掉）
           run(
-            "UPDATE items SET ai = ?, ai_keep = ?, obtain = COALESCE(obtain, ?) WHERE id = ?",
+            `UPDATE items
+                SET ai = ?,
+                    ai_keep = ?,
+                    obtain = COALESCE(?, obtain),
+                    category = COALESCE(?, category),
+                    score = CASE WHEN ai_keep IS NULL AND ? = 0 THEN ROUND(score * 0.5) ELSE score END
+              WHERE id = ?`,
             JSON.stringify(verdict),
-            verdict.keep ? 1 : 0,
-            verdict.obtain ?? null,
+            keep,
+            nextObtain,
+            nextCategory,
+            keep,
             job.itemId,
           );
+          processed += 1;
         } catch {
           dropped += 1;
         }

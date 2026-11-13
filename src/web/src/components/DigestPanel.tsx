@@ -9,6 +9,7 @@ export function DigestPanel({
   pickedDate,
   onPickDate,
   onRunDaily,
+  canAdmin = true,
   sourceName,
   onPatch,
   onOpen,
@@ -24,6 +25,7 @@ export function DigestPanel({
   pickedDate: string | null;
   onPickDate: (d: string) => void;
   onRunDaily: () => Promise<void>;
+  canAdmin?: boolean;
   sourceName: (id: string) => string;
   onPatch: (id: number, body: Record<string, unknown>) => void;
   onOpen: (item: Item) => void;
@@ -56,22 +58,24 @@ export function DigestPanel({
           {!digests.length && <span className="text-[13px] text-ink-500">还没有生成过每日精选</span>}
         </div>
 
-        <button
-          type="button"
-          disabled={running}
-          onClick={async () => {
-            setRunning(true);
-            try {
-              await onRunDaily();
-            } finally {
-              setRunning(false);
-            }
-          }}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
-        >
-          {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-          立即生成今日精选
-        </button>
+        {canAdmin && (
+          <button
+            type="button"
+            disabled={running}
+            onClick={async () => {
+              setRunning(true);
+              try {
+                await onRunDaily();
+              } finally {
+                setRunning(false);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+          >
+            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            立即生成今日精选
+          </button>
+        )}
       </div>
 
       {!digests.length && (

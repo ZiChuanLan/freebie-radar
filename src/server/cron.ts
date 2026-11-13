@@ -55,7 +55,9 @@ export function startIntervalScheduler(task: {
             AND (last_run_at IS NULL OR datetime(last_run_at, '+' || interval_sec || ' seconds') <= datetime('now'))
           ORDER BY last_run_at IS NOT NULL, last_run_at ASC`,
       );
+      const filter = config.enabledSources;
       for (const s of due) {
+        if (filter.length && !filter.includes(s.id)) continue;
         try {
           await runSource(s.id);
         } catch (err) {

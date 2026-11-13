@@ -117,60 +117,13 @@ export type EnrichedItem = RawItem & {
   keep: boolean;
   reason: string;
 };
-
-/** 判定「同一个福利」时不该贡献区分度的词：品类词、渠道词、连接词。 */
-const MERGE_STOP = new Set([
-  "epic", "steam", "gog", "games", "game", "store", "mobile", "android", "ios", "pc",
-  "free", "freebie", "giveaway", "giveaways", "offer", "deal", "deals", "sale",
-  "the", "for", "and", "with", "via", "new", "now", "week", "weekly", "today", "this",
-  "is", "on", "to", "of", "in", "at", "from", "you", "your", "get", "grab", "claim",
-  "available", "live", "out", "will", "hand", "here", "more", "than", "just", "but",
-  "prime", "members", "gaming", "week", "official", "store", "percent", "off",
-  // 通用词：这些出现在标题里不代表是同一个福利，
-  // 第一版没排除它们，导致「ai」把 120 条含 AI 的帖子合并成一条
-  "ai", "app", "apps", "ip", "api", "web", "www", "http", "https", "com", "net", "org",
-  "pro", "max", "plus", "lite", "beta", "alpha", "test", "demo", "trial", "vip",
-  "ceo", "cto", "team", "news", "info", "blog", "post", "code", "dev", "devs",
-  "gb", "mb", "tb", "gbps", "mbps", "ram", "cpu", "ssd", "vps", "vds", "cdn", "dns",
-  "usd", "eur", "gbp", "cny", "rmb", "per", "month", "year", "day", "hour",
-]);
-
-/**
- * 合并同一福利用的指纹。
- *
- * titleKey 那种「全标题归一化」对付措辞不同的多源报道是无效的：
- * 同一款 Knightica 会有 "Knightica (Epic Games) Giveaway"、
- * "Knightica is free on Epic Games Store"、"【免费领】Knightica"…十几种写法。
- *
- * 这里改成抽「主体名」：先把渠道词/品类词/连接词全部剔掉，
- * 剩下的专有名词就是这款游戏/这个商品的名字。
- *   "[Epic Games Mobile] (Game) Knightica"        -> knightica
- *   "Knightica is free on Epic Games Store"       -> knightica
- *   "[PC, Android, Epic] Free - Alien: Isolation" -> alien isolation
- * 中文标题则退回《》里的内容。
- */
-export function mergeKey(title: string): string {
-  const words = (title.match(/[A-Za-z][A-Za-z0-9:'!.-]{1,}/g) ?? [])
-    .map((w) => w.replace(/[.'!-]+$/, "").toLowerCase())
-    .filter((w) => w.length > 1 && !MERGE_STOP.has(w));
-
-  if (words.length) {
-    // 去重但保留首次出现顺序，避免 "Alien Isolation Alien" 这类重复
-    const uniq = [...new Set(words)].slice(0, 4);
-    return uniq.join(" ");
-  }
-
-  const cn = /《([^》]{2,30})》/.exec(title)?.[1]?.trim();
-  if (cn) return cn;
-
-  return title
-    .replace(/【[^】]*】|\[[^\]]*\]/g, " ")
-    .replace(/[（(][^)）]*[)）]/g, " ")
-    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, " ")
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
-    .trim()
-    .slice(0, 60);
-}
+export {
+  mergeKey,
+  extractMergeKeys,
+  TitleDeduper,
+  dedupeByTitle,
+  type DedupeEntry,
+} from "./dedup.ts";
 export function classify(title: string, summary: string): { category: Category; tags: string[] } {
   const text = `${title} ${summary}`.toLowerCase();
   let best: { category: Category; hits: string[]; score: number } = { category: "other", hits: [], score: 0 };

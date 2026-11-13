@@ -15,11 +15,12 @@ type FlarePayload = {
   solution?: { status?: number; url?: string; response?: string };
 };
 
-async function post(endpoint: string, body: Record<string, unknown>): Promise<FlarePayload> {
+async function post(endpoint: string, body: Record<string, unknown>, timeoutMs = config.flaresolverrTimeoutMs + 15_000): Promise<FlarePayload> {
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await res.text();
   try {
@@ -62,7 +63,7 @@ async function request(endpoint: string, url: string, timeoutMs: number, session
   const payloadBody: Record<string, unknown> = { cmd: "request.get", url, maxTimeout: timeoutMs };
   if (session) payloadBody.session = session;
 
-  const payload = await post(endpoint, payloadBody);
+  const payload = await post(endpoint, payloadBody, timeoutMs + 15_000);
   if (payload.status !== "ok" || !payload.solution) {
     throw new Error(
       `FlareSolverr 失败: ${payload.message ?? payload.status ?? "unknown"} (${JSON.stringify(payload).slice(0, 120)})`,

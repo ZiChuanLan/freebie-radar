@@ -231,12 +231,17 @@ function persist(
       const aiJson = verdict ? JSON.stringify(verdict) : null;
       const status = e.keep ? "active" : "expired";
 
-      const existing = get<{ id: number }>(
-        "SELECT id FROM items WHERE source_id = ? AND external_id = ?",
+      const existing = get<{ id: number; ai_keep: number | null }>(
+        "SELECT id, ai_keep FROM items WHERE source_id = ? AND external_id = ?",
         sourceId,
         e.externalId,
       );
       if (existing) {
+        const nextScore = verdict
+          ? score
+          : existing.ai_keep === 0
+            ? Math.round(e.score * 0.5)
+            : e.score;
         run(
           `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
@@ -254,7 +259,7 @@ function persist(
           e.author ?? null,
           e.category,
           JSON.stringify(e.tags),
-          score,
+          nextScore,
           e.expiresAt,
           e.publishedAt ?? null,
           JSON.stringify(e.raw ?? {}),
@@ -262,7 +267,8 @@ function persist(
           e.price,
           e.isFree ? 1 : 0,
           aiJson,
-          obtainOf(e, verdict),
+          verdict?.obtain ?? null,
+          verdict ? (verdict.keep ? 1 : 0) : null,
           status,
           existing.id,
         );
@@ -368,7 +374,6 @@ export async function runSource(
       http,
       log: (m) => log(`[${sourceId}] ${m}`),
     });
-    fetched = result.items.length;
     fetched = result.items.length;
     // 不再同步等 AI 二审：MG 是反代网页，单批 1.6-9 秒、偶发 49 秒，
     // 同步送审会把 linux.do 一轮采集拖到 33 秒以上，送码帖早被抢光。
