@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlignJustify,
@@ -141,8 +141,28 @@ export function App() {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [detail, setDetail] = useState<Item | null>(null);
   const [quickBlock, setQuickBlock] = useState<Item | null>(null);
+  // 合并组展开：记录展开的条目 id 与其同福利的其他来源
+  const [relatedOpen, setRelatedOpen] = useState<number | null>(null);
+  const [relatedMap, setRelatedMap] = useState<Record<number, (Item & { sourceName?: string })[]>>({});
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
+  // 展开合并组时按需拉取其他来源报道（同一 title_key 的兄弟条目）
+  useEffect(() => {
+    const id = relatedOpen;
+    if (!id || relatedMap[id]) return;
+    let alive = true;
+    fetch(`/api/items/${id}/related`, { headers: { accept: "application/json" } })
+      .then((r) => r.json())
+      .then((d: { items?: (Item & { sourceName?: string })[] }) => {
+        if (alive && Array.isArray(d.items)) setRelatedMap((m) => ({ ...m, [id]: d.items! }));
+      })
+      .catch(() => {
+        if (alive) setRelatedMap((m) => ({ ...m, [id]: [] }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [relatedOpen, relatedMap]);
   // 服务端是否启用管理密码（决定是否拦截管理区）
   const [protectedMode, setProtectedMode] = useState(false);
   useEffect(() => {
@@ -865,8 +885,8 @@ export function App() {
               {viewMode === "compact" ? (
                 <div className="panel overflow-hidden">
                   {visible.map((item) => (
+                    <Fragment key={item.id}>
                     <CompactRow
-                      key={item.id}
                       item={item}
                       sourceName={sourceName}
                       selected={detail?.id === item.id}
@@ -874,21 +894,72 @@ export function App() {
                       onOpen={setDetail}
                       onQuickBlock={setQuickBlock}
                       onCopyCode={copyCode}
+                      expanded={relatedOpen === item.id}
+                      onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
                     />
+                    {relatedOpen === item.id && relatedMap[item.id] ? (
+                      <div className="border-b border-ink-100 bg-surface-subtle px-6 py-2">
+                        <div className="mb-1 text-[11px] font-medium text-ink-500">
+                          同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                        </div>
+                        <ul className="space-y-1">
+                          {relatedMap[item.id]!.map((r) => (
+                            <li key={r.id} className="flex items-center gap-2 text-[12px]">
+                              <span className="w-28 shrink-0 truncate text-ink-500">{r.sourceName ?? r.source_id}</span>
+                              <a
+                                href={r.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="truncate text-ink-700 hover:text-brand hover:underline"
+                              >
+                                {r.title}
+                              </a>
+                              <span className="shrink-0 text-ink-400">{String(r.first_seen_at).slice(5, 16).replace("T", " ")}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </div>
               ) : (
                 <div className="space-y-3">
                   {visible.map((item) => (
+                    <Fragment key={item.id}>
                     <ItemCard
-                      key={item.id}
                       item={item}
                       sourceName={sourceName}
                       onPatch={patch}
                       onOpen={setDetail}
                       onQuickBlock={setQuickBlock}
                       onCopyCode={copyCode}
+                      expanded={relatedOpen === item.id}
+                      onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
                     />
+                    {relatedOpen === item.id && relatedMap[item.id] ? (
+                      <div className="panel px-4 py-3">
+                        <div className="mb-2 text-[12px] font-medium text-ink-500">
+                          同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                        </div>
+                        <ul className="space-y-1.5">
+                          {relatedMap[item.id]!.map((r) => (
+                            <li key={r.id} className="flex items-center gap-2 text-[12px]">
+                              <span className="w-32 shrink-0 truncate text-ink-500">{r.sourceName ?? r.source_id}</span>
+                              <a
+                                href={r.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="truncate text-ink-700 hover:text-brand hover:underline"
+                              >
+                                {r.title}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </div>
               )}

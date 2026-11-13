@@ -1,5 +1,6 @@
 import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
+import { mergeKey } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { sendTelegram } from "./telegram.ts";
@@ -167,18 +168,13 @@ export function detectLang(text: string): "zh" | "en" {
 }
 
 /** 标题归一化：去掉【】/[]、价格标签、emoji 与标点，用于跨源去重。 */
+/**
+ * 推送去重指纹，与列表合并共用一套算法（enrich/mergeKey）。
+ * 原来这里是「全标题归一化」，对措辞不同的多源报道无效——
+ * 同一款 Epic 免费游戏十几个源写法各异，去重形同虚设。
+ */
 export function titleKey(title: string): string {
-  return title
-    .replace(/【[^】]*】|\[[^\]]*\]/g, " ")
-    .replace(/[（(][^)）]*[)）]/g, " ")
-    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, " ")
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter((w) => w.length > 1)
-    .slice(0, 12)
-    .join(" ");
+  return mergeKey(title);
 }
 
 function langAllowed(item: { title: string }, s: PushSettings): boolean {

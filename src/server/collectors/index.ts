@@ -1,6 +1,6 @@
 import { aiEnabled, config } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
-import { enrichItem } from "../enrich/index.ts";
+import { enrichItem, mergeKey } from "../enrich/index.ts";
 import { reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
 import { enqueueForAi } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
@@ -238,7 +238,7 @@ function persist(
       );
       if (existing) {
         run(
-          `UPDATE items SET url = ?, url_key = ?, title = ?, summary = ?, author = ?, category = ?,
+          `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
              price = ?, is_free = ?,
              ai = COALESCE(?, ai),
@@ -249,6 +249,7 @@ function persist(
           e.url,
           e.urlKey,
           e.title,
+          mergeKey(e.title),
           e.summary ?? "",
           e.author ?? null,
           e.category,
@@ -270,14 +271,15 @@ function persist(
       }
       try {
         const res = run(
-          `INSERT INTO items (source_id, external_id, url, url_key, title, summary, author, category,
+          `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, author, category,
              tags, score, expires_at, published_at, raw, status, ai, obtain, ai_keep, content, codes, price, is_free, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
           e.urlKey,
           e.title,
+          mergeKey(e.title),
           e.summary ?? "",
           e.author ?? null,
           e.category,

@@ -96,6 +96,8 @@ export function CompactRow({
   onPatch,
   onOpen,
   onQuickBlock,
+  onToggleRelated,
+  expanded,
   onCopyCode,
 }: {
   item: Item;
@@ -105,6 +107,9 @@ export function CompactRow({
   onOpen: (item: Item) => void;
   onQuickBlock: (item: Item) => void;
   onCopyCode: (code: string) => void;
+  /** 合并组：展开/收起同福利的其他来源 */
+  onToggleRelated?: (id: number) => void;
+  expanded?: boolean;
 }) {
   const exp = expiresLabel(item.expires_at);
   const codes = Array.isArray(item.codes) ? item.codes : [];
@@ -158,6 +163,20 @@ export function CompactRow({
             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
               订阅：{matched.join("/")}
             </span>
+          )}
+          {(item.dupCount ?? 1) > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleRelated?.(item.id);
+              }}
+              title="同一福利被多个源报道，点击看全部来源"
+              className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-brand hover:bg-brand hover:text-white"
+            >
+              {expanded ? "收起" : `${item.dupCount} 个来源`}
+            </button>
           )}
           {item.blockedBy && (
             <span className="rounded bg-alert-subtle px-1.5 py-0.5 text-[11px] text-alert">
@@ -249,6 +268,8 @@ export function ItemCard({
   onOpen,
   onQuickBlock,
   onCopyCode,
+  onToggleRelated,
+  expanded,
 }: {
   item: Item;
   sourceName: (id: string) => string;
@@ -256,6 +277,8 @@ export function ItemCard({
   onOpen: (item: Item) => void;
   onQuickBlock: (item: Item) => void;
   onCopyCode: (code: string) => void;
+  onToggleRelated?: (id: number) => void;
+  expanded?: boolean;
 }) {
   const exp = expiresLabel(item.expires_at);
   const codes = Array.isArray(item.codes) ? item.codes : [];
@@ -292,6 +315,20 @@ export function ItemCard({
 
           <h3 className="text-[15px] leading-snug font-semibold text-ink-950 transition-colors group-hover:text-brand">
             {item.title}
+            {(item.dupCount ?? 1) > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleRelated?.(item.id);
+                }}
+                title="同一福利被多个源报道，点击看全部来源"
+                className="ml-2 rounded bg-brand-subtle px-1.5 py-0.5 align-middle text-[11px] font-medium text-brand hover:bg-brand hover:text-white"
+              >
+                {expanded ? "收起" : `${item.dupCount} 个来源`}
+              </button>
+            )}
           </h3>
 
           {item.summary && (

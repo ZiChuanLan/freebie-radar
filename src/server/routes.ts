@@ -302,10 +302,23 @@ export function registerApi(app: Hono) {
     const rules = loadActiveBlockRules();
 
     const { where, params, subKeywords } = buildItemsQuery(q, rules, includeBlocked);
+    // 同一福利常被十几个源同时报道（Epic 喜加一尤甚），列表默认按 title_key 收敛：
+    // 每组只保留最早入库的那条，前端按 dup_count 显示「N 个来源」并可展开。
+    const merge = q.merge !== "0";
+    if (merge) {
+      where.push(
+        "(title_key IS NULL OR title_key = '' OR LENGTH(title_key) < 6 OR category NOT IN ('game','goods') OR id = (SELECT MIN(x.id) FROM items x WHERE x.title_key = items.title_key AND x.status = 'active'))",
+      );
+    }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const order = SORTS[q.sort ?? "score"] ?? SORTS.score;
-    const rows = all<ItemRow>(
-      `SELECT * FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    const rows = all<ItemRow & { dup_count?: number }>(
+      merge
+        ? `SELECT items.*, (SELECT COUNT(*) FROM items d
+              WHERE d.title_key = items.title_key AND d.status = 'active'
+                AND LENGTH(items.title_key) >= 6 AND items.category IN ('game','goods')) AS dup_count
+           FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`
+        : `SELECT items.*, 1 AS dup_count FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
       ...params,
       limit,
       offset,
@@ -318,9 +331,27 @@ export function registerApi(app: Hono) {
       offset,
       items: rows.map((r) => {
         const hit = includeBlocked ? matchBlockRules(r, rules) : null;
-        return shape(r, subKeywords, hit ? hit.pattern : null);
+        return { ...shape(r, subKeywords, hit ? hit.pattern : null), dupCount: Math.max(1, Number(r.dup_count ?? 1)) };
       }),
     });
+  });
+
+  /** 展开「同一福利的其他来源报道」 */
+  app.get("/api/items/:id/related", (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
+    const self = get<{ title_key: string | null }>("SELECT title_key FROM items WHERE id = ?", id);
+    if (!self) return c.json({ items: [] });
+    if (!self.title_key) return c.json({ items: [] });
+    const rows = all<ItemRow & { source_name?: string }>(
+      `SELECT items.*, s.name AS source_name
+         FROM items LEFT JOIN sources s ON s.id = items.source_id
+        WHERE items.title_key = ? AND items.status = 'active' AND items.id != ?
+        ORDER BY items.first_seen_at ASC, items.id ASC LIMIT 40`,
+      self.title_key,
+      id,
+    );
+    return c.json({ items: rows.map((r) => ({ ...shape(r, [], null), sourceName: r.source_name ?? r.source_id })) });
   });
 
   app.get("/api/export", (c) => {

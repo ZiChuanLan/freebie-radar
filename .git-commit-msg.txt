@@ -1,0 +1,24 @@
+feat: 同一福利跨源合并 + 点击展开来源列表
+
+问题：同一款 Epic 免费游戏被 10+ 个源同时报道（Knightica 有 9 条），
+列表里刷屏，推送也重复。原来的 titleKey 是「全标题归一化」，
+对措辞差异完全无效，而且只在推送时才写入，历史数据全是 null。
+
+- 新增 enrich/mergeKey：抽主体名而非归一化全标题
+  先剔除渠道/品类/连接词（epic/steam/free/game/store/the/is/on...），
+  剩下的专有名词就是游戏/商品名：
+    "[Epic Games Mobile] (Game) Knightica"  -> knightica
+    "Knightica is free on Epic Games Store" -> knightica
+  中文标题退回《》内容
+- 入库即写 title_key（原来只在推送时写），并回填了全库 10153 条
+- 列表默认按 title_key 收敛：每组只留最早入库的一条，返回 dupCount
+- 新增 GET /api/items/:id/related 返回同组其他报道（带来源名）
+- 前端卡片显示「N 个来源」，点击展开来源列表
+- 推送去重改用同一套 mergeKey
+
+防误合并：只在 category 为 game/goods 且 key 长度 >=6 时合并。
+第一版没这层限制，「ai」「app」「claude」这类产品名把上百条不同福利
+合并成一条（claude 168 条 / gpt 97 条），已修正。
+
+实测：knightica 9 条 -> 列表 1 条（dupCount=9），展开返回 8 条其他来源；
+全站 7 天内 10028 条 -> 合并后 7021 条。

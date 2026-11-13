@@ -27,6 +27,8 @@ export type Item = {
   ai: { keep?: boolean; reason?: string; category?: string } | null;
   first_seen_at: string;
   last_seen_at: string;
+  /** 同一福利被多少个源报道（1 = 只有这一条） */
+  dupCount?: number;
 };
 
 export type Stats = {
