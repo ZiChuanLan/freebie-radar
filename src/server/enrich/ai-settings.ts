@@ -111,7 +111,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   baseUrl: config.aiBaseUrl,
   apiKey: config.aiApiKey,
   model: config.aiModel,
-  maxItems: DEFAULT_MAX_ITEMS,
+  maxItems: Math.min(Math.max(config.aiMaxItems, 20), 500),
   batchSize: 6,
   concurrency: 4,
   timeoutSec: 15,

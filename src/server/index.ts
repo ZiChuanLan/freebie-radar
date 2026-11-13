@@ -12,8 +12,10 @@ import { startPushScheduler } from "./push.ts";
 import { digestExists, runDaily } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
 import { getRetention, runCleanup } from "./retention.ts";
+import { ensureSources } from "./collectors/index.ts";
 
 migrate();
+ensureSources();
 // 上次进程意外退出可能遗留 status='running' 的记录，启动时收口
 run(
   "UPDATE runs SET status = 'failed', finished_at = ?, error = COALESCE(error, '进程重启中断') WHERE status = 'running'",

@@ -63,7 +63,7 @@ export const config = {
   aiBaseUrl: str("AI_BASE_URL"),
   aiApiKey: str("AI_API_KEY"),
   aiModel: str("AI_MODEL"),
-  aiMaxItems: num("AI_MAX_ITEMS", 20),
+  aiMaxItems: num("AI_MAX_ITEMS", 60),
 
   ingestToken: str("INGEST_TOKEN"),
   /** 管理端密码；留空则管理接口全部开放（向后兼容） */
