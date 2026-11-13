@@ -7,7 +7,7 @@ const siteArg = (args[0] ?? "all") as SiteKey | "all";
 const kwIndex = args.indexOf("--keyword");
 const keyword = kwIndex >= 0 ? (args[kwIndex + 1] ?? "免费领取") : "免费领取";
 const dryRun = args.includes("--dry-run");
-const server = (process.env.SERVER_URL ?? "http://10.144.144.6:8788").replace(/\/+$/, "");
+const server = (process.env.SERVER_URL ?? "http://127.0.0.1:8788").replace(/\/+$/, "");
 const token = process.env.INGEST_TOKEN ?? config.ingestToken;
 
 async function push(sourceId: string, items: RawItem[]) {

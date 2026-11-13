@@ -7,8 +7,8 @@
 | 位置 | 出口 | 能访问 | 不能访问 |
 |---|---|---|---|
 | 本机 Windows (H:/WorkSpace) | 国内家宽 | GitHub API、52pojie、什么值得买、知乎/小红书/小黑盒页面 | **linux.do、V2EX、Telegram、rsshub.app、github.com(raw)** 全部连接超时 |
-| RN / racknerd `192.129.128.178`（Easytier `10.144.144.6`） | 美国 | linux.do（CF 挑战）、V2EX、Telegram、GitHub、RSS | 部分国内站偶发 RST（fuliba 首测 ECONNRESET，复测 200） |
-| 华为云 `10.144.144.8` | 国内 | 国内站 | 墙外站全部 000 |
+| 海外 VPS（美国 / 欧洲节点） | 境外直连 | linux.do RSS、V2EX、Telegram、GitHub、Reddit、RSS | 部分国内站偶发 RST |
+| 国内机器 | 国内 | 国内站（知乎/小红书/小黑盒回环采集） | 境外站需配置 `HTTP_PROXY` |
 
 本机实测（`node scripts/probe.mjs`）：
 
@@ -29,10 +29,10 @@ smzdm_rss            -> 200
 
 ### 关键能力：FlareSolverr
 
-RN 上已有常驻容器 `fs`（`flaresolverr/flaresolverr:latest`，监听 `0.0.0.0:8191`，Easytier 内网可直连）。它成功解掉 linux.do 的 Cloudflare「Just a moment」。
+当部分站点出现 Cloudflare「Just a moment」时，可通过可选的 FlareSolverr（`docker compose --profile cf up -d`）过盾；日常 `linux.do` 的 RSS 经 `curl` 直连即可拿到 HTTP 200：
 
 ```
-POST http://10.144.144.6:8191/v1  {"cmd":"request.get","url":"https://linux.do/latest.json"}
+POST http://flaresolverr:8191/v1  {"cmd":"request.get","url":"https://linux.do/latest.json"}
 -> {"status":"ok","message":"Challenge solved!", "solution":{"status":200,...}}
 ```
 
@@ -94,7 +94,7 @@ linux.do `c/36` 福利羊毛：
 
 ## 4. 待办（进入实现前已确认）
 
-1. 部署目标机待最终确认：RN（`192.129.128.178`，已验证墙外可达 + 有 FlareSolverr）或用户所说 andnode（`43.251.117.74`，SSH 凭证未知）。代码不绑定机器，先在本机开发。
+1. 当前默认部署架构为海外单容器（Docker Alpine + built-in SQLite），配合本机回环助手完成登录态站点采集。
 
 ## 5. 实际采集结果（2026-11-11 本机实测）
 

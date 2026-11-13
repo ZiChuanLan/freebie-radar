@@ -39,7 +39,7 @@ Instead of forwarding raw RSS noise, it runs every item through a configurable m
 - **3-Layer Noise Filtering**:
   1. **Rule Pre-filter**: Toggleable entry filter & custom noise keywords to skip questions/patch notes before spending LLM tokens.
   2. **AI Semantic Review**: Works with any OpenAI-compatible API; outputs `keep`, `category`, `obtain`, `quality` (1–5), and a concise reason. Supports skipping pure-freebie sources, custom supplementary rules (`extraPrompt`), and adaptive preference learning from your starred/ignored items.
-  3. **Obtain-Mode Grading & Firewall**: Separates `free` from `conditional`, `lottery`, `trial`, `promo`, and `paid`, paired with keyword/regex block rules and price caps.
+  3. **Obtain-Mode Grading & Firewall**: Separates `free` & `conditional` (shown in default feed) from `lottery`, `trial`, `promo`, and `paid` (isolated by default), paired with keyword/regex block rules and price caps.
 - **Fine-grained Telegram Push**:
   - Choose **Wait for AI before pushing** or **Instant-first (rush codes)** with automatic backfill push once background AI review approves.
   - Three AI fallback modes: `strict`, `rule_fallback`, or `ignore_ai`.

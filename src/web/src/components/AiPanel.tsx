@@ -557,7 +557,7 @@ export function AiPanel({
             <input
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-              placeholder="https://mg.zichuanlan.top/v1"
+              placeholder="https://api.openai.com/v1"
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
