@@ -82,19 +82,23 @@ async function main() {
         }, row.source_id);
         if (!e) continue;
         let finalCategory = e.category;
+        let finalObtain = row.obtain;
         if (row.ai) {
           try {
-            const parsed = JSON.parse(row.ai) as { category?: string };
+            const parsed = JSON.parse(row.ai) as { category?: string; obtain?: string };
             if (isCategory(parsed.category)) finalCategory = parsed.category;
+            if (parsed.obtain && ["free", "conditional", "lottery", "trial", "promo", "paid"].includes(parsed.obtain)) {
+              finalObtain = parsed.obtain;
+            }
           } catch { /* ignore */ }
         }
         if (finalCategory !== row.category) changed += 1;
         const aiKeepBool = row.ai_keep === null ? null : row.ai_keep === 1;
-        const finalScore = calibrateScoreByObtain(e.score, row.obtain, aiKeepBool);
+        const finalScore = calibrateScoreByObtain(e.score, finalObtain, aiKeepBool);
         const titleKey = resolveDbMergeKey(row.title);
         run(
-          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, title_key = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
-          finalCategory, JSON.stringify(e.tags), finalScore, e.expiresAt,
+          "UPDATE items SET category = ?, obtain = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, title_key = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
+          finalCategory, finalObtain, JSON.stringify(e.tags), finalScore, e.expiresAt,
           e.price, e.isFree ? 1 : 0, JSON.stringify(e.codes), titleKey,
           e.keep ? "active" : "expired", row.id,
         );
