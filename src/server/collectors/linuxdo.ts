@@ -84,20 +84,45 @@ type Ctx = {
   log(msg: string): void;
 };
 
+/** 限流信号：采集器据此把本轮标记为 degraded 而不是 failed。 */
+export class RateLimited extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RateLimited";
+  }
+}
+
 async function fetchRss(ctx: Ctx, url: string): Promise<string> {
+  let lastStatus = 0;
+  let lastName = "";
   try {
     const res = await ctx.http.text(url);
     if (res.status === 200 && res.body.includes("<rss")) {
       ctx.log(`直连 RSS ok ${url}`);
       return res.body;
     }
+    // 429 是限流，不是拦截。回落 FlareSolverr 要花 30 秒重解挑战去拿同一份数据，
+    // 拿到的还是被限流的内容，纯浪费——直接放弃本轮，等下一个采集周期。
+    if (res.status === 429) {
+      ctx.log(`直连被限流（HTTP 429），本轮跳过，不回落 FlareSolverr`);
+      throw new RateLimited("HTTP 429 限流，本轮跳过");
+    }
+    lastStatus = res.status;
     ctx.log(`直连 RSS HTTP ${res.status}，切 FlareSolverr`);
   } catch (err) {
-    ctx.log(`直连 RSS 失败（${err instanceof Error ? err.message : String(err)}），切 FlareSolverr`);
+    if (err instanceof RateLimited) throw err;
+    lastName = err instanceof Error ? err.message : String(err);
+    ctx.log(`直连 RSS 失败（${lastName}），切 FlareSolverr`);
   }
 
-  if (!hasFlare()) throw new Error("直连被拦且未配置 FLARESOLVERR_URL");
+  if (!hasFlare()) {
+    throw new Error(
+      lastName ? `直连失败（${lastName}）且未配置 FLARESOLVERR_URL` : `直连 HTTP ${lastStatus} 且未配置 FLARESOLVERR_URL`,
+    );
+  }
   const res = await flaresolverrGet(url);
+  // FlareSolverr 也可能撞上限流，同样不该当失败重试
+  if (res.status === 429) throw new RateLimited("FlareSolverr 也返回 429，本轮跳过");
   if (res.status !== 200) throw new Error("FlareSolverr 取 RSS HTTP " + res.status);
   return res.body;
 }
@@ -127,6 +152,11 @@ export const linuxdoCollector: Collector = {
           .filter((x): x is RawItem => x !== null);
         ctx.log(`分类 RSS ${items.length} 条`);
       } catch (err) {
+        // 被限流就别试 latest.rss 了，第二条同样会 429，白等一轮
+        if (err instanceof RateLimited) {
+          ctx.log(`${err.message}（本轮直接结束，不回落）`);
+          return { items: [], cursor: ctx.cursor, degraded: err.message };
+        }
         degraded = "分类 RSS 失败: " + (err instanceof Error ? err.message : String(err));
         ctx.log(degraded);
       }
@@ -134,12 +164,20 @@ export const linuxdoCollector: Collector = {
 
     // 2) 兜底：latest.rss + 按 category 过滤（只有最新 30 条，覆盖全部板块）
     if (!items.length) {
-      const xml = await fetchRss(ctx as Ctx, "https://linux.do/latest.rss");
-      const all = parseRss(xml);
-      const filtered = cfg.categoryName ? all.filter((it) => textOf(it.category).trim() === cfg.categoryName) : all;
-      items = filtered.map((it) => toRawItem(it, cfg.categoryName)).filter((x): x is RawItem => x !== null);
-      ctx.log(`latest.rss ${all.length} 条，命中「${cfg.categoryName}」${items.length} 条`);
-      if (!items.length) degraded = (degraded ? degraded + "; " : "") + "latest.rss 未命中板块";
+      try {
+        const xml = await fetchRss(ctx as Ctx, "https://linux.do/latest.rss");
+        const all = parseRss(xml);
+        const filtered = cfg.categoryName ? all.filter((it) => textOf(it.category).trim() === cfg.categoryName) : all;
+        items = filtered.map((it) => toRawItem(it, cfg.categoryName)).filter((x): x is RawItem => x !== null);
+        ctx.log(`latest.rss ${all.length} 条，命中「${cfg.categoryName}」${items.length} 条`);
+        if (!items.length) degraded = (degraded ? degraded + "; " : "") + "latest.rss 未命中板块";
+      } catch (err) {
+        if (err instanceof RateLimited) {
+          ctx.log(`${err.message}（兜底也限流，本轮结束）`);
+          return { items: [], cursor: ctx.cursor, degraded: err.message };
+        }
+        throw err;
+      }
     }
 
     const cursor = items.length ? String(Math.max(...items.map((i) => Number(i.externalId) || 0))) : ctx.cursor;
