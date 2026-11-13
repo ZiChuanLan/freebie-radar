@@ -286,7 +286,7 @@ export function App() {
       p.set("unexpired", "1");
       p.set("aiOnly", "1");
       if (range === "auto") p.set("maxAgeDays", "7");
-      if (obtain === "auto") p.set("obtain", "free");
+      if (obtain === "auto") p.set("obtain", "free,conditional");
     } else if (preset === "free") {
       p.set("unexpired", "1");
       if (range === "auto") p.set("maxAgeDays", "14");
@@ -840,7 +840,7 @@ export function App() {
                     title={OBTAIN_HINT[obtain] ?? "获取方式"}
                   >
                     <option value="auto">
-                      方式：{preset === "verified" || preset === "free" ? "默认直接白嫖" : "默认不限"}
+                      方式：{preset === "verified" ? "默认白嫖+有条件" : preset === "free" ? "默认直接白嫖" : "默认不限"}
                     </option>
                     <option value="all">方式：全部（含抽奖/试用）</option>
                     <option value="free">仅直接白嫖</option>
