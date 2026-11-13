@@ -36,7 +36,15 @@ type TestResult = {
   error?: string;
 };
 
-export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () => void }) {
+export function AiPanel({
+  data,
+  reload,
+  onNotify,
+}: {
+  data: AiPayload | null;
+  reload: () => void;
+  onNotify?: (msg: string) => void;
+}) {
   const [form, setForm] = useState<AiSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -49,6 +57,14 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
     if (data?.settings && !form) setForm({ ...data.settings });
   }, [data, form]);
 
+  useEffect(() => {
+    if (data?.settings) {
+      setForm((prev) =>
+        prev ? { ...prev, reviewBeforePush: data.settings.reviewBeforePush, enabled: data.settings.enabled } : prev,
+      );
+    }
+  }, [data?.settings?.reviewBeforePush, data?.settings?.enabled]);
+
   if (!data || !form) {
     return <div className="panel p-6 text-[13px] text-ink-500">正在读取 AI 配置…</div>;
   }
@@ -58,7 +74,7 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
   const total = st.kept + st.rejected + st.pending;
   const keptPct = total ? Math.round((st.kept / total) * 100) : 0;
 
-  async function save(patch: Partial<AiSettings>) {
+  async function save(patch: Partial<AiSettings>, toastText = "AI 配置已保存") {
     setSaving(true);
     try {
       const r = await fetch("/api/ai", {
@@ -70,6 +86,9 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
         const j = (await r.json()) as AiPayload;
         setForm({ ...j.settings });
         reload();
+        onNotify?.(toastText);
+      } else {
+        onNotify?.("保存失败");
       }
     } finally {
       setSaving(false);
@@ -269,7 +288,7 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
           </label>
           <label className="block">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">
-              每轮送审上限 <span className="font-normal text-ink-500">（{form.maxItems} 条，按 20 条一批）</span>
+              每轮送审上限 <span className="font-normal text-ink-500">（{form.maxItems} 条 · 每批 6 条 / 4 并发）</span>
             </span>
             <input
               type="range"
@@ -374,7 +393,7 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
                   type="button"
                   onClick={() => {
                     setForm({ ...form, systemPrompt: "" });
-                    void save({ systemPrompt: "" });
+                    void save({ systemPrompt: "" }, "已恢复默认提示词");
                   }}
                   className="text-[11.5px] font-medium text-brand hover:underline"
                 >
@@ -391,8 +410,8 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
             <div className="mt-1.5 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => save({ systemPrompt: form.systemPrompt })}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-dark"
+                onClick={() => save({ systemPrompt: form.systemPrompt }, "提示词已保存")}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-hover"
               >
                 <Save size={12} /> 保存提示词
               </button>

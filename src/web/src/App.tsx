@@ -31,7 +31,7 @@ import { getToken } from "./lib/auth.ts";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
-import { CATEGORY_LABEL, OBTAIN_HINT, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
+import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
 import type {
   BlockPreset,
   BlockRule,
@@ -188,10 +188,10 @@ export function App() {
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState("score");
-  const [range, setRange] = useState("all");
-  const [priceCap, setPriceCap] = useState("all");
+  const [range, setRange] = useState("auto");
+  const [priceCap, setPriceCap] = useState("auto");
   const [minScore, setMinScore] = useState("all");
-  const [obtain, setObtain] = useState("");
+  const [obtain, setObtain] = useState("auto");
   const [preset, setPreset] = useState("verified");
   const [viewMode, setViewMode] = useState<"compact" | "card">("compact");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -251,17 +251,17 @@ export function App() {
     if (source) p.set("source", source);
     if (category) p.set("category", category);
     if (sort) p.set("sort", sort);
+
     if (preset === "verified") {
-      // 真福利精选 = AI 判定是福利 + 没过截止时间 + 7 天内的新帖 + 排除抽奖/试用/推广
       p.set("unexpired", "1");
-      p.set("maxAgeDays", "7");
       p.set("aiOnly", "1");
-      p.set("obtain", "free");
+      if (range === "auto") p.set("maxAgeDays", "7");
+      if (obtain === "auto") p.set("obtain", "free");
     } else if (preset === "free") {
       p.set("unexpired", "1");
-      p.set("maxAgeDays", "14");
-      p.set("freeOnly", "1");
-      p.set("obtain", "free");
+      if (range === "auto") p.set("maxAgeDays", "14");
+      if (priceCap === "auto") p.set("freeOnly", "1");
+      if (obtain === "auto") p.set("obtain", "free");
     } else if (preset === "codes") {
       p.set("unexpired", "1");
       p.set("hasCodes", "1");
@@ -270,27 +270,37 @@ export function App() {
     } else if (preset === "starred") {
       p.set("starred", "1");
     } else if (preset === "hidden") {
-      // 「已关闭」：纯手动隐藏的条目，可以在这里找回来
       p.set("status", "ignored");
     }
     if (preset === "all") p.set("hideRejected", "1");
+
     if (priceCap === "free") p.set("freeOnly", "1");
-    else if (priceCap !== "all") p.set("maxPrice", priceCap);
-    // 手动选获取方式时覆盖预设的默认值（预设已各自设好，这里只在用户主动切换时生效）
-    if (obtain) p.set("obtain", obtain);
+    else if (priceCap !== "auto" && priceCap !== "all") p.set("maxPrice", priceCap);
+
+    if (obtain !== "auto" && obtain !== "all" && obtain) p.set("obtain", obtain);
     if (minScore !== "all") p.set("minScore", minScore);
     if (unreadOnly) p.set("unread", "1");
+
     const DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "30d": 30 };
     const days = DAYS[range];
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "100");
     return p.toString();
   }, [debounced, source, category, sort, range, priceCap, preset, obtain, minScore, unreadOnly]);
-  // 已启用的筛选条件数（用于「清除 N」）与一键重置
+
   const activeFilterCount =
-    [source, category, debounced, minScore !== "all", unreadOnly, priceCap !== "all", obtain, range !== "all"].filter(
-      Boolean,
-    ).length;
+    [
+      source,
+      category,
+      debounced,
+      minScore !== "all",
+      unreadOnly,
+      priceCap !== "auto",
+      obtain !== "auto",
+      range !== "auto",
+      sort !== "score",
+    ].filter(Boolean).length;
+
   const resetFilters = useCallback(() => {
     setSource("");
     setCategory("");
@@ -298,9 +308,10 @@ export function App() {
     setDebounced("");
     setMinScore("all");
     setUnreadOnly(false);
-    setPriceCap("all");
-    setObtain("");
-    setRange("all");
+    setPriceCap("auto");
+    setObtain("auto");
+    setRange("auto");
+    setSort("score");
     setPreset("verified");
   }, []);
   const stats = useApi<Stats>("/api/stats");
@@ -517,9 +528,30 @@ export function App() {
 
       <div className="mx-auto flex w-full max-w-[1560px] flex-1 flex-col gap-5 px-6 py-5 lg:flex-row">
         {/* 左侧导航与筛选坞 */}
-        <aside className="w-full shrink-0 space-y-4 lg:w-[248px]">
+        <aside className="w-full shrink-0 space-y-4 lg:w-[232px]">
           <nav className="space-y-0.5">
-            {tabs.map((t) => (
+            {tabs.slice(0, 2).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => handleTab(t.key)}
+                className={
+                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-colors " +
+                  (tab === t.key
+                    ? "bg-brand text-white shadow-sm"
+                    : "text-ink-600 hover:bg-surface hover:text-ink-950")
+                }
+              >
+                <span className="flex items-center gap-2">
+                  <t.icon size={15} />
+                  {t.label}
+                </span>
+              </button>
+            ))}
+            <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-ink-400 uppercase">
+              系统管理
+            </div>
+            {tabs.slice(2).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -585,170 +617,6 @@ export function App() {
                 </div>
               </div>
 
-              <div className="panel p-3">
-                <div className="mb-2 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">价格上限</div>
-                <div className="grid grid-cols-3 gap-1">
-                  {[
-                    { k: "all", label: "不限" },
-                    { k: "free", label: "白嫖" },
-                    { k: "5", label: "≤5 元" },
-                    { k: "10", label: "≤10 元" },
-                    { k: "30", label: "≤30 元" },
-                    { k: "100", label: "≤100 元" },
-                  ].map((o) => (
-                    <button
-                      key={o.k}
-                      type="button"
-                      onClick={() => setPriceCap(o.k)}
-                      className={
-                        "rounded-lg border py-1.5 text-[12px] font-medium transition-colors " +
-                        (priceCap === o.k
-                          ? "border-brand bg-brand text-white"
-                          : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
-                      }
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2 text-[11px] text-ink-500">
-                  在库白嫖 <span className="font-mono font-medium text-deal">{stats.data?.price?.free ?? 0}</span> · ≤5 元{" "}
-                  <span className="font-mono font-medium">{stats.data?.price?.under5 ?? 0}</span>
-                </div>
-              </div>
-
-              <div className="panel p-3">
-                <div className="mb-2 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">获取方式</div>
-                <div className="flex flex-wrap gap-1">
-                  {[
-                    { k: "", label: "不限" },
-                    { k: "free", label: "直接白嫖" },
-                    { k: "conditional", label: "有条件" },
-                    { k: "lottery", label: "抽奖" },
-                    { k: "trial", label: "试用" },
-                    { k: "promo", label: "推广" },
-                  ].map((o) => (
-                    <button
-                      key={o.k || "any"}
-                      type="button"
-                      onClick={() => setObtain(o.k)}
-                      title={OBTAIN_HINT[o.k] ?? "不限制获取方式"}
-                      className={
-                        "rounded-lg border px-2 py-1 text-[11.5px] font-medium transition-colors " +
-                        (obtain === o.k
-                          ? "border-brand bg-brand text-white"
-                          : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
-                      }
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2 text-[11px] leading-relaxed text-ink-500">
-                  抽奖 / 试用 / 推广不算完全白嫖，默认已从「真福利精选」和推送里隔离
-                </div>
-              </div>
-
-              <div className="panel p-3">
-                <div className="mb-2 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">排序</div>
-                <select
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value)}
-                  className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
-                >
-                  <option value="score">综合评分</option>
-                  <option value="newest">最新发布</option>
-                  <option value="oldest">最早发布</option>
-                  <option value="expiring">截止时间最近</option>
-                  <option value="price_asc">价格从低到高</option>
-                </select>
-              </div>
-
-              <div className="panel space-y-3 p-3">
-                <div>
-                  <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">最低评分</div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[
-                      { k: "all", label: "不限" },
-                      { k: "50", label: "≥50" },
-                      { k: "60", label: "≥60" },
-                      { k: "70", label: "≥70" },
-                    ].map((o) => (
-                      <button
-                        key={o.k}
-                        type="button"
-                        onClick={() => setMinScore(o.k)}
-                        className={
-                          "rounded-lg border py-1 text-[12px] font-medium transition-colors " +
-                          (minScore === o.k
-                            ? "border-brand bg-brand text-white"
-                            : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
-                        }
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                  <label className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-600">
-                    <input
-                      type="checkbox"
-                      checked={unreadOnly}
-                      onChange={(e) => setUnreadOnly(e.target.checked)}
-                      className="h-3.5 w-3.5 accent-brand"
-                    />
-                    只看未读
-                  </label>
-                </div>
-                  <div>
-                    <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-500 uppercase">分类</div>
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setCategory("")}
-                        className={
-                          "rounded-md border px-2 py-0.5 text-[12px] transition-colors " +
-                          (category === ""
-                            ? "border-brand bg-brand-subtle font-medium text-brand"
-                            : "border-ink-200 text-ink-600 hover:bg-ink-100")
-                        }
-                      >
-                        全部
-                      </button>
-                      {(stats.data?.byCategory ?? []).map((c) => (
-                        <button
-                          key={c.category ?? "other"}
-                          type="button"
-                          onClick={() => setCategory(category === (c.category ?? "") ? "" : (c.category ?? ""))}
-                          className={
-                            "rounded-md border px-2 py-0.5 text-[12px] transition-colors " +
-                            (category === (c.category ?? "")
-                              ? "border-brand bg-brand-subtle font-medium text-brand"
-                              : "border-ink-200 text-ink-600 hover:bg-ink-100")
-                          }
-                        >
-                          {CATEGORY_LABEL[c.category ?? "other"] ?? c.category}({c.n})
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] text-ink-500">发布时间</span>
-                      <select
-                        value={range}
-                        onChange={(e) => setRange(e.target.value)}
-                        className="w-full rounded-lg border border-ink-200 bg-surface px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
-                      >
-                        <option value="all">不限</option>
-                        <option value="1d">24 小时内</option>
-                        <option value="3d">3 天内</option>
-                        <option value="7d">一周内</option>
-                        <option value="30d">一个月内</option>
-                      </select>
-                    </label>
-                  </div>
-              </div>
 
               <div className="panel p-3">
                 <div className="mb-1.5 flex items-center justify-between">
@@ -843,6 +711,203 @@ export function App() {
 
           {tab === "feed" && (
             <>
+              {/* 顶部紧凑多维筛选栏：与左侧视图零冲突 */}
+              <div className="panel mb-3 space-y-2.5 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title="按分类筛选"
+                  >
+                    <option value="">全部分类</option>
+                    {(stats.data?.byCategory ?? []).map((c) => (
+                      <option key={c.category ?? "other"} value={c.category ?? ""}>
+                        {CATEGORY_LABEL[c.category ?? "other"] ?? c.category} ({c.n})
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={priceCap}
+                    onChange={(e) => setPriceCap(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title="价格上限"
+                  >
+                    <option value="auto">
+                      价格：{preset === "free" ? "默认只看白嫖" : "默认不限"}
+                    </option>
+                    <option value="all">价格：不限</option>
+                    <option value="free">仅白嫖 (0 元)</option>
+                    <option value="5">≤ 5 元</option>
+                    <option value="10">≤ 10 元</option>
+                    <option value="30">≤ 30 元</option>
+                    <option value="100">≤ 100 元</option>
+                  </select>
+
+                  <select
+                    value={obtain}
+                    onChange={(e) => setObtain(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title={OBTAIN_HINT[obtain] ?? "获取方式"}
+                  >
+                    <option value="auto">
+                      方式：{preset === "verified" || preset === "free" ? "默认直接白嫖" : "默认不限"}
+                    </option>
+                    <option value="all">方式：全部（含抽奖/试用）</option>
+                    <option value="free">仅直接白嫖</option>
+                    <option value="conditional">有条件领取</option>
+                    <option value="lottery">抽奖/开奖</option>
+                    <option value="trial">免费试用</option>
+                    <option value="promo">推广/引流</option>
+                  </select>
+
+                  <select
+                    value={range}
+                    onChange={(e) => setRange(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title="发布时间窗口"
+                  >
+                    <option value="auto">
+                      时间：{preset === "verified" ? "默认 7 天内" : preset === "free" ? "默认 14 天内" : "默认不限"}
+                    </option>
+                    <option value="all">时间：不限</option>
+                    <option value="1d">24 小时内</option>
+                    <option value="3d">3 天内</option>
+                    <option value="7d">一周内</option>
+                    <option value="30d">一个月内</option>
+                  </select>
+
+                  <select
+                    value={minScore}
+                    onChange={(e) => setMinScore(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title="最低评分"
+                  >
+                    <option value="all">评分：不限</option>
+                    <option value="50">≥ 50 分</option>
+                    <option value="60">≥ 60 分</option>
+                    <option value="70">≥ 70 分</option>
+                  </select>
+
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    title="排序方式"
+                  >
+                    <option value="score">综合评分</option>
+                    <option value="newest">最新发布</option>
+                    <option value="oldest">最早发布</option>
+                    <option value="expiring">截止时间最近</option>
+                    <option value="price_asc">价格从低到高</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => setUnreadOnly((v) => !v)}
+                    className={
+                      "rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition-colors " +
+                      (unreadOnly
+                        ? "border-brand bg-brand-subtle text-brand"
+                        : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
+                    }
+                  >
+                    只看未读
+                  </button>
+
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand-subtle"
+                    >
+                      <RotateCcw size={12} /> 重置 ({activeFilterCount})
+                    </button>
+                  )}
+                </div>
+
+                {activeFilterCount > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2 text-[11.5px]">
+                    <span className="text-ink-400">当前条件：</span>
+                    {debounced && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch("");
+                          setDebounced("");
+                        }}
+                        className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700 hover:bg-ink-200"
+                      >
+                        搜索：{debounced} ×
+                      </button>
+                    )}
+                    {source && (
+                      <button
+                        type="button"
+                        onClick={() => setSource("")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        源：{sourceName(source)} ×
+                      </button>
+                    )}
+                    {category && (
+                      <button
+                        type="button"
+                        onClick={() => setCategory("")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        分类：{CATEGORY_LABEL[category] ?? category} ×
+                      </button>
+                    )}
+                    {priceCap !== "auto" && (
+                      <button
+                        type="button"
+                        onClick={() => setPriceCap("auto")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        价格：{priceCap === "all" ? "不限" : priceCap === "free" ? "仅白嫖" : `≤${priceCap}元`} ×
+                      </button>
+                    )}
+                    {obtain !== "auto" && (
+                      <button
+                        type="button"
+                        onClick={() => setObtain("auto")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        方式：{obtain === "all" ? "全部" : (OBTAIN_LABEL[obtain] ?? obtain)} ×
+                      </button>
+                    )}
+                    {range !== "auto" && (
+                      <button
+                        type="button"
+                        onClick={() => setRange("auto")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        时间：{range === "all" ? "不限" : range} ×
+                      </button>
+                    )}
+                    {minScore !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setMinScore("all")}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        评分：≥{minScore} ×
+                      </button>
+                    )}
+                    {unreadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setUnreadOnly(false)}
+                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                      >
+                        仅未读 ×
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-500">
                   {items.loading ? (
@@ -1094,6 +1159,7 @@ export function App() {
                 }
                 push.reload();
                 setPushPreview(null);
+                notify("推送规则已保存");
               }}
               onPreview={async () => {
                 const res = await fetch("/api/push/preview?limit=6");
@@ -1131,7 +1197,7 @@ export function App() {
             />
           )}
 
-          {adminReady && tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} />}
+          {adminReady && tab === "ai" && <AiPanel data={ai.data} reload={ai.reload} onNotify={notify} />}
           {adminReady && tab === "ops" && (
             <OpsPanel
               sources={sources.data?.sources ?? []}
@@ -1182,10 +1248,7 @@ export function App() {
                 else notify(`已添加，抓取 ${data.summary?.fetched ?? 0} 条，新增 ${data.summary?.inserted ?? 0}`);
                 refreshAll();
               }}
-              onTestPush={async () => {
-                const res = await fetch("/api/push/test", { method: "POST" });
-                notify(res.ok ? "测试消息已发送" : "推送未启用或缺少凭据");
-              }}
+              onNotify={notify}
             />
           )}
         </main>
