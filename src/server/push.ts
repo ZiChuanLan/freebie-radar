@@ -1,5 +1,6 @@
-import { aiEnabled, config, pushEnabled } from "./config.ts";
+import { config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
+import { shouldReview } from "./enrich/ai.ts";
 import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
@@ -204,8 +205,8 @@ export function aiAllowed(
   if (item.aiKeep === false) return false;
   if (!onlyAiKeep) return true;
   if (item.aiKeep === true) return true;
-  // 还没有 AI 结论的（比如 AI 未开或本地脚本刚入库）：如果有兑换码或高分+福利信号才放行
-  if (!aiEnabled) return true;
+  // 还没有 AI 结论的（比如 AI 未开或推送后补审模式）：如果有兑换码或高分+福利信号才放行
+  if (!shouldReview()) return true;
   return item.codes.length > 0 || (item.score >= 70 && DEAL_HINT.test(item.title));
 }
 
@@ -220,7 +221,16 @@ export function obtainAllowed(obtain: string | null | undefined, allow: string[]
   return allow.includes(obtain ?? "free");
 }
 
-/** 推送与日报共用的筛选检查：语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
+const MAX_PUSH_AGE_MS = 72 * 3_600_000;
+
+export function freshEnoughForPush(publishedAt: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!publishedAt) return true;
+  const ts = Date.parse(publishedAt);
+  if (Number.isNaN(ts)) return true;
+  return nowMs - ts <= MAX_PUSH_AGE_MS;
+}
+
+/** 推送与日报共用的筛选检查：时效 / 语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
 export function passesPushFilters(
   item: {
     title: string;
@@ -231,9 +241,11 @@ export function passesPushFilters(
     aiKeep?: boolean | null;
     category?: string | null;
     obtain?: string | null;
+    publishedAt?: string | null;
   },
   s: PushSettings,
 ): boolean {
+  if (!freshEnoughForPush(item.publishedAt)) return false;
   if (!langAllowed(item, s)) return false;
   if (!categoryAllowed(item.category, s.categories)) return false;
   if (!priceAllowed(item, s.maxPrice)) return false;
@@ -641,9 +653,10 @@ export function previewPush(limit = 6): {
     obtain: string | null;
     expires_at: string | null;
     pushed_at: string | null;
+    published_at: string | null;
     ai: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, pushed_at, ai
+    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai
      FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
     new Date(Date.now() - 7 * 86_400_000).toISOString(),
@@ -678,6 +691,7 @@ export function previewPush(limit = 6): {
       score: r.score,
       codes,
       expiresAt: r.expires_at,
+      publishedAt: r.published_at,
       price: r.price,
       isFree: r.is_free === 1,
       aiKeep,

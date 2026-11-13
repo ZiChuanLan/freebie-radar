@@ -70,7 +70,7 @@ function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict 
     const effectiveObtain = nextObtain ?? cur?.obtain ?? null;
     const nextScore =
       cur && cur.ai_keep === null
-        ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep)
+        ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep, verdict.quality)
         : cur?.score ?? 0;
     run(
       `UPDATE items

@@ -38,11 +38,32 @@ export function resolveDbMergeKey(title: string): string {
   }
 }
 
-/** 按获取方式对基础评分做保守校准：付费与限时试玩/引流低于永久白嫖。 */
-export function calibrateScoreByObtain(score: number, obtain: string | null | undefined, aiKeep: boolean | null): number {
+const QUALITY_BONUS: Record<number, number> = {
+  5: 16,
+  4: 10,
+  3: 2,
+  2: -10,
+  1: -20,
+};
+
+/** 结合 AI 质量分（1-5）与获取方式对基础分做统一校准。 */
+export function calibrateScoreByObtain(
+  score: number,
+  obtain: string | null | undefined,
+  aiKeep: boolean | null,
+  quality?: number | null,
+): number {
   let out = score;
-  if (aiKeep === false) out = Math.round(out * 0.5);
+  if (aiKeep === false) {
+    out = Math.min(Math.round(out * 0.4), 35);
+    return Math.max(0, out);
+  }
+  if (typeof quality === "number" && Number.isFinite(quality)) {
+    const q = Math.min(5, Math.max(1, Math.round(quality)));
+    out += QUALITY_BONUS[q] ?? 0;
+  }
   if (obtain === "paid") out = Math.min(out, 25);
-  else if (obtain === "trial" || obtain === "promo") out = Math.round(out * 0.8);
+  else if (obtain === "trial" || obtain === "promo") out = Math.round(out * 0.78);
+  else if (obtain === "conditional") out = Math.round(out * 0.9);
   return Math.max(0, Math.min(100, out));
 }

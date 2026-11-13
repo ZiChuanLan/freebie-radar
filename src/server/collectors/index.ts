@@ -5,6 +5,8 @@ import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
 import { getAiSettings, reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
 import { enqueueForAi, reviewFreshNow } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
+import { NOISE_TITLE, WIDE_AI_TRIGGER } from "../enrich/noise.ts";
+import { getRetention } from "../retention.ts";
 import { pushInstant } from "../instant.ts";
 import { createHttp, type HttpClient } from "../http.ts";
 import { mockCollector } from "./mock.ts";
@@ -33,8 +35,8 @@ export const SEEDS: SourceSeed[] = [
   { id: "linuxdo-resource", name: "LINUX DO · 资源荟萃", kind: "linuxdo", enabled: true, intervalSec: 180, config: { categoryId: 14, rssSlug: "resource", categoryName: "资源荟萃" } },
   { id: "v2ex-free", name: "V2EX · 免费赠送", kind: "v2ex", enabled: true, intervalSec: 120, config: { node: "free" } },
   { id: "github-free-for-dev", name: "GitHub · free-for-dev", kind: "github-readme", enabled: true, config: { repos: [{ repo: "ripienaar/free-for-dev", limit: 60 }] } },
-  { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: true, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
-  { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: true, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
+  { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: false, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
+  { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: false, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
   { id: "rss-smzdm", name: "什么值得买", kind: "rss", enabled: true, config: { feeds: [{ id: "smzdm", url: "https://www.smzdm.com/rss/", limit: 20 }] } },
   { id: "zhihu-search", name: "知乎 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
   { id: "xhs-search", name: "小红书 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
@@ -61,9 +63,9 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-sspai", name: "少数派", kind: "rss", enabled: true, config: { feeds: [{ id: "sspai", url: "https://sspai.com/feed", limit: 20 }] } },
   { id: "rss-ithome", name: "IT之家", kind: "rss", enabled: true, config: { feeds: [{ id: "ithome", url: "https://www.ithome.com/rss/", limit: 25 }] } },
   { id: "rss-producthunt", name: "Product Hunt", kind: "rss", enabled: true, config: { feeds: [{ id: "producthunt", url: "https://www.producthunt.com/feed", limit: 25 }] } },
-  { id: "rss-hnrss", name: "Hacker News（100+ 分）", kind: "rss", enabled: true, config: { feeds: [{ id: "hnrss", url: "https://hnrss.org/frontpage?points=100", limit: 25 }] } },
+  { id: "rss-hnrss", name: "Hacker News（100+ 分）", kind: "rss", enabled: false, config: { feeds: [{ id: "hnrss", url: "https://hnrss.org/frontpage?points=100", limit: 25 }] } },
   { id: "rss-freebieshark", name: "FreebieShark 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "freebieshark", url: "https://www.freebieshark.com/feed/", limit: 25 }] } },
-  { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: true, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
+  { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: false, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
   // === 第二/三批补充：游戏喜加一 / V2EX / NodeSeek / 软件限免 / AI / Bluesky(X镜像) / TG 频道 ===
   { id: "cheapshark-free", name: "CheapShark · 免费与 ≤$1 游戏", kind: "cheapshark", enabled: true, intervalSec: 900, config: { upperPrice: 1, pageSize: 40 } },
   { id: "rss-isthereanydeal", name: "IsThereAnyDeal · 喜加一", kind: "rss", enabled: true, intervalSec: 900, config: { feeds: [{ id: "itad", url: "https://isthereanydeal.com/feeds/US/giveaways.rss", limit: 30 }] } },
@@ -89,18 +91,54 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-vonbeau", name: "VonBeau · 免费样品", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "vonbeau", url: "https://www.vonbeau.com/feed/", limit: 30 }] } },
   { id: "rss-hip2save", name: "Hip2Save · 美国羊毛", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "hip2save", url: "https://hip2save.com/feed/", limit: 30 }] } },
   { id: "rss-ozbargain", name: "OzBargain · 澳区好价", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "ozbargain", url: "https://www.ozbargain.com.au/feed", limit: 25 }] } },
-  { id: "github-public-apis", name: "GitHub · 免费公开 API", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "public-apis/public-apis", limit: 40 }] } },
-  { id: "github-awesome-ai", name: "GitHub · AI 工具清单", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "mahseema/awesome-ai-tools", limit: 40 }] } },
-  { id: "github-selfhosted", name: "GitHub · 开源自托管清单", kind: "github-readme", enabled: true, intervalSec: 21600, config: { repos: [{ repo: "awesome-selfhosted/awesome-selfhosted", limit: 40 }] } },
+  { id: "github-public-apis", name: "GitHub · 免费公开 API", kind: "github-readme", enabled: false, config: { repos: [{ repo: "public-apis/public-apis", limit: 40 }] } },
+  { id: "github-awesome-ai", name: "GitHub · AI 工具清单", kind: "github-readme", enabled: false, config: { repos: [{ repo: "mahseema/awesome-ai-tools", limit: 40 }] } },
+  { id: "github-selfhosted", name: "GitHub · 开源自托管清单", kind: "github-readme", enabled: false, config: { repos: [{ repo: "awesome-selfhosted/awesome-selfhosted", limit: 40 }] } },
   { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
 ];
 
 /** 供本机 Playwright 采集器把结果回传到服务器；同时补写 runs / sources 状态，保证 /status 有记录。 */
 const SYNC_PRE_PUSH_LIMIT = 12;
 
+/** 高纯度福利/游戏/人工定向搜索源：免去正面关键词门槛，直接送 AI 一审。 */
+const HIGH_PURITY_SOURCES = new Set([
+  "linuxdo-welfare",
+  "v2ex-free",
+  "tg-freegames",
+  "epic-free",
+  "steam-free",
+  "gamerpower",
+  "cheapshark-free",
+  "rss-isthereanydeal",
+  "rss-indiegamebundles",
+  "rss-reddit-freegames",
+  "rss-reddit-freegamesonsteam",
+  "rss-reddit-efreebies",
+  "rss-reddit-freebies",
+  "rss-reddit-apphookup",
+  "rss-reddit-freeebooks",
+  "rss-reddit-googleplay",
+  "rss-giveawayoftheday",
+  "rss-sharewareonsale",
+  "rss-tickcoupon",
+  "rss-freebieshark",
+  "bsky-gamedeals",
+  "bsky-plugins",
+  "xhs-search",
+  "zhihu-search",
+  "xiaoheihe-search",
+]);
+
+function shouldSendToAi(sourceId: string, item: FreshItem): boolean {
+  if (NOISE_TITLE.test(item.title)) return false;
+  if (item.codes.length > 0 || HIGH_PURITY_SOURCES.has(sourceId)) return true;
+  return WIDE_AI_TRIGGER.test(`${item.title} ${item.summary ?? ""}`);
+}
+
 /**
- * 新条目二审与推送调度：
- * - reviewBeforePush=true（默认）：优先对高价值/待推条目同步走完 AI 二审，再触发即时推送，其余入后台队列
+ * 新条目一审与推送调度：
+ * - 按源纯度分流：高纯度源直通 AI，泛资讯源命中超宽松触发词才送 AI，省去 90% 纯新闻成本
+ * - reviewBeforePush=true（默认）：先同步过 AI 一审再即时推送，未审到的进后台队列
  * - reviewBeforePush=false（极速抢码）：先按规则即时推送，AI 结论随后在后台队列补齐
  */
 async function dispatchFresh(
@@ -111,9 +149,11 @@ async function dispatchFresh(
   if (!fresh.length) return;
   const reviewOn = shouldReview();
   const aiSettings = reviewOn ? getAiSettings() : null;
+  const aiCandidates = reviewOn ? fresh.filter((f) => shouldSendToAi(sourceId, f)) : [];
 
   if (reviewOn && aiSettings?.reviewBeforePush) {
-    const ranked = [...fresh].sort(
+    if (!aiCandidates.length) return;
+    const ranked = [...aiCandidates].sort(
       (a, b) => (b.codes.length > 0 ? 1 : 0) - (a.codes.length > 0 ? 1 : 0) || b.score - a.score,
     );
     const syncBatch = ranked.slice(0, SYNC_PRE_PUSH_LIMIT);
@@ -129,7 +169,7 @@ async function dispatchFresh(
       if (v.obtain) f.obtain = v.obtain;
       f.score = v.score;
     }
-    log(`[${sourceId}] 推送前 AI 二审 ${syncBatch.length} 条（拦截 ${syncBatch.filter((f) => f.aiKeep === false).length} 条）`);
+    log(`[${sourceId}] 推送前 AI 审核 ${syncBatch.length} 条（拦截 ${syncBatch.filter((f) => f.aiKeep === false).length} 条）`);
     await pushInstant(sourceId, syncBatch);
     if (restBatch.length) {
       enqueueForAi(
@@ -141,11 +181,11 @@ async function dispatchFresh(
   }
 
   await pushInstant(sourceId, fresh);
-  if (reviewOn) {
+  if (reviewOn && aiCandidates.length) {
     enqueueForAi(
-      fresh.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+      aiCandidates.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
     );
-    log(`[${sourceId}] ${fresh.length} 条入 AI 待审队列`);
+    log(`[${sourceId}] ${aiCandidates.length}/${fresh.length} 条入 AI 待审队列`);
   }
 }
 export function ingestItems(sourceId: string, items: RawItem[]): { inserted: number; skipped: number } {
@@ -250,6 +290,8 @@ export type FreshItem = {
   obtain?: string | null;
   /** 摘要文本，用于订阅关键词匹配 */
   summary?: string | null;
+  /** 发布时间，用于拦截历史旧帖重复推送 */
+  publishedAt?: string | null;
 };
 
 /** AI 给了 obtain 就用 AI 的，没给就用关键词兜底。 */
@@ -266,7 +308,7 @@ function persist(
   const fresh: FreshItem[] = [];
   let skipped = 0;
   const now = new Date().toISOString();
-
+  const staleCutoffMs = Date.now() - Math.max(getRetention().keptDays, 7) * 86_400_000;
   tx(() => {
     for (let index = 0; index < items.length; index += 1) {
       const raw = items[index]!;
@@ -278,7 +320,7 @@ function persist(
 
       const verdict = aiMap?.get(index) ?? null;
       const effectiveObtain = obtainOf(e, verdict);
-      const score = calibrateScoreByObtain(e.score, effectiveObtain, verdict ? verdict.keep : null);
+      const score = calibrateScoreByObtain(e.score, effectiveObtain, verdict ? verdict.keep : null, verdict?.quality);
       const aiJson = verdict ? JSON.stringify(verdict) : null;
       const status = e.keep ? "active" : "expired";
       const titleKey = resolveDbMergeKey(e.title);
@@ -329,6 +371,13 @@ function persist(
         skipped += 1;
         continue;
       }
+      if (e.publishedAt) {
+        const pubMs = Date.parse(e.publishedAt);
+        if (!Number.isNaN(pubMs) && pubMs < staleCutoffMs) {
+          skipped += 1;
+          continue;
+        }
+      }
       try {
         const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, author, category,
@@ -372,6 +421,7 @@ function persist(
           aiKeep: verdict ? verdict.keep : null,
           category: verdict?.category || e.category,
           summary: e.summary ?? null,
+          publishedAt: e.publishedAt ?? null,
         });
       } catch (err) {
         if (/UNIQUE/i.test(String(err))) {

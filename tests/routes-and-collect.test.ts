@@ -238,3 +238,56 @@ test("免费更新拦截 & AI 二审时机配置持久化", async () => {
   const j3 = (await p2.json()) as { settings: { reviewBeforePush: boolean } };
   assert.equal(j3.settings.reviewBeforePush, true);
 });
+
+test("陈旧旧帖禁止当新羊毛推送，且 OpenRouter 新免费模型可过门禁并按质量分校准", async () => {
+  const { DEAL_HINT, WIDE_AI_TRIGGER } = await import("../src/server/enrich/noise.ts");
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+  const { calibrateScoreByObtain } = await import("../src/server/enrich/alias.ts");
+  const { DEFAULT_SETTINGS, freshEnoughForPush, passesPushFilters } = await import("../src/server/push.ts");
+  const { saveRetention } = await import("../src/server/retention.ts");
+
+  // 1) 29 天前的 10月15日 V2EX 老帖不得通过推送时效门禁
+  const oct15 = new Date(Date.now() - 29 * 86_400_000).toISOString();
+  assert.equal(freshEnoughForPush(oct15), false);
+  assert.equal(
+    passesPushFilters(
+      {
+        title: "美团单车 7 天 66 次卡，免费送，先到先得",
+        score: 85,
+        codes: [],
+        isFree: true,
+        aiKeep: true,
+        category: "other",
+        obtain: "free",
+        publishedAt: oct15,
+      },
+      DEFAULT_SETTINGS,
+    ),
+    false,
+  );
+
+  // 2) 当 retention.keptDays=3 时，超过 7 天的陈旧帖不再被重新入库循环推送
+  saveRetention({ keptDays: 3 });
+  const staleRes = ingestItems("v2ex-free", [
+    {
+      externalId: "v2ex-oct15",
+      url: "https://www.v2ex.com/t/1249059",
+      title: "美团单车 7 天 66 次卡，免费送，先到先得",
+      publishedAt: oct15,
+    },
+  ]);
+  assert.equal(staleRes.inserted, 0);
+  assert.equal(staleRes.skipped, 1);
+
+  // 3) OpenRouter 新免费模型：过门禁 + 质量分 4/5 达标，AI 拒绝压至 <=35
+  const orTitle = "OpenRouter 新增免费模型 particle-ai/particle-1:free 基于DeepSeek V4.1 Flash";
+  assert.equal(DEAL_HINT.test(orTitle), true);
+  assert.equal(WIDE_AI_TRIGGER.test(orTitle), true);
+  const orEnriched = enrichItem(
+    { externalId: "or-1", url: "https://linux.do/t/1", title: orTitle, publishedAt: new Date().toISOString() },
+    "linuxdo-welfare",
+  )!;
+  assert.equal(orEnriched.category, "ai");
+  assert.ok(calibrateScoreByObtain(orEnriched.score, "free", true, 4) >= 80);
+  assert.ok(calibrateScoreByObtain(orEnriched.score, "free", false, 1) <= 35);
+});

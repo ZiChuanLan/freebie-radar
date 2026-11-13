@@ -11,6 +11,8 @@ export type AiVerdict = {
   reason: string;
   /** 获取方式：AI 判断；缺失时由规则兜底 */
   obtain?: ObtainMode;
+  /** 1-5 分质量评估：5=高价值必抢，4=明确好福利，3=普通，2=鸡肋，1=非福利 */
+  quality?: number;
 };
 
 export type AiSettings = {
@@ -47,6 +49,7 @@ const DEFAULT_PROMPT = [
   "- 限时免费/喜加一：Epic 本周免费游戏、Steam 限免、某软件 24 小时免费领授权",
   "- 有数量或有条件限制的赠送：送 N 个、抽 N 份、兑换码/邀请码/激活码、回帖领",
   "- 注册/登录后可领的权益：会员天数、额度、体验金、学生包（需要去申请的那种）",
+  "- 新上线免费 AI 模型/API（如「OpenRouter 新增免费模型 :free」「某平台新开放免费大模型 API/额度」，属于刚放出的可用福利）",
   "- 开发者/大厂/AI 平台限时活动：报名或填表即可领积分、算力券、代金券、Token（如「报名领每日 1000 积分」「Skill/黑客松活动领 CodeArts 额度」）",
   "- 限时开放注册、限时免费申请的云资源包",
   "",
@@ -78,7 +81,8 @@ const DEFAULT_PROMPT = [
   "- paid：要实付钱才拿得到",
   "注意：「免费体验我们的服务」「注册送体验金但充值才用」这类算 trial 或 promo；而官方活动只需简单报名/填表就能领到每日积分或算力（无须拉人头/转发/抽奖/绑卡付费）算 free。",
   "",
-  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"category":"game","obtain":"free","reason":"Epic 本周免费游戏"}。',
+  "同时给出 1-5 的 quality 质量评分：5=高价值直接免费（3A喜加一/大额Token/直接兑换码），4=明确好福利（新上线:free模型/每日积分/正版软件限免），3=一般小福利或有条件领取，2=限制极多/鸡肋，1=非福利。",
+  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"category":"game","obtain":"free","quality":5,"reason":"Epic 本周免费游戏"}。',
   "reason 用一句不超过 20 字的中文，keep=true 说清「能拿到什么」，keep=false 说清「为什么不是福利」，不要输出多余文本。",
 ].join("\n");
 
