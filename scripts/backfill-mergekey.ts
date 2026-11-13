@@ -1,18 +1,22 @@
-import { all, run } from "./src/server/db.ts";
-import { mergeKey } from "./src/server/enrich/index.ts";
+import { all, migrate, run, tx } from "./src/server/db.ts";
+import { resolveDbMergeKey } from "./src/server/enrich/alias.ts";
 
-// 回填 title_key：入库时才开始写入 mergeKey 指纹，历史数据全是旧算法或 null。
+migrate();
+
+// 回填 title_key：结合 title_aliases 自动将中英双语报道收敛到同一 canonical key
 const rows = all<{ id: number; title: string }>("SELECT id, title FROM items");
 console.log("待回填:", rows.length);
 
 let changed = 0;
-for (const r of rows) {
-  const key = mergeKey(r.title);
-  if (key) {
-    run("UPDATE items SET title_key = ? WHERE id = ?", key, r.id);
-    changed += 1;
+tx(() => {
+  for (const r of rows) {
+    const key = resolveDbMergeKey(r.title);
+    if (key) {
+      run("UPDATE items SET title_key = ? WHERE id = ?", key, r.id);
+      changed += 1;
+    }
   }
-}
+});
 console.log("已写入:", changed);
 
 // 看看效果：哪些 key 覆盖了多个源

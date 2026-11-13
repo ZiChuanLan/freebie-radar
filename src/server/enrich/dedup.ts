@@ -10,15 +10,18 @@
  */
 
 const MERGE_STOP = new Set([
-  "epic", "steam", "gog", "games", "game", "store", "mobile", "android", "ios", "pc",
-  "itch", "indiegala", "humble", "fanatical", "ubisoft", "xbox", "ps4", "ps5", "switch",
+  "epic", "steam", "gog", "games", "game", "store", "mobile", "android", "ios", "pc", "multi",
+  "itch", "indiegala", "humble", "fanatical", "ubisoft", "xbox", "ps4", "ps5", "switch", "egs",
   "free", "freebie", "freebies", "giveaway", "giveaways", "offer", "deal", "deals", "sale",
-  "dlc", "key", "keys", "cdkey", "steamkey", "license", "lifetime", "edition", "bundle",
-  "the", "for", "and", "with", "via", "new", "now", "week", "weekly", "today", "this",
-  "is", "on", "to", "of", "in", "at", "from", "you", "your", "get", "grab", "claim",
-  "available", "live", "out", "will", "hand", "here", "more", "than", "just", "but",
+  "dlc", "key", "keys", "cdkey", "steamkey", "license", "lifetime", "edition", "bundle", "titles", "title",
+  "the", "for", "and", "with", "via", "new", "now", "week", "weekly", "today", "this", "next",
+  "is", "are", "was", "will", "be", "on", "to", "of", "in", "at", "from", "you", "your", "get", "grab", "claim",
+  "available", "live", "out", "hand", "here", "more", "than", "just", "but", "see", "below",
   "prime", "members", "gaming", "official", "percent", "off", "keep", "forever", "redeem",
-  "discount", "coupon", "promo", "psa", "aff", "noaff",
+  "discount", "coupon", "promo", "psa", "aff", "noaff", "pcdd", "ad", "reg", "ca", "us", "eu", "uk", "au",
+  "reddit", "thread", "threads", "comment", "comments", "view", "join", "share", "shar",
+  "alert", "weekend", "f2p", "event", "ends", "through", "pm", "am", "et", "pt", "utc",
+  "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
   // 通用产品/技术词：不能单独作为去重键
   "ai", "app", "apps", "ip", "api", "web", "www", "http", "https", "com", "net", "org",
   "pro", "max", "plus", "lite", "beta", "alpha", "test", "demo", "trial", "vip",
@@ -117,6 +120,43 @@ function findBookMatches(title: string): { inner: string; endIndex: number }[] {
 function hasBookTitle(title: string): boolean {
   return findBookMatches(title).length > 0;
 }
+function cleanEnglishForMerge(raw: string): string {
+  let s = raw
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\b(?:buff\.ly|ow\.ly|redd\.it|bit\.ly|t\.co|tinyurl\.com|dlvr\.it|goo\.gl|youtu\.be|is\.gd|t\.me)\/\S+/gi, " ")
+    .replace(/(?:^|\s)\/?r\/[A-Za-z0-9_]+/g, " ")
+    .replace(/(?:^|\s)#[A-Za-z0-9_]+/g, " ")
+    .replace(/\*\*|__|\\?->|→/g, " -> ")
+    .replace(EMOJI_RE, " ");
+
+  // 处理多方括号写法：[Multi] [Knightica] [CA$16.99 → Free] [Recruit...]
+  if (/^(?:\[[^\]]+\]\s*){2,}/.test(s)) {
+    const segs = [...s.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]!.trim());
+    for (const seg of segs) {
+      if (/[$€£¥%]|->|→|\bfree\b|\boff\b/i.test(seg)) continue;
+      const candidate = extractLatinKey(seg);
+      if (candidate && candidate.split(" ").length <= 4) {
+        return seg;
+      }
+    }
+  }
+
+  s = s.replace(BRACKET_TAG_RE, " ").trim();
+
+  // 在「is free / free via / — / . / ->」等说明分隔处切出主体产品名
+  const cutRe =
+    /(?:\s+(?:is|are)\s+(?:now\s+)?(?:completely\s+)?free\b|\s+will\s+be\s+free\b|\s+free\s+(?:to\s+keep|on|via|at|from|for)\b|\s+[—–|]\s+|\.\s+|\s+->\s+|\bview\s+post\s+on\s+reddit\b)/i;
+  const hit = cutRe.exec(s);
+  if (hit && hit.index > 0) {
+    const head = s.slice(0, hit.index).trim();
+    if (extractLatinKey(head)) return head;
+    const tail = s.slice(hit.index + hit[0].length).replace(/^[:\s—–-]+/, "").trim();
+    const tailHit = cutRe.exec(tail);
+    const clause = tailHit && tailHit.index > 0 ? tail.slice(0, tailHit.index).trim() : tail;
+    if (extractLatinKey(clause)) return clause;
+  }
+  return s;
+}
 /**
  * 从标题提取可用于跨源合并的所有等价指纹：
  * - 单条《斗阵骑士 Knightica》会同时返回 ["knightica", "斗阵骑士"]，从而打通纯英文与纯中文报道。
@@ -149,14 +189,18 @@ export function extractMergeKeys(title: string): string[] {
     if (keys.length) return keys;
   }
 
-  // 2. 无有效《》：先剥掉【】/[] 标签再判断主体语言
-  const stripped = title.replace(BRACKET_TAG_RE, " ").trim();
+  // 2. 无有效《》：先去掉 URL / 短链 / #标签 再判断主体语言
+  const englishCleaned = cleanEnglishForMerge(title);
+  const stripped = title
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(BRACKET_TAG_RE, " ")
+    .trim();
   const sample = stripped || title;
   const cjkCount = (sample.match(CJK_RE) ?? []).length;
   const latinCount = (sample.match(LATIN_RE) ?? []).length;
 
   if (cjkCount === 0 || cjkCount / Math.max(cjkCount + latinCount, 1) <= 0.15) {
-    const latin = extractLatinKey(stripped) || extractLatinKey(title);
+    const latin = extractLatinKey(englishCleaned) || extractLatinKey(stripped) || extractLatinKey(title);
     push(latin);
     return keys;
   }

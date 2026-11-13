@@ -1,5 +1,6 @@
 import { all, get, migrate, run } from "./db.ts";
-import { enrichItem } from "./enrich/index.ts";
+import { enrichItem, isCategory } from "./enrich/index.ts";
+import { calibrateScoreByObtain, resolveDbMergeKey } from "./enrich/alias.ts";
 import { reviewItems } from "./enrich/ai.ts";
 import { runAll, runSource, ensureSources } from "./collectors/index.ts";
 import { lastDigests, runDaily } from "./digest.ts";
@@ -58,12 +59,13 @@ async function main() {
       break;
     }
     case "reclassify": {
-      // 规则调整后重算历史条目的分类 / 标签 / 评分（保留 ignored 状态）
+      // 规则调整后重算历史条目的分类 / 标签 / 评分 / title_key（保留 ignored 状态与 AI 结论）
       const rows = all<{
         id: number; source_id: string; external_id: string; url: string; title: string;
         summary: string | null; author: string | null; published_at: string | null;
         expires_at: string | null; tags: string; category: string | null;
-      }>("SELECT id, source_id, external_id, url, title, summary, author, published_at, expires_at, tags, category FROM items");
+        ai: string | null; ai_keep: number | null; obtain: string | null;
+      }>("SELECT id, source_id, external_id, url, title, summary, author, published_at, expires_at, tags, category, ai, ai_keep, obtain FROM items");
       let changed = 0;
       for (const row of rows) {
         let tags: string[] = [];
@@ -79,11 +81,21 @@ async function main() {
           tags,
         }, row.source_id);
         if (!e) continue;
-        if (e.category !== row.category) changed += 1;
+        let finalCategory = e.category;
+        if (row.ai) {
+          try {
+            const parsed = JSON.parse(row.ai) as { category?: string };
+            if (isCategory(parsed.category)) finalCategory = parsed.category;
+          } catch { /* ignore */ }
+        }
+        if (finalCategory !== row.category) changed += 1;
+        const aiKeepBool = row.ai_keep === null ? null : row.ai_keep === 1;
+        const finalScore = calibrateScoreByObtain(e.score, row.obtain, aiKeepBool);
+        const titleKey = resolveDbMergeKey(row.title);
         run(
-          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
-          e.category, JSON.stringify(e.tags), e.score, e.expiresAt,
-          e.price, e.isFree ? 1 : 0, JSON.stringify(e.codes),
+          "UPDATE items SET category = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, title_key = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
+          finalCategory, JSON.stringify(e.tags), finalScore, e.expiresAt,
+          e.price, e.isFree ? 1 : 0, JSON.stringify(e.codes), titleKey,
           e.keep ? "active" : "expired", row.id,
         );
       }

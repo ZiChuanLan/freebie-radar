@@ -33,8 +33,8 @@ test("ingestItems：重复抓取已有条目时更新参数完整且保留原有
   ]);
   assert.equal(first.inserted, 1);
 
-  // 模拟 AI 异步二审写回为非福利 + trial
-  run("UPDATE items SET ai_keep = 0, obtain = 'trial', score = ROUND(score * 0.5) WHERE source_id = 'rss-ithome' AND external_id = 'post-1'");
+  // 模拟 AI 异步二审写回为非福利 + trial（按规则折半后再按 trial 打 8 折）
+  run("UPDATE items SET ai_keep = 0, obtain = 'trial', score = ROUND(ROUND(score * 0.5) * 0.8) WHERE source_id = 'rss-ithome' AND external_id = 'post-1'");
   const beforeRow = get<{ score: number; ai_keep: number; obtain: string }>(
     "SELECT score, ai_keep, obtain FROM items WHERE source_id = 'rss-ithome' AND external_id = 'post-1'",
   )!;
@@ -119,4 +119,51 @@ test("GET /api/digests/:date：返回条目顺序与 item_ids 顺序保持一致
   const res = await app.request("/api/digests/2026-11-13");
   const json = (await res.json()) as { items: { id: number }[] };
   assert.deepEqual(json.items.map((i) => i.id), [502, 501]);
+});
+
+test("classify & score：URL/单词边界不误命中 cloud，免费游戏获得合理评分且双语可跨源合并", async () => {
+  const { classify, enrichItem } = await import("../src/server/enrich/index.ts");
+  run("DELETE FROM items");
+  run("DELETE FROM title_aliases");
+
+  // 1) Steam Free Weekend 不应因 URL 含 s3 或词尾子串误分到 cloud
+  const wk = classify(
+    "🚨 FREE WEEKEND ALERT 🚨 Cities: Skylines II 🔔 Company of Heroes 3 🔔 Deep Rock Galactic: Rogue Core 💥 Have a F2P Event on #Steam 🗓️ The Event Ends Nov 16 @ 6PM U",
+    "https://example.com/s3/oss/r2-demo",
+  );
+  assert.equal(wk.category, "game");
+
+  // 2) 《无主之地》金钥匙兑换码 应识别为 game 而不是 software
+  const bl = classify("【26-11-12至26-11-17】《无主之地》金钥匙兑换码", "");
+  assert.equal(bl.category, "game");
+
+  // 3) 英文纯正喜加一评分应显著高于 40（不因中文同义词多就碾压英文）
+  const redditGame = enrichItem(
+    {
+      externalId: "fgf-1",
+      url: "https://reddit.com/r/FreeGameFindings/1",
+      title: "[Epic Games] (Game) Knightica",
+      summary: "Free to keep on Epic Games Store",
+      publishedAt: new Date().toISOString(),
+    },
+    "rss-reddit-freegames",
+  )!;
+  assert.ok(redditGame.score >= 70, `expected >=70, got ${redditGame.score}`);
+
+  // 4) 先入库纯中文《斗阵骑士》，再入库双语《斗阵骑士 Knightica》与英文 Bluesky 推文：3 条在列表应自动合并为 1 条
+  const now = new Date().toISOString();
+  ingestItems("rss-smzdm", [
+    { externalId: "smzdm-1", url: "https://smzdm.com/1", title: "Epic《斗阵骑士》免费领", publishedAt: now },
+  ]);
+  ingestItems("rss-ithome", [
+    { externalId: "it-1", url: "https://ithome.com/1", title: "Epic 喜加一：《斗阵骑士 Knightica》游戏免费领取", publishedAt: now },
+  ]);
+  ingestItems("bsky-gamedeals", [
+    { externalId: "bsky-1", url: "https://bsky.app/1", title: "Knightica (Mobile) is Free via Epic Games Store. IOS https://ow.ly/iIhn51069o5", publishedAt: now },
+  ]);
+
+  const res = await app.request("/api/items?category=game");
+  const json = (await res.json()) as { total: number; items: { dupCount: number }[] };
+  assert.equal(json.total, 1);
+  assert.equal(json.items[0]!.dupCount, 3);
 });

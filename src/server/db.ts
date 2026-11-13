@@ -165,6 +165,14 @@ const MIGRATIONS: string[] = [
   `
   CREATE INDEX IF NOT EXISTS idx_items_effective_time ON items(COALESCE(published_at, first_seen_at));
   `,
+
+  /* v12：双语跨源别名字典，让英文与纯中文报道在同一 title_key 下合并 */
+  `
+  CREATE TABLE IF NOT EXISTS title_aliases (
+    alias     TEXT PRIMARY KEY,
+    canonical TEXT NOT NULL
+  );
+  `,
 ];
 
 export function dbPath(): string {

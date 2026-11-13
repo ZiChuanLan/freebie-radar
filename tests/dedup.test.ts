@@ -159,3 +159,20 @@ test("pickDaily：同轮多个来源报道《斗阵骑士》只保留 1 条并�
   assert.equal(nextIds.includes(6), false);
   assert.equal(nextIds.includes(7), false);
 });
+
+test("mergeKey：Bluesky / TG / Reddit / IndieGameBundles 长尾推文全部收敛为 knightica", () => {
+  const variants = [
+    "Knightica is free on Epic Games Store — build an army and let the synergies do the fighting",
+    "[Epic Games Mobile] (Game) Knightica **Knightica** \\-> Android ( EGS Store ) / iOS ( EGS Store ) **Claim All** (Mobile) -> Here . View Post on Reddit for comments Join | Shar",
+    "Knightica is free on Epic Games Store mobile iOS buff.ly/vcvjSZ1 Android buff.ly/MgFQWTQ",
+    "Knightica (Mobile) is Free via Epic Games Store. IOS https://ow.ly/iIhn51069o5 Android https://ow.ly/IBIv51069ob",
+    "[Epic/Epic Mobile] (Game) Knightica is free! See the /r/FreeGameFindings thread below. #FGF #FreeGameFindings #Free redd.it/1xuginp redd.it/1xugop9",
+    "(PCDD) Knightica is Free via The Epic Games Store. Alien: Isolation & Mark of the Deep Will be Free Next Week. https://ow.ly/E74a51068Ut #ad",
+    "Knightica is free on Epic Games Store. Alien: Isolation & Mark of the Deep are the next free titles buff.ly/MdEraPT",
+    "Free Knightica (Epic Games, reg. $14.99) — free to keep starting today 11 AM ET through Nov 19",
+    "[Multi] [Knightica] [CA$16.99 → Free] [Recruit units, place them strategically and find the best synergies]",
+  ];
+  for (const t of variants) {
+    assert.equal(mergeKey(t), "knightica", `failed on: ${t}`);
+  }
+});

@@ -1,6 +1,7 @@
 import { aiEnabled, config } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
-import { enrichItem, mergeKey } from "../enrich/index.ts";
+import { enrichItem } from "../enrich/index.ts";
+import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
 import { reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
 import { enqueueForAi } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
@@ -227,21 +228,25 @@ function persist(
       }
 
       const verdict = aiMap?.get(index) ?? null;
-      const score = verdict && !verdict.keep ? Math.round(e.score * 0.5) : e.score;
+      const effectiveObtain = obtainOf(e, verdict);
+      const score = calibrateScoreByObtain(e.score, effectiveObtain, verdict ? verdict.keep : null);
       const aiJson = verdict ? JSON.stringify(verdict) : null;
       const status = e.keep ? "active" : "expired";
+      const titleKey = resolveDbMergeKey(e.title);
 
-      const existing = get<{ id: number; ai_keep: number | null }>(
-        "SELECT id, ai_keep FROM items WHERE source_id = ? AND external_id = ?",
+      const existing = get<{ id: number; ai_keep: number | null; obtain: string | null }>(
+        "SELECT id, ai_keep, obtain FROM items WHERE source_id = ? AND external_id = ?",
         sourceId,
         e.externalId,
       );
       if (existing) {
         const nextScore = verdict
           ? score
-          : existing.ai_keep === 0
-            ? Math.round(e.score * 0.5)
-            : e.score;
+          : calibrateScoreByObtain(
+              e.score,
+              existing.obtain,
+              existing.ai_keep === null ? null : existing.ai_keep === 1,
+            );
         run(
           `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
@@ -254,7 +259,7 @@ function persist(
           e.url,
           e.urlKey,
           e.title,
-          mergeKey(e.title),
+          titleKey,
           e.summary ?? "",
           e.author ?? null,
           e.category,
@@ -285,7 +290,7 @@ function persist(
           e.url,
           e.urlKey,
           e.title,
-          mergeKey(e.title),
+          titleKey,
           e.summary ?? "",
           e.author ?? null,
           e.category,

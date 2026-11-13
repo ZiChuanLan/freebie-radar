@@ -1,7 +1,8 @@
 import { reviewItems } from "./ai-settings.ts";
 import { isCategory } from "./index.ts";
+import { calibrateScoreByObtain } from "./alias.ts";
 import type { RawItem } from "../collectors/types.ts";
-import { run } from "../db.ts";
+import { get, run } from "../db.ts";
 
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 
@@ -84,19 +85,28 @@ async function drain(): Promise<void> {
         const nextCategory = isCategory(verdict.category) ? verdict.category : null;
         const nextObtain = verdict.obtain && VALID_OBTAIN.has(verdict.obtain) ? verdict.obtain : null;
         try {
+          const cur = get<{ score: number; ai_keep: number | null; obtain: string | null }>(
+            "SELECT score, ai_keep, obtain FROM items WHERE id = ?",
+            job.itemId,
+          );
+          const effectiveObtain = nextObtain ?? cur?.obtain ?? null;
+          const nextScore =
+            cur && cur.ai_keep === null
+              ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep)
+              : cur?.score ?? 0;
           run(
             `UPDATE items
                 SET ai = ?,
                     ai_keep = ?,
                     obtain = COALESCE(?, obtain),
                     category = COALESCE(?, category),
-                    score = CASE WHEN ai_keep IS NULL AND ? = 0 THEN ROUND(score * 0.5) ELSE score END
+                    score = ?
               WHERE id = ?`,
             JSON.stringify(verdict),
             keep,
             nextObtain,
             nextCategory,
-            keep,
+            nextScore,
             job.itemId,
           );
           processed += 1;

@@ -62,8 +62,8 @@ const RULES: Rule[] = [
   },
   {
     category: "game",
-    weight: 1.0,
-    keywords: ["游戏", "epic", "steam", "喜加一", "激活", "游戏本体", "礼包", "cdkey", "xbox", "psn", "switch", "手游", "内测资格", "gog", "itch.io", "indiegala", "giveaway", "key 赠送", "白给", "免费入库", "humble", "皮肤", "dlc", "bundle", "game", "free game", "steam key"],
+    weight: 1.05,
+    keywords: ["游戏", "epic", "steam", "喜加一", "激活", "游戏本体", "礼包", "cdkey", "xbox", "psn", "switch", "手游", "内测资格", "gog", "itch.io", "indiegala", "giveaway", "key 赠送", "白给", "免费入库", "humble", "皮肤", "dlc", "bundle", "game", "free game", "steam key", "金钥匙", "shift code", "free weekend", "免费周末"],
   },
   {
     category: "goods",
@@ -83,8 +83,28 @@ const RULES: Rule[] = [
 ];
 
 const DEAL_WORDS = ["免费", "白嫖", "领取", "赠送", "送", "0元", "零元", "试用", "体验", "兑换", "激活码", "福利", "优惠", "折扣", "开通", "送额度", "注册送", "限免", "free", "giveaway", "coupon"];
-const SCARCITY_WORDS = ["限时", "限量", "仅限", "前100", "前 100", "名额", "抽奖", "开放注册", "先到先得", "今日", "今晚", "截止", "最后"];
+const SCARCITY_WORDS = ["限时", "限量", "仅限", "前100", "前 100", "名额", "抽奖", "开放注册", "先到先得", "今日", "今晚", "截止", "最后", "limited", "ends", "until", "last chance", "24h", "while supplies"];
 const NOISE_PATTERNS = [/怎么(?:领取|申请|弄|搞)/, /有没有/, /求(?:一个|个|推荐|问)/, /请问/, /值得买吗/, /是什么体验/, /怎么样/, /如何评价/];
+
+const URL_NOISE_RE = /https?:\/\/\S+|\b(?:buff\.ly|ow\.ly|redd\.it|bit\.ly|t\.co|tinyurl\.com|dlvr\.it|goo\.gl|youtu\.be|is\.gd|t\.me)\/\S+/gi;
+const ASCII_ONLY_RE = /^[a-z0-9\s./+_-]+$/i;
+const KW_REGEX_CACHE = new Map<string, RegExp>();
+
+function stripUrls(s: string): string {
+  return s.replace(URL_NOISE_RE, " ");
+}
+
+function matchKeyword(textLower: string, kw: string): boolean {
+  const k = kw.toLowerCase();
+  if (!ASCII_ONLY_RE.test(k)) return textLower.includes(k);
+  let re = KW_REGEX_CACHE.get(k);
+  if (!re) {
+    const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    re = new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`);
+    KW_REGEX_CACHE.set(k, re);
+  }
+  return re.test(textLower);
+}
 
 const SOURCE_BONUS: Record<string, number> = {
   "linuxdo-welfare": 8,
@@ -96,12 +116,20 @@ const SOURCE_BONUS: Record<string, number> = {
   "rss-sharewareonsale": 6,
   "rss-tickcoupon": 6,
   "tg-freegames": 6,
+  "rss-reddit-freegames": 6,
   "bsky-gamedeals": 5,
+  "rss-reddit-gamedeals": 5,
+  "rss-reddit-efreebies": 5,
+  "rss-reddit-freegamesonsteam": 5,
+  "rss-keylol": 5,
   "rss-nodeseek": 5,
+  "rss-indiegamebundles": 4,
   "linuxdo-resource": 4,
-  "github-free-for-dev": 3,
-  "rss-fuliba": 2,
   "tg-cn-deals": 4,
+  "github-free-for-dev": 3,
+  "rss-ithome": 3,
+  "rss-smzdm": 3,
+  "rss-fuliba": 2,
 };
 
 export type EnrichedItem = RawItem & {
@@ -125,10 +153,10 @@ export {
   type DedupeEntry,
 } from "./dedup.ts";
 export function classify(title: string, summary: string): { category: Category; tags: string[] } {
-  const text = `${title} ${summary}`.toLowerCase();
+  const text = stripUrls(`${title} ${summary}`).toLowerCase();
   let best: { category: Category; hits: string[]; score: number } = { category: "other", hits: [], score: 0 };
   for (const rule of RULES) {
-    const hits = rule.keywords.filter((k) => text.includes(k));
+    const hits = rule.keywords.filter((k) => matchKeyword(text, k));
     if (!hits.length) continue;
     const score = hits.length * rule.weight;
     if (score > best.score) best = { category: rule.category, hits, score };
@@ -144,14 +172,63 @@ function ageDays(iso: string | null): number {
   return (Date.now() - t) / 86_400_000;
 }
 
-export function scoreItem(input: { title: string; summary: string; publishedAt: string | null; sourceId: string; category: Category; tags: string[]; expiresAt: string | null }): { score: number; reason: string } {
-  const text = `${input.title} ${input.summary}`.toLowerCase();
+/** 纯免费/喜加一专用源（标题有时省略 "Free" 字样，如 r/FreeGameFindings）。 */
+const FREEBIE_ONLY_SOURCES = new Set([
+  "epic-free",
+  "steam-free",
+  "gamerpower",
+  "rss-isthereanydeal",
+  "rss-reddit-freegames",
+  "rss-reddit-freegamesonsteam",
+  "rss-reddit-efreebies",
+  "rss-reddit-freebies",
+  "rss-heyitsfree",
+  "rss-freebieshark",
+  "rss-giveawayoftheday",
+  "rss-sharewareonsale",
+  "rss-tickcoupon",
+  "rss-indiegamebundles",
+]);
+export function scoreItem(input: {
+  title: string;
+  summary: string;
+  publishedAt: string | null;
+  sourceId: string;
+  category: Category;
+  tags: string[];
+  expiresAt: string | null;
+  isFree?: boolean;
+  price?: number | null;
+  codes?: string[];
+}): { score: number; reason: string } {
+  const text = stripUrls(`${input.title} ${input.summary}`).toLowerCase();
   const notes: string[] = [];
-  let score = 32;
+  let score = 30;
 
-  const dealHits = DEAL_WORDS.filter((w) => text.includes(w.toLowerCase()));
+  if (input.isFree) {
+    score += 15;
+    notes.push("完全免费");
+  } else if (input.price !== null && input.price !== undefined) {
+    if (input.price <= 5) {
+      score += 8;
+      notes.push("低价 ≤5元");
+    } else if (input.price > 30) {
+      score -= 10;
+      notes.push("需实付 >30元");
+    }
+  } else if (FREEBIE_ONLY_SOURCES.has(input.sourceId)) {
+    score += 12;
+    notes.push("白嫖专源");
+  }
+
+  if (input.codes?.length) {
+    score += 12;
+    notes.push("含兑换码");
+  }
+
+  const dealHits = DEAL_WORDS.filter((w) => matchKeyword(text, w));
   if (dealHits.length) {
-    const add = Math.min(dealHits.length, 4) * 7;
+    const add = dealHits.length >= 2 ? 14 : 10;
     score += add;
     notes.push(`福利词 ×${dealHits.length}`);
   } else {
@@ -159,14 +236,14 @@ export function scoreItem(input: { title: string; summary: string; publishedAt: 
     notes.push("无福利词");
   }
 
-  const scarcity = SCARCITY_WORDS.filter((w) => text.includes(w));
+  const scarcity = SCARCITY_WORDS.filter((w) => matchKeyword(text, w));
   if (scarcity.length) {
-    score += Math.min(scarcity.length, 3) * 5;
+    score += scarcity.length >= 2 ? 8 : 5;
     notes.push(`稀缺 ×${scarcity.length}`);
   }
 
   if (NOISE_PATTERNS.some((p) => p.test(input.title))) {
-    score -= 14;
+    score -= 18;
     notes.push("疑问/求资源");
   }
 
@@ -228,6 +305,9 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
     category,
     tags,
     expiresAt,
+    isFree: priceInfo.isFree,
+    price: priceInfo.price,
+    codes,
   });
 
   const expired = Boolean(expiresAt && new Date(expiresAt).getTime() < Date.now());
