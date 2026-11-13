@@ -19,7 +19,7 @@
 
 ---
 
-**Freebie Radar** collects limited-time giveaways, free games, software licenses, promo/invite codes, and free AI/cloud credits from 60 built-in sources (38 enabled out of the box) including Epic Games, Steam, GamerPower, CheapShark, IsThereAnyDeal, SharewareOnSale, TickCoupon, Reddit, Bluesky, Telegram channels, LINUX DO, V2EX, NodeSeek, and custom RSS/Atom feeds.
+**Freebie Radar** collects limited-time giveaways, free games, software licenses, promo/invite codes, and free AI/cloud credits from 63 built-in sources (33 high-signal curated sources enabled out of the box) including Epic Games, Steam, GamerPower, CheapShark, IsThereAnyDeal, SharewareOnSale, TickCoupon, Reddit, Bluesky, Telegram channels, LINUX DO, V2EX, NodeSeek, and custom RSS/Atom feeds.
 
 Instead of forwarding raw RSS noise, it runs every item through a configurable multi-stage pipeline so only **genuinely claimable deals** reach your workspace and Telegram.
 
@@ -35,7 +35,7 @@ Instead of forwarding raw RSS noise, it runs every item through a configurable m
 
 ## Key Features
 
-- **60 Built-in Sources (38 High-Signal Enabled by Default)**: Games, software giveaways, cloud/AI credits, Reddit (`r/FreeGameFindings`, `r/eFreebies`, `r/AppHookup`, etc.), Bluesky, Telegram channels, plus custom RSS/Atom feeds.
+- **63 Built-in Sources (33 High-Signal Curated Enabled by Default)**: Games, software giveaways, cloud/AI credits, Reddit (`r/FreeGameFindings`, `r/eFreebies`, `r/AppHookup`, etc.), Bluesky, Telegram channels, plus custom RSS/Atom feeds.
 - **3-Layer Noise Filtering**:
   1. **Rule Pre-filter**: Toggleable entry filter & custom noise keywords to skip questions/patch notes before spending LLM tokens.
   2. **AI Semantic Review**: Works with any OpenAI-compatible API; outputs `keep`, `category`, `obtain`, `quality` (1–5), and a concise reason. Supports skipping pure-freebie sources, custom supplementary rules (`extraPrompt`), and adaptive preference learning from your starred/ignored items.

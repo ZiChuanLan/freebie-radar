@@ -67,7 +67,11 @@ const SOURCE_LABEL: Record<string, string> = {
   "rss-slickdeals": "Slickdeals",
   "rss-heyitsfree": "HeyItsFree",
   "rss-keylol": "其乐 Keylol",
-  "mock-source": "Mock 源",
+  "openrouter-free": "OpenRouter · 新免费大模型",
+  "gamerpower-loot": "GamerPower · 免费礼包与 Key",
+  "rss-itch-free": "itch.io · 100% 限免游戏",
+  "rss-freesteamkeys": "FreeSteamKeys · Steam 限免",
+  "rss-ghxi": "果核剥壳 · 免费软件",
 };
 
 let SOURCE_NAMES: Record<string, string> = { ...SOURCE_LABEL };
@@ -230,6 +234,18 @@ export function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  useEffect(() => {
+    if (typeof location === "undefined") return;
+    const sp = new URLSearchParams(location.search);
+    const site = sp.get("login_ok");
+    if (!site) return;
+    sp.delete("login_ok");
+    const nextSearch = sp.toString();
+    history.replaceState(null, "", location.pathname + (nextSearch ? "?" + nextSearch : "") + "#ops");
+    setTab("ops");
+    notify(`已完成 ${site} 登录并回传公开福利（Cookie 仅留本机）`);
+  }, [notify]);
 
   const [, bumpNames] = useState(0);
   useEffect(() => {

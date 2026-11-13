@@ -33,7 +33,7 @@
 
 ## 核心特性
 
-- **60 个内置数据源（默认启用 38 个高留存源）**：覆盖 LINUX DO、V2EX、NodeSeek、其乐 Keylol、Epic Games、Steam、GamerPower、CheapShark、IsThereAnyDeal、SharewareOnSale、TickCoupon、Giveaway of the Day、Reddit、Bluesky、Telegram 频道，支持随时一键添加任意 RSS/Atom，并支持本机/远端 Playwright 回传知乎、小红书、小黑盒。
+- **63 个内置数据源（精简提纯后默认启用 33 个高信噪比源）**：覆盖 LINUX DO RSS、OpenRouter 新免费大模型、NodeSeek 福利情报（按板块与免费关键词提纯）、V2EX、其乐 Keylol、Epic Games、Steam、itch.io 100% 限免、GamerPower 游戏与礼包 Key、CheapShark、IsThereAnyDeal、FreeSteamKeys、SharewareOnSale 100% 限免、TickCoupon、Giveaway of the Day、果核剥壳、Reddit、Telegram 频道，并支持本机回环助手或油猴脚本零 Cookie 上传回传知乎、小红书、小黑盒。
 - **三层高信噪比过滤链路**：
   1. **第一道 · 规则初筛**：可开关的入口噪音预拦截（求助、问价、版本更新补丁等）+ 自定义入口拦截词，省 Token 提速度；
   2. **第二道 · AI 语义审核**：支持任意 OpenAI 兼容接口，同时输出 `keep`（是否真福利）、`category`（11 类）、`obtain`（获取方式）、`quality`（1–5 质量分）与一句话理由；支持纯白嫖专源免送 AI 直通、自定义补充规则（不破坏内置口径）、从收藏/关闭自动学习偏好；
@@ -43,14 +43,14 @@
   - **AI 兜底模式**：提供「严进（宁缺毋滥）」「均衡兜底」「仅用规则」三种策略；
   - **防误推二次校验**：攒批队列发送前二次回查数据库最新状态、AI 结论与屏蔽词；修改攒批周期立即热重建定时器；
   - **完整自定义**：独立夜间免打扰开关与处理方式（转攒批/跳过）、新帖时效闸门、数据源过滤、消息元素开关（价格/截止日/评分/获取方式/AI 理由/自定义前缀）及拦截分布试算预览。
-- **零外部数据库依赖**：使用 Node.js 原生内置 `node:sqlite`（WAL 模式），无 Redis / Postgres 负担，单目录 `./data` 即全部持久化状态。
+- **极简轻量 & 零外部数据库**：基于 `node:24-alpine` 原生直接运行 TypeScript（零运行时转译器开销），内置 `node:sqlite`（WAL 模式 + 内存上限调优），日常主服务内存 < 100MB，轻松跑在 512MB 低配 VPS。
 - **公开浏览 + 单密码管理分区**：设置 `ADMIN_TOKEN` 后，资源流与每日精选保持公开只读，订阅屏蔽、推送、AI、数据源运维与条目标记操作全部自动进入鉴权保护；未设置时全部开放，方便内网自用。
 
 ## 工作流架构
 
 ```mermaid
 flowchart LR
-  S["60 个数据源<br/>(RSS / API / Telegram / Bluesky / Playwright)"] --> E["规则初筛 & 特征抽取<br/>(价格 / 兑换码 / 跨源双语合并指纹)"]
+  S["63 个精简提纯源<br/>(RSS / API / Telegram / 回环 / 油猴)"] --> E["规则初筛 & 特征抽取<br/>(价格 / 兑换码 / 跨源双语合并指纹)"]
   E --> F{"规则初筛开关<br/>(硬噪音 / 自定义拦截词)"}
   F -->|命中噪音| D["直接降权跳过"]
   F -->|通过| M{"送审源策略"}
@@ -108,7 +108,7 @@ cd freebie-radar
 pnpm install
 cp .env.example .env      # 按需填写 ADMIN_TOKEN / 代理 / Telegram 等
 pnpm build                # 构建前端产物到 dist/web
-pnpm start                # 自动建表 + 初始化 60 个数据源 + 启动 http://127.0.0.1:8788
+pnpm start                # 自动建表 + 初始化 63 个数据源 + 启动 http://127.0.0.1:8788
 ```
 
 开发模式（热更新）：
@@ -143,7 +143,7 @@ pnpm dev:web    # 前端 Vite :5173（自动代理 /api 到 8788）
 
 这三个站需要浏览器登录态与前端签名，通过 `scripts/pw-collect.mjs` 使用持久化 Chrome Profile 运行，既可以在本地电脑跑，也可以在带图形桌面的远程服务器跑：
 
-- **Windows 本机定时回传**：配置 `INGEST_TOKEN` 与 `SERVER_URL`，首次登录后即可配合 `scripts/local-collect.cmd` 定时自动推送至服务端 `POST /api/ingest`。
+- **本机回环登录服务（推荐）**：运行 `node scripts/pw-collect.mjs serve`（平时无常驻浏览器，仅占 ~25MB），在雷达「数据源运维」页直接点「扫码登录」跳回环窗扫码，登完自动抓取公开帖并跳回雷达页、立刻关闭浏览器释放全部内存。也支持直接复制页面提供的 **Tampermonkey 油猴脚本**，无需装 Node/Playwright。
 - **服务器脚本运行**：
   ```bash
   PROFILE_DIR=/data/profile SERVER_URL=http://127.0.0.1:8788 HEADLESS=1 INGEST_TOKEN=your_token node scripts/pw-collect.mjs
@@ -153,7 +153,7 @@ pnpm dev:web    # 前端 Vite :5173（自动代理 /api 到 8788）
 ## 常用 CLI 工具
 
 ```bash
-pnpm tsx src/server/cli.ts sources              # 查看全部 60 个数据源与最近运行状态
+pnpm tsx src/server/cli.ts sources              # 查看全部 63 个数据源与最近运行状态
 pnpm tsx src/server/cli.ts collect [sourceId]   # 立即采集（不传则跑全部启用源）
 pnpm tsx src/server/cli.ts enable <id...>       # 启用指定源
 pnpm tsx src/server/cli.ts disable <id...>      # 禁用指定源

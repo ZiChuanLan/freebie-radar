@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Database, Loader2, Play, Plus, Rss, Search, Trash2 } from "lucide-react";
+import { Activity, Copy, Database, ExternalLink, Loader2, Play, Plus, Rss, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { formatInterval, timeAgo } from "../lib/sources.ts";
 import type { RetentionSettings, Run, Source } from "../types.ts";
 
@@ -44,6 +44,83 @@ export function OpsPanel({
   const [rssUrl, setRssUrl] = useState("");
   const [rssInterval, setRssInterval] = useState(1800);
   const [addingRss, setAddingRss] = useState(false);
+  const [showIngestGuide, setShowIngestGuide] = useState(false);
+  const [helperUrl, setHelperUrl] = useState(() => {
+    try {
+      return localStorage.getItem("radar_loopback_helper") || "http://127.0.0.1:18789";
+    } catch {
+      return "http://127.0.0.1:18789";
+    }
+  });
+  const [ingestTokenInput, setIngestTokenInput] = useState("");
+
+  const siteKeyOf = (id: string) => (id.startsWith("zhihu") ? "zhihu" : id.startsWith("xhs") ? "xhs" : "xiaoheihe");
+
+  const startLoopbackLogin = async (sourceId: string) => {
+    const base = helperUrl.replace(/\/+$/, "");
+    const site = siteKeyOf(sourceId);
+    try {
+      const probe = await fetch(base + "/status", { signal: AbortSignal.timeout(1500) });
+      if (!probe.ok) throw new Error("not ok");
+    } catch {
+      setShowIngestGuide(true);
+      onNotify?.("未检测到本机回环助手（请按下方指引先启动，Cookie 绝不上传）");
+      return;
+    }
+    const target = new URL(base + "/login");
+    target.searchParams.set("site", site);
+    target.searchParams.set("server", window.location.origin);
+    target.searchParams.set("return_to", window.location.href.split("#")[0] ?? window.location.origin);
+    if (ingestTokenInput.trim()) target.searchParams.set("token", ingestTokenInput.trim());
+    window.open(target.toString(), "_blank", "noopener");
+  };
+
+  const buildUserscript = () => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8788";
+    const tok = ingestTokenInput.trim() || "请替换为你的 INGEST_TOKEN";
+    return `// ==UserScript==
+// @name         Freebie Radar 零 Cookie 上传采集助手
+// @namespace    https://github.com/ZiChuanLan/freebie-radar
+// @version      0.1.0
+// @description  仅读取当前搜索页公开帖子标题与链接发送到你自己的 Freebie Radar，Cookie 绝不离开浏览器
+// @match        https://www.xiaohongshu.com/search_result*
+// @match        https://www.zhihu.com/search*
+// @match        https://www.xiaoheihe.cn/app/bbs/*
+// @grant        GM_xmlhttpRequest
+// ==/UserScript==
+(function () {
+  const SERVER = ${JSON.stringify(origin)};
+  const TOKEN = ${JSON.stringify(tok)};
+  function push(sourceId, items) {
+    if (!items.length) return;
+    GM_xmlhttpRequest({
+      method: "POST",
+      url: SERVER + "/api/ingest",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN },
+      data: JSON.stringify({ sourceId, items }),
+      onload: (r) => console.log("[FreebieRadar]", sourceId, r.status, r.responseText),
+    });
+  }
+  setTimeout(() => {
+    const h = location.hostname;
+    if (h.includes("xiaohongshu")) {
+      const items = [...document.querySelectorAll("section.note-item")].map((c) => {
+        const a = c.querySelector('a.cover, a[href*="/explore/"], a[href*="/search_result/"]');
+        const t = c.querySelector(".title span, .footer .title, .title");
+        return a && t ? { externalId: a.href, url: a.href, title: t.textContent.trim(), summary: "" } : null;
+      }).filter((x) => x && x.title && x.url);
+      push("xhs-search", items);
+    } else if (h.includes("zhihu")) {
+      const items = [...document.querySelectorAll(".SearchResult-Card, .List-item")].map((c) => {
+        const a = c.querySelector("h2 a, .ContentItem-title a");
+        const t = c.querySelector(".RichText");
+        return a ? { externalId: a.href, url: a.href, title: a.textContent.trim(), summary: (t?.textContent || "").trim().slice(0, 300) } : null;
+      }).filter((x) => x && x.title && x.url);
+      push("zhihu-search", items);
+    }
+  }, 3500);
+})();`;
+  };
 
   const visibleSources = sources.filter((s) => {
     if (filterText && !(s.name + " " + s.id + " " + s.kind).toLowerCase().includes(filterText.toLowerCase())) {
@@ -173,6 +250,14 @@ export function OpsPanel({
                   </button>
                 ))}
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowIngestGuide((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-700 hover:border-brand-border hover:text-brand"
+                >
+                  <ShieldCheck size={13} /> {showIngestGuide ? "收起登录态接入" : "登录态接入（零 Cookie 上传）"}
+                </button>
               <button
                 type="button"
                 onClick={() => setShowAddRss((v) => !v)}
@@ -181,7 +266,72 @@ export function OpsPanel({
                 <Plus size={13} /> {showAddRss ? "收起" : "添加 RSS / Atom"}
               </button>
             </div>
+              </div>
 
+            {showIngestGuide && (
+              <div className="space-y-3 border-b border-ink-100 bg-blue-50/40 px-4 py-3 text-[12.5px] text-ink-700">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-medium text-ink-900">
+                    <ShieldCheck size={14} className="text-brand" />
+                    知乎 / 小红书 / 小黑盒采集（Cookie 永远只留在本机，绝不上传服务端）
+                  </div>
+                  <span className="text-[11.5px] text-ink-500">点下方对应源的「扫码登录」→ 弹本地窗扫码 → 自动采集并跳回本页</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11.5px] text-ink-500">本机回环助手地址</span>
+                    <input
+                      value={helperUrl}
+                      onChange={(e) => {
+                        setHelperUrl(e.target.value);
+                        try {
+                          localStorage.setItem("radar_loopback_helper", e.target.value);
+                        } catch { /* ignore */ }
+                      }}
+                      className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12px] text-ink-900 outline-none focus:border-brand"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11.5px] text-ink-500">可选回传 INGEST_TOKEN（留空则用本机助手 .env）</span>
+                    <input
+                      type="password"
+                      value={ingestTokenInput}
+                      onChange={(e) => setIngestTokenInput(e.target.value)}
+                      placeholder="若本机 .env 已配 INGEST_TOKEN 可留空"
+                      className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12px] text-ink-900 outline-none focus:border-brand"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                  <span className="text-ink-500">方式 A（本机回环服务，平时无常驻浏览器）：</span>
+                  <code className="rounded bg-surface px-2 py-1 font-mono text-[11.5px] text-ink-900">
+                    SERVER_URL={typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8788"} node scripts/pw-collect.mjs serve
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(
+                        `SERVER_URL=${window.location.origin} node scripts/pw-collect.mjs serve`,
+                      );
+                      onNotify?.("已复制回环助手启动命令");
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-2 py-1 text-[11.5px] hover:border-brand-border hover:text-brand"
+                  >
+                    <Copy size={11} /> 复制命令
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(buildUserscript());
+                      onNotify?.("已复制 Tampermonkey 油猴脚本（免装 Playwright）");
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-surface px-2 py-1 text-[11.5px] text-brand hover:bg-brand-subtle"
+                  >
+                    <Copy size={11} /> 复制油猴脚本（方式 B · 免装 Node）
+                  </button>
+                </div>
+              </div>
+            )}
             {showAddRss && (
               <div className="border-b border-ink-100 bg-surface-hover px-4 py-3">
                 <div className="grid gap-2 sm:grid-cols-12">
@@ -313,7 +463,17 @@ export function OpsPanel({
                           {s.last_error ?? "—"}
                         </td>
                         <td className="px-4 py-2.5 text-right">
-                          {s.kind !== "ingest" && (
+                          {s.kind === "ingest" ? (
+                            <button
+                              type="button"
+                              onClick={() => void startLoopbackLogin(s.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-1 text-[12px] font-medium text-brand hover:bg-blue-100/70"
+                              title="通过本机回环助手扫码登录并采集，Cookie 仅留在本机"
+                            >
+                              <ExternalLink size={11} />
+                              扫码登录
+                            </button>
+                          ) : (
                             <button
                               type="button"
                               disabled={runningId === s.id}

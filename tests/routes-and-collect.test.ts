@@ -463,3 +463,121 @@ test("推送策略：AI 兜底模式、时效/开关/阈值联动、preview 拦�
   assert.ok(pv.instant.some((t) => t.includes("Portal 2")));
   assert.equal(pv.rejectedBy.ai, 1);
 });
+
+
+test("GET /api/items 全分类 48h 窗口跨源折叠：cloud 分类同标题合并且跨天不误遮蔽", async () => {
+  run("DELETE FROM items");
+  const nowIso = new Date().toISOString();
+  const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
+
+  // 当天 NodeSeek 与 TG 同时发《【每日免费CDK】住宅代理IP流量》（cloud 分类），应合并为 1 条并保留高分（76）
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, first_seen_at, last_seen_at)
+     VALUES ('rss-nodeseek', 'ns-1', 'https://nodeseek.com/1', 'nodeseek/1', '【每日免费CDK】住宅代理IP流量', '住宅代理ip流量', 'cloud', 76, ?, 'active', 1, 'free', ?, ?)`,
+    nowIso, nowIso, nowIso,
+  );
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, first_seen_at, last_seen_at)
+     VALUES ('tg-cn-deals', 'tg-1', 'https://t.me/s/nodeseekc/1', 't.me/1', '【每日免费CDK】住宅代理IP流量', '住宅代理ip流量', 'cloud', 75, ?, 'active', 1, 'free', ?, ?)`,
+    nowIso, nowIso, nowIso,
+  );
+  // 5 天前的同标题日常贴应作为独立期数保留，不跟今天撞车合并
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, first_seen_at, last_seen_at)
+     VALUES ('rss-nodeseek', 'ns-old', 'https://nodeseek.com/old', 'nodeseek/old', '【每日免费CDK】住宅代理IP流量', '住宅代理ip流量', 'cloud', 71, ?, 'active', 1, 'free', ?, ?)`,
+    fiveDaysAgo, fiveDaysAgo, fiveDaysAgo,
+  );
+
+  const res = await app.request("/api/items?limit=20&sort=score");
+  const json = (await res.json()) as { items: Array<{ id: number; score: number; dupCount: number; source_id: string }> };
+  assert.equal(json.items.length, 2);
+  assert.equal(json.items[0]!.score, 76);
+  assert.equal(json.items[0]!.source_id, "rss-nodeseek");
+  assert.equal(json.items[0]!.dupCount, 2);
+  assert.equal(json.items[1]!.score, 71);
+  assert.equal(json.items[1]!.dupCount, 1);
+
+  const relRes = await app.request(`/api/items/${json.items[0]!.id}/related`);
+  const relJson = (await relRes.json()) as { items: Array<{ source_id: string }> };
+  assert.equal(relJson.items.length, 1);
+  assert.equal(relJson.items[0]!.source_id, "tg-cn-deals");
+});
+
+test("rssCollector 源级分类/关键词/only100Off 提纯过滤与 openrouterCollector 新免费模型解析", async () => {
+  const { rssCollector } = await import("../src/server/collectors/rss.ts");
+  const { openrouterCollector } = await import("../src/server/collectors/openrouter.ts");
+
+  const fakeNsXml = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>NodeSeek</title>
+    <item><title>溢价200出VPS</title><link>https://nodeseek.com/1</link><category>trade</category></item>
+    <item><title>【免费领】某云厂商每日免费 CDK</title><link>https://nodeseek.com/2</link><category>info</category></item>
+    <item><title>日常吐槽帖</title><link>https://nodeseek.com/3</link><category>info</category></item>
+  </channel></rss>`;
+
+  const nsOut = await rssCollector.collect({
+    sourceId: "rss-nodeseek",
+    cursor: null,
+    maxItems: 20,
+    config: {
+      feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", includeCategories: ["info"], titleKeywords: ["免费", "cdk"] }],
+    },
+    http: {
+      text: async () => ({ status: 200, url: "", body: fakeNsXml, headers: new Headers(), bytes: Buffer.alloc(0), contentType: "application/xml" }),
+      json: async () => ({ status: 200, url: "", data: {} as never, response: { status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" } }),
+      raw: async () => ({ status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" }),
+    },
+    log: () => {},
+  });
+  assert.equal(nsOut.items.length, 1);
+  assert.ok(nsOut.items[0]!.title.includes("每日免费 CDK"));
+
+  const fakeItchXml = `<?xml version="1.0"?><rss version="2.0"><channel><title>itch</title>
+    <item><title>Paid 10%</title><link>https://a.itch.io/1</link><price>$9.00</price><discountpercent>10</discountpercent></item>
+    <item><title>Free 100% Game</title><link>https://a.itch.io/2</link><price>$0.00</price><discountpercent>100</discountpercent><fullPrice>$5.00</fullPrice></item>
+  </channel></rss>`;
+
+  const itchOut = await rssCollector.collect({
+    sourceId: "rss-itch-free",
+    cursor: null,
+    maxItems: 20,
+    config: { feeds: [{ id: "itch-free", url: "https://itch.io/games/on-sale.xml", only100Off: true }] },
+    http: {
+      text: async () => ({ status: 200, url: "", body: fakeItchXml, headers: new Headers(), bytes: Buffer.alloc(0), contentType: "application/xml" }),
+      json: async () => ({ status: 200, url: "", data: {} as never, response: { status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" } }),
+      raw: async () => ({ status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" }),
+    },
+    log: () => {},
+  });
+  assert.equal(itchOut.items.length, 1);
+  assert.equal(itchOut.items[0]!.categoryHint, "game");
+  assert.ok(itchOut.items[0]!.summary?.includes("$5.00"));
+
+  const nowSec = Math.floor(Date.now() / 1000) - 600;
+  const oldSec = Math.floor(Date.now() / 1000) - 40 * 86_400;
+  const orOut = await openrouterCollector.collect({
+    sourceId: "openrouter-free",
+    cursor: null,
+    maxItems: 20,
+    config: { maxAgeDays: 14 },
+    http: {
+      text: async () => ({ status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" }),
+      raw: async () => ({ status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" }),
+      json: async () => ({
+        status: 200,
+        url: "",
+        data: {
+          data: [
+            { id: "vendor/new-model:free", name: "New Free Model", created: nowSec, context_length: 131072, pricing: { prompt: "0", completion: "0" } },
+            { id: "vendor/old-model:free", name: "Old Free Model", created: oldSec, pricing: { prompt: "0", completion: "0" } },
+            { id: "vendor/paid-model", name: "Paid Model", created: nowSec, pricing: { prompt: "0.001", completion: "0.002" } },
+          ],
+        } as never,
+        headers: new Headers(),
+        response: { status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "application/json" },
+      }),
+    },
+    log: () => {},
+  });
+  assert.equal(orOut.items.length, 1);
+  assert.equal(orOut.items[0]!.externalId, "vendor/new-model:free");
+  assert.equal(orOut.items[0]!.categoryHint, "ai");
+});

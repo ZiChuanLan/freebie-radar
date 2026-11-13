@@ -224,6 +224,10 @@ export function getDb(): DatabaseSync {
   // 调度器与手动 CLI 是两个进程共用一个 SQLite 文件，写锁竞争时多等一会儿，
   // 避免出现 "database is locked"（跑一次全量采集要几秒）。
   db.exec("PRAGMA busy_timeout = 20000;");
+  // 限制 SQLite 内存占用，适配 ≤512MB 低配 VPS
+  db.exec("PRAGMA cache_size = -8000;");
+  db.exec("PRAGMA mmap_size = 0;");
+  db.exec("PRAGMA temp_store = FILE;");
   db.function("is_zh", { deterministic: true }, (v) => {
     const t = typeof v === "string" ? v : "";
     let zh = 0;

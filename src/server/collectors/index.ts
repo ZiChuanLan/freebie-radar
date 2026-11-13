@@ -21,12 +21,13 @@ import { epicCollector } from "./epic.ts";
 import { gogCollector } from "./gog.ts";
 import { steamCollector } from "./steam.ts";
 import { cheapsharkCollector } from "./cheapshark.ts";
+import { openrouterCollector } from "./openrouter.ts";
 import { bskyCollector } from "./bsky.ts";
 import type { Collector, RawItem, SourceSeed } from "./types.ts";
 
 export const COLLECTORS: Collector[] = [
   mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector,
-  gamerpowerCollector, epicCollector, gogCollector, steamCollector, cheapsharkCollector, bskyCollector,
+  gamerpowerCollector, epicCollector, gogCollector, steamCollector, cheapsharkCollector, bskyCollector, openrouterCollector,
 ];
 const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
@@ -35,67 +36,104 @@ export const SEEDS: SourceSeed[] = [
   { id: "linuxdo-welfare", name: "LINUX DO · 福利羊毛", kind: "linuxdo", enabled: true, intervalSec: 90, config: { categoryId: 36, rssSlug: "welfare", categoryName: "福利羊毛" } },
   { id: "linuxdo-resource", name: "LINUX DO · 资源荟萃", kind: "linuxdo", enabled: false, intervalSec: 180, config: { categoryId: 14, rssSlug: "resource", categoryName: "资源荟萃" } },
   { id: "v2ex-free", name: "V2EX · 免费赠送", kind: "v2ex", enabled: true, intervalSec: 120, config: { node: "free" } },
-  { id: "github-free-for-dev", name: "GitHub · free-for-dev", kind: "github-readme", enabled: false, config: { repos: [{ repo: "ripienaar/free-for-dev", limit: 60 }] } },
-  { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: false, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
-  { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: false, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
-  { id: "rss-smzdm", name: "什么值得买", kind: "rss", enabled: false, config: { feeds: [{ id: "smzdm", url: "https://www.smzdm.com/rss/", limit: 20 }] } },
+  { id: "v2ex-deals", name: "V2EX · 优惠信息", kind: "v2ex", enabled: true, intervalSec: 300, config: { node: "deals" } },
+  { id: "v2ex-cloud", name: "V2EX · 云计算", kind: "v2ex", enabled: false, intervalSec: 1800, config: { node: "cloud" } },
+  { id: "v2ex-share", name: "V2EX · 分享发现", kind: "v2ex", enabled: false, intervalSec: 600, config: { node: "share" } },
+  { id: "v2ex-promotions", name: "V2EX · 推广与注册送", kind: "v2ex", enabled: false, intervalSec: 600, config: { node: "promotions" } },
+
+  // === AI / 云 / 开发者福利 ===
+  { id: "openrouter-free", name: "OpenRouter · 新免费大模型", kind: "openrouter", enabled: true, intervalSec: 3600, config: { maxAgeDays: 14 } },
+  {
+    id: "rss-nodeseek",
+    name: "NodeSeek · 福利情报",
+    kind: "rss",
+    enabled: true,
+    intervalSec: 300,
+    config: {
+      feeds: [
+        {
+          id: "nodeseek",
+          url: "https://rss.nodeseek.com/",
+          limit: 30,
+          includeCategories: ["info", "promotion"],
+          titleKeywords: ["免费", "白嫖", "cdk", "兑换", "限免", "福利", "赠", "领", "送", "free", "0元"],
+        },
+      ],
+    },
+  },
+  { id: "rss-lowendbox", name: "LowEndBox · VPS 优惠", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "lowendbox", url: "https://lowendbox.com/feed/", limit: 20 }] } },
+
+  // === 游戏限免 / Key / 礼包 ===
+  { id: "epic-free", name: "Epic Games · 本周喜加一", kind: "epic", enabled: true, intervalSec: 3600, config: { includeUpcoming: false } },
+  { id: "steam-free", name: "Steam · 限时免费", kind: "steam", enabled: true, intervalSec: 1800, config: { count: 50 } },
+  { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, intervalSec: 900, config: { query: "type=game", limit: 60 } },
+  { id: "gamerpower-loot", name: "GamerPower · 免费礼包与 Key", kind: "gamerpower", enabled: true, intervalSec: 1800, config: { query: "type=loot", limit: 40 } },
+  { id: "cheapshark-free", name: "CheapShark · 免费与 ≤$1 游戏", kind: "cheapshark", enabled: true, intervalSec: 900, config: { upperPrice: 1, pageSize: 40 } },
+  { id: "rss-itch-free", name: "itch.io · 100% 限免游戏", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "itch-free", url: "https://itch.io/games/on-sale.xml", limit: 25, only100Off: true }] } },
+  { id: "rss-isthereanydeal", name: "IsThereAnyDeal · 喜加一", kind: "rss", enabled: true, intervalSec: 900, config: { feeds: [{ id: "itad", url: "https://isthereanydeal.com/feeds/US/giveaways.rss", limit: 30 }] } },
+  { id: "rss-indiegamebundles", name: "IndieGameBundles · 免费游戏", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "indiegamebundles", url: "https://www.indiegamebundles.com/category/free/feed/", limit: 25 }] } },
+  { id: "rss-freesteamkeys", name: "FreeSteamKeys · Steam 限免", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freesteamkeys", url: "https://freesteamkeys.com/feed/", limit: 25 }] } },
+  { id: "rss-ggdeals", name: "GG.deals · 免费与动态", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "ggdeals", url: "https://gg.deals/news/feed/", limit: 25 }] } },
+  { id: "rss-keylol", name: "其乐 Keylol", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "keylol", url: "https://keylol.com/forum.php?mod=rss", limit: 30 }] } },
+  { id: "tg-freegames", name: "TG · 免费游戏情报", kind: "telegram", enabled: true, intervalSec: 300, config: { channels: ["FreeGamesInfo", "freegamesnews"] } },
+  { id: "gog-free", name: "GOG · 限时免费", kind: "gog", enabled: false, config: {} },
+
+  // === 正版软件限免 / 工具 ===
+  { id: "rss-giveawayoftheday", name: "Giveaway of the Day · 每日限免软件", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "giveawayoftheday", url: "https://www.giveawayoftheday.com/feed/", limit: 20 }] } },
+  { id: "rss-tickcoupon", name: "TickCoupon · 终身软件限免", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "tickcoupon", url: "https://giveaway.tickcoupon.com/feed/", limit: 20 }] } },
+  {
+    id: "rss-sharewareonsale",
+    name: "SharewareOnSale · 100% 限免",
+    kind: "rss",
+    enabled: true,
+    intervalSec: 1800,
+    config: { feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25, titleKeywords: ["100% discount", "free"] }] },
+  },
+  { id: "rss-ghxi", name: "果核剥壳 · 免费软件资源", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "ghxi", url: "https://www.ghxi.com/feed", limit: 20 }] } },
+  { id: "rss-iplaysoft", name: "异次元软件世界", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "iplaysoft", url: "https://www.iplaysoft.com/feed", limit: 25 }] } },
+
+  // === Reddit 高纯度白嫖社区（适度拉长间隔防 429）===
+  { id: "rss-reddit-freegames", name: "Reddit · FreeGameFindings", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freegamefindings", url: "https://www.reddit.com/r/FreeGameFindings/hot.rss", limit: 30 }] } },
+  { id: "rss-reddit-freebies", name: "Reddit · freebies", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freebies", url: "https://www.reddit.com/r/freebies/hot.rss", limit: 25 }] } },
+  { id: "rss-reddit-efreebies", name: "Reddit · eFreebies", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "efreebies", url: "https://www.reddit.com/r/efreebies/hot.rss", limit: 25 }] } },
+  { id: "rss-reddit-apphookup", name: "Reddit · AppHookup（App 限免）", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "apphookup", url: "https://www.reddit.com/r/AppHookup/hot.rss", limit: 25 }] } },
+  { id: "rss-reddit-freeebooks", name: "Reddit · FreeEBOOKS", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freeebooks", url: "https://www.reddit.com/r/FreeEBOOKS/hot.rss", limit: 25 }] } },
+  { id: "rss-reddit-freegamesonsteam", name: "Reddit · FreeGamesOnSteam", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freegamesonsteam", url: "https://www.reddit.com/r/FreeGamesOnSteam/hot.rss", limit: 25 }] } },
+  { id: "rss-reddit-gamedeals", name: "Reddit · GameDeals（含打折）", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "gamedeals", url: "https://www.reddit.com/r/GameDeals/hot.rss", limit: 30 }] } },
+  { id: "rss-reddit-googleplay", name: "Reddit · GooglePlayDeals", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "googleplaydeals", url: "https://www.reddit.com/r/googleplaydeals/hot.rss", limit: 30 }] } },
+
+  // === 综合样品与地区好价 ===
+  { id: "rss-freebieshark", name: "FreebieShark 免费样品", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "freebieshark", url: "https://www.freebieshark.com/feed/", limit: 25 }] } },
+  { id: "rss-heyitsfree", name: "HeyItsFree 免费样品", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "heyitsfree", url: "https://heyitsfree.net/feed/", limit: 30 }] } },
+  { id: "rss-ozbargain", name: "OzBargain · 澳区免费好价", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "ozbargain", url: "https://www.ozbargain.com.au/feed", limit: 25 }] } },
+
+  // === 登录态站点（零 Cookie 上传 · 本机回环或油猴脚本回传）===
   { id: "zhihu-search", name: "知乎 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
   { id: "xhs-search", name: "小红书 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费领取" } },
   { id: "xiaoheihe-search", name: "小黑盒 · 福利搜索", kind: "ingest", enabled: true, config: { keyword: "免费" } },
-  { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
-  { id: "gamerpower", name: "GamerPower · 免费游戏聚合", kind: "gamerpower", enabled: true, intervalSec: 900, config: { query: "type=game", limit: 60 } },
-  // GOG 的 catalog API 不支持 discount=100 / price=free 筛选（实测都返回普通折扣游戏），
-  // 商店页是 Angular SSR，解析成本高、单周通常只有 0-1 个免费，先禁用。
-  { id: "gog-free", name: "GOG · 限时免费", kind: "gog", enabled: false, config: {} },
-  { id: "steam-free", name: "Steam · 限时免费", kind: "steam", enabled: true, intervalSec: 1800, config: { count: 50 } },
-  { id: "epic-free", name: "Epic Games · 喜加一", kind: "epic", enabled: true, intervalSec: 3600, config: { includeUpcoming: true } },
-  { id: "rss-reddit-freegames", name: "Reddit · FreeGameFindings", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "freegamefindings", url: "https://www.reddit.com/r/FreeGameFindings/hot.rss", limit: 40 }] } },
-  { id: "rss-reddit-efreebies", name: "Reddit · eFreebies", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "efreebies", url: "https://www.reddit.com/r/efreebies/hot.rss", limit: 40 }] } },
-  { id: "rss-reddit-gamedeals", name: "Reddit · GameDeals", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "gamedeals", url: "https://www.reddit.com/r/GameDeals/hot.rss", limit: 30 }] } },
-  { id: "rss-slickdeals", name: "Slickdeals 首页", kind: "rss", enabled: true, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
-  { id: "rss-heyitsfree", name: "HeyItsFree 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "heyitsfree", url: "https://heyitsfree.net/feed/", limit: 30 }] } },
-  { id: "rss-keylol", name: "其乐 Keylol", kind: "rss", enabled: true, config: { feeds: [{ id: "keylol", url: "https://keylol.com/forum.php?mod=rss", limit: 30 }] } },
-  { id: "rss-reddit-freebies", name: "Reddit · freebies", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "freebies", url: "https://www.reddit.com/r/freebies/hot.rss", limit: 30 }] } },
-  { id: "rss-reddit-apphookup", name: "Reddit · AppHookup（App 限免）", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "apphookup", url: "https://www.reddit.com/r/AppHookup/hot.rss", limit: 30 }] } },
-  { id: "rss-reddit-freeebooks", name: "Reddit · FreeEBOOKS", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "freeebooks", url: "https://www.reddit.com/r/FreeEBOOKS/hot.rss", limit: 30 }] } },
-  { id: "rss-reddit-googleplay", name: "Reddit · GooglePlayDeals", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "googleplaydeals", url: "https://www.reddit.com/r/googleplaydeals/hot.rss", limit: 30 }] } },
-  { id: "rss-giveawayoftheday", name: "Giveaway of the Day（每日免费软件）", kind: "rss", enabled: true, config: { feeds: [{ id: "giveawayoftheday", url: "https://www.giveawayoftheday.com/feed/", limit: 20 }] } },
+
+  // === 按需选开的低纯度 / 需代理 / 扩展源（默认关闭以保持低噪与轻量化）===
+  { id: "tg-cn-deals", name: "TG · 中文科技/VPS/羊毛", kind: "telegram", enabled: false, intervalSec: 300, config: { channels: ["zaihuapd", "vps_offers"] } },
+  { id: "bsky-gamedeals", name: "Bluesky · 游戏限免大号", kind: "bsky", enabled: false, intervalSec: 1800, config: { actors: ["freegamefindings.bsky.social", "freegamealert.bsky.social", "wario64.bsky.social", "cheapassgamer.com", "dekudeals.com", "steamdb.bsky.social"], limitPerActor: 10 } },
+  { id: "bsky-plugins", name: "Bluesky · 免费插件与综合", kind: "bsky", enabled: false, intervalSec: 1800, config: { actors: ["plugindeals.net", "frugalfreebies.bsky.social", "freebies.bsky.social"], limitPerActor: 10 } },
+  { id: "rss-hip2save", name: "Hip2Save · 美国优惠", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "hip2save", url: "https://hip2save.com/feed/", limit: 30 }] } },
+  { id: "rss-vonbeau", name: "VonBeau · 免费样品（需过盾）", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "vonbeau", url: "https://www.vonbeau.com/feed/", limit: 30 }] } },
+  { id: "rss-slickdeals", name: "Slickdeals（需过盾）", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
   { id: "rss-appinn", name: "小众软件 Appinn", kind: "rss", enabled: false, config: { feeds: [{ id: "appinn", url: "https://www.appinn.com/feed/", limit: 20 }] } },
   { id: "rss-sspai", name: "少数派", kind: "rss", enabled: false, config: { feeds: [{ id: "sspai", url: "https://sspai.com/feed", limit: 20 }] } },
   { id: "rss-ithome", name: "IT之家", kind: "rss", enabled: false, config: { feeds: [{ id: "ithome", url: "https://www.ithome.com/rss/", limit: 25 }] } },
+  { id: "rss-smzdm", name: "什么值得买", kind: "rss", enabled: false, config: { feeds: [{ id: "smzdm", url: "https://www.smzdm.com/rss/", limit: 20 }] } },
+  { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: false, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
+  { id: "rss-52pojie", name: "吾爱破解", kind: "rss", enabled: false, config: { feeds: [{ id: "52pojie", url: "https://www.52pojie.cn/forum.php?mod=rss", limit: 20 }] } },
+  { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: false, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
   { id: "rss-producthunt", name: "Product Hunt", kind: "rss", enabled: false, config: { feeds: [{ id: "producthunt", url: "https://www.producthunt.com/feed", limit: 25 }] } },
   { id: "rss-hnrss", name: "Hacker News（100+ 分）", kind: "rss", enabled: false, config: { feeds: [{ id: "hnrss", url: "https://hnrss.org/frontpage?points=100", limit: 25 }] } },
-  { id: "rss-freebieshark", name: "FreebieShark 免费样品", kind: "rss", enabled: true, config: { feeds: [{ id: "freebieshark", url: "https://www.freebieshark.com/feed/", limit: 25 }] } },
-  { id: "rss-9to5toys", name: "9to5Toys 优惠", kind: "rss", enabled: false, config: { feeds: [{ id: "9to5toys", url: "https://9to5toys.com/feed/", limit: 25 }] } },
-  // === 第二/三批补充：游戏喜加一 / V2EX / NodeSeek / 软件限免 / AI / Bluesky(X镜像) / TG 频道 ===
-  { id: "cheapshark-free", name: "CheapShark · 免费与 ≤$1 游戏", kind: "cheapshark", enabled: true, intervalSec: 900, config: { upperPrice: 1, pageSize: 40 } },
-  { id: "rss-isthereanydeal", name: "IsThereAnyDeal · 喜加一", kind: "rss", enabled: true, intervalSec: 900, config: { feeds: [{ id: "itad", url: "https://isthereanydeal.com/feeds/US/giveaways.rss", limit: 30 }] } },
-  { id: "rss-indiegamebundles", name: "IndieGameBundles · 免费游戏", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "indiegamebundles", url: "https://www.indiegamebundles.com/category/free/feed/", limit: 25 }] } },
-  { id: "rss-ggdeals", name: "GG.deals · 免费与动态", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "ggdeals", url: "https://gg.deals/news/feed/", limit: 25 }] } },
-  { id: "rss-reddit-freegamesonsteam", name: "Reddit · FreeGamesOnSteam", kind: "rss", enabled: true, intervalSec: 2700, config: { feeds: [{ id: "freegamesonsteam", url: "https://www.reddit.com/r/FreeGamesOnSteam/hot.rss", limit: 30 }] } },
-  { id: "tg-freegames", name: "TG · 免费游戏情报", kind: "telegram", enabled: true, intervalSec: 300, config: { channels: ["FreeGamesInfo", "freegamesnews"] } },
-  { id: "tg-cn-deals", name: "TG · 中文科技/VPS/羊毛", kind: "telegram", enabled: false, intervalSec: 300, config: { channels: ["zaihuapd", "vps_offers"] } },
-  { id: "bsky-gamedeals", name: "Bluesky · 游戏限免大号", kind: "bsky", enabled: true, intervalSec: 600, config: { actors: ["freegamefindings.bsky.social", "freegamealert.bsky.social", "wario64.bsky.social", "cheapassgamer.com", "dekudeals.com", "steamdb.bsky.social"], limitPerActor: 10 } },
-  { id: "bsky-plugins", name: "Bluesky · 免费插件与综合", kind: "bsky", enabled: true, intervalSec: 1800, config: { actors: ["plugindeals.net", "frugalfreebies.bsky.social", "freebies.bsky.social"], limitPerActor: 10 } },
-  { id: "v2ex-deals", name: "V2EX · 优惠信息", kind: "v2ex", enabled: true, intervalSec: 300, config: { node: "deals" } },
-  { id: "v2ex-share", name: "V2EX · 分享发现", kind: "v2ex", enabled: false, intervalSec: 600, config: { node: "share" } },
-  // 纯广告节点：24 条里 9 条被判「福利」，全是代理/中转服务商的引流帖，默认关闭
-  { id: "v2ex-promotions", name: "V2EX · 推广与注册送", kind: "v2ex", enabled: false, intervalSec: 600, config: { node: "promotions" } },
-  { id: "v2ex-cloud", name: "V2EX · 云计算", kind: "v2ex", enabled: true, intervalSec: 1800, config: { node: "cloud" } },
-  { id: "rss-nodeseek", name: "NodeSeek · 官方动态", kind: "rss", enabled: true, intervalSec: 180, config: { feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", limit: 30 }] } },
-  { id: "rss-lowendbox", name: "LowEndBox · VPS 优惠", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "lowendbox", url: "https://lowendbox.com/feed/", limit: 20 }] } },
-  { id: "rss-sharewareonsale", name: "SharewareOnSale · 正版限免", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25 }] } },
-  { id: "rss-tickcoupon", name: "TickCoupon · 终身软件限免", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "tickcoupon", url: "https://giveaway.tickcoupon.com/feed/", limit: 20 }] } },
-  { id: "rss-iplaysoft", name: "异次元软件世界", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "iplaysoft", url: "https://www.iplaysoft.com/feed", limit: 25 }] } },
-  { id: "rss-iapps", name: "翻应用 · App 工具", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "iapps", url: "https://www.iapps.me/feed", limit: 20 }] } },
   { id: "rss-ruanyifeng", name: "阮一峰 · 科技爱好者周刊", kind: "rss", enabled: false, intervalSec: 21600, config: { feeds: [{ id: "ruanyifeng", url: "https://www.ruanyifeng.com/blog/atom.xml", limit: 10 }] } },
-  { id: "rss-vonbeau", name: "VonBeau · 免费样品", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "vonbeau", url: "https://www.vonbeau.com/feed/", limit: 30 }] } },
-  { id: "rss-hip2save", name: "Hip2Save · 美国羊毛", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "hip2save", url: "https://hip2save.com/feed/", limit: 30 }] } },
-  { id: "rss-ozbargain", name: "OzBargain · 澳区好价", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "ozbargain", url: "https://www.ozbargain.com.au/feed", limit: 25 }] } },
+  { id: "github-free-for-dev", name: "GitHub · free-for-dev", kind: "github-readme", enabled: false, config: { repos: [{ repo: "ripienaar/free-for-dev", limit: 60 }] } },
   { id: "github-public-apis", name: "GitHub · 免费公开 API", kind: "github-readme", enabled: false, config: { repos: [{ repo: "public-apis/public-apis", limit: 40 }] } },
   { id: "github-awesome-ai", name: "GitHub · AI 工具清单", kind: "github-readme", enabled: false, config: { repos: [{ repo: "mahseema/awesome-ai-tools", limit: 40 }] } },
   { id: "github-selfhosted", name: "GitHub · 开源自托管清单", kind: "github-readme", enabled: false, config: { repos: [{ repo: "awesome-selfhosted/awesome-selfhosted", limit: 40 }] } },
-  { id: "mock-source", name: "Mock 源", kind: "mock", enabled: false, config: {} },
+  { id: "tg-channels", name: "Telegram 羊毛频道", kind: "telegram", enabled: false, config: { channels: [] } },
 ];
 
 /** 供本机 Playwright 采集器把结果回传到服务器；同时补写 runs / sources 状态，保证 /status 有记录。 */
@@ -273,6 +311,23 @@ export function ensureSources(seeds: SourceSeed[] = SEEDS): void {
       now,
     );
   }
+  // 老库平滑升级：仅当历史源仍是旧版默认 config 时刷新过滤规则，绝不覆盖用户手动修改的配置与启停开关
+  const upgrades: Array<[string, string, string]> = [
+    [
+      "rss-nodeseek",
+      JSON.stringify({ feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", limit: 30 }] }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-nodeseek")?.config ?? {}),
+    ],
+    [
+      "rss-sharewareonsale",
+      JSON.stringify({ feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25 }] }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-sharewareonsale")?.config ?? {}),
+    ],
+  ];
+  for (const [id, oldCfg, nextCfg] of upgrades) {
+    run("UPDATE sources SET config = ? WHERE id = ? AND config = ?", nextCfg, id, oldCfg);
+  }
+  run("DELETE FROM sources WHERE id = 'mock-source' AND NOT EXISTS (SELECT 1 FROM items WHERE source_id = 'mock-source')");
 }
 
 export type RunSummary = {
@@ -342,8 +397,8 @@ function persist(
       const status = e.keep ? "active" : "expired";
       const titleKey = resolveDbMergeKey(e.title);
 
-      const existing = get<{ id: number; ai_keep: number | null; obtain: string | null; ai: string | null }>(
-        "SELECT id, ai_keep, obtain, ai FROM items WHERE source_id = ? AND external_id = ?",
+      const existing = get<{ id: number; title: string; ai_keep: number | null; obtain: string | null; ai: string | null }>(
+        "SELECT id, title, ai_keep, obtain, ai FROM items WHERE source_id = ? AND external_id = ?",
         sourceId,
         e.externalId,
       );
@@ -356,6 +411,15 @@ function persist(
           } catch {
             existingQuality = null;
           }
+        }
+        const promotedFromUpcoming =
+          existing.ai_keep === 0 &&
+          /即将免费|预告/.test(existing.title) &&
+          /本周免费|限时免费/.test(e.title);
+        if (promotedFromUpcoming) {
+          run("UPDATE items SET ai = NULL, ai_keep = NULL WHERE id = ?", existing.id);
+          existing.ai = null;
+          existing.ai_keep = null;
         }
         const nextScore = verdict
           ? score

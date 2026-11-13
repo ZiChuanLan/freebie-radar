@@ -58,19 +58,20 @@ export function groupOfSource(s: Source): SourceGroupKey {
   if (
     id === "epic-free" ||
     id === "steam-free" ||
-    id === "gamerpower" ||
+    id.startsWith("gamerpower") ||
     id === "cheapshark-free" ||
     id === "gog-free" ||
     id === "tg-freegames" ||
     id === "bsky-gamedeals" ||
-    /itad|isthereanydeal|indiegame|ggdeals|keylol|freegame|gamedeal/i.test(id)
+    /itad|isthereanydeal|indiegame|ggdeals|keylol|freegame|gamedeal|itch-free|freesteamkeys/i.test(id)
   ) {
     return "game";
   }
   if (
     id.startsWith("github-") ||
+    id === "openrouter-free" ||
     id === "bsky-plugins" ||
-    /shareware|tickcoupon|giveawayoftheday|appinn|iplaysoft|iapps|sspai|producthunt|hnrss|ruanyifeng|apphookup|googleplay|freeebooks/i.test(
+    /shareware|tickcoupon|giveawayoftheday|ghxi|appinn|iplaysoft|iapps|sspai|producthunt|hnrss|ruanyifeng|apphookup|googleplay|freeebooks/i.test(
       id,
     )
   ) {

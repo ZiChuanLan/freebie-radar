@@ -320,6 +320,17 @@ export function registerApi(app: Hono) {
     if (merge) {
       const subConds = ["x.title_key = items.title_key", "x.status = 'active'"];
       if (q.unread === "1") subConds.push("x.read_at IS NULL");
+      if (q.aiOnly === "1") subConds.push("x.ai_keep = 1");
+      if (q.hideRejected === "1") subConds.push("x.ai_keep IS NOT 0");
+      if (q.freeOnly === "1") subConds.push("(x.is_free = 1 OR x.price = 0)");
+      if (q.hasCodes === "1") subConds.push("x.codes != '[]' AND x.codes != ''");
+      if (q.obtain) {
+        const modes = q.obtain.split(",").filter(Boolean);
+        if (modes.length) {
+          subConds.push(`x.obtain IN (${modes.map(() => "?").join(",")})`);
+          params.push(...modes);
+        }
+      }
       if (q.lang === "zh") subConds.push("is_zh(x.title) = 1");
       else if (q.lang === "en") subConds.push("is_zh(x.title) = 0");
       if (q.category) {
@@ -340,8 +351,10 @@ export function registerApi(app: Hono) {
         subConds.push("(x.expires_at IS NULL OR x.expires_at > ?)");
         params.push(now.toISOString());
       }
+      // 同一福利跨全部分类折叠合并：game 跨全期合并；cloud/ai/software 等日常/周期贴仅在 48 小时窗口内合并，避免遮蔽新一期
+      const sameWindow = "(items.category = 'game' OR ABS(julianday(COALESCE(x.published_at, x.first_seen_at)) - julianday(COALESCE(items.published_at, items.first_seen_at))) <= 2)";
       where.push(
-        `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR category NOT IN ('game','goods') OR id = (SELECT MIN(x.id) FROM items x WHERE ${subConds.join(" AND ")}))`,
+        `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR id = (SELECT x.id FROM items x WHERE ${subConds.join(" AND ")} AND ${sameWindow} ORDER BY x.score DESC, x.id ASC LIMIT 1))`,
       );
     }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -350,7 +363,8 @@ export function registerApi(app: Hono) {
       merge
         ? `SELECT items.*, (SELECT COUNT(*) FROM items d
               WHERE d.title_key = items.title_key AND d.status = 'active'
-                AND LENGTH(CAST(items.title_key AS BLOB)) >= 6 AND items.category IN ('game','goods')) AS dup_count
+                AND LENGTH(CAST(items.title_key AS BLOB)) >= 6
+                AND (items.category = 'game' OR ABS(julianday(COALESCE(d.published_at, d.first_seen_at)) - julianday(COALESCE(items.published_at, items.first_seen_at))) <= 2)) AS dup_count
            FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`
         : `SELECT items.*, 1 AS dup_count FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
       ...params,
@@ -374,16 +388,22 @@ export function registerApi(app: Hono) {
   app.get("/api/items/:id/related", (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
-    const self = get<{ title_key: string | null }>("SELECT title_key FROM items WHERE id = ?", id);
+    const self = get<{ title_key: string | null; published_at: string | null; first_seen_at: string }>(
+      "SELECT title_key, published_at, first_seen_at FROM items WHERE id = ?",
+      id,
+    );
     if (!self) return c.json({ items: [] });
     if (!self.title_key) return c.json({ items: [] });
+    const anchorTime = self.published_at ?? self.first_seen_at;
     const rows = all<ItemRow & { source_name?: string }>(
       `SELECT items.*, s.name AS source_name
          FROM items LEFT JOIN sources s ON s.id = items.source_id
         WHERE items.title_key = ? AND items.status = 'active' AND items.id != ?
-        ORDER BY items.first_seen_at ASC, items.id ASC LIMIT 40`,
+          AND (items.category = 'game' OR ABS(julianday(COALESCE(items.published_at, items.first_seen_at)) - julianday(?)) <= 2)
+        ORDER BY items.score DESC, items.id ASC LIMIT 40`,
       self.title_key,
       id,
+      anchorTime,
     );
     return c.json({ items: rows.map((r) => ({ ...shape(r, [], null), sourceName: r.source_name ?? r.source_id })) });
   });

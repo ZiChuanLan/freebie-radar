@@ -4,6 +4,8 @@ import { decodeEntities } from "./enrich/normalize.ts";
 export type FlareResult = { status: number; body: string; url: string };
 
 const SESSION = "radar";
+/** 空闲 90 秒后自动销毁 FlareSolverr 浏览器实例，避免 Chromium 长期常驻吃掉 300MB+ 内存 */
+const SESSION_IDLE_MS = 90_000;
 
 function endpointOf(base: string): string {
   return /\/v\d+$/.test(base) ? base : base.replace(/\/+$/, "") + "/v1";
@@ -30,33 +32,48 @@ async function post(endpoint: string, body: Record<string, unknown>, timeoutMs =
   }
 }
 
-/**
- * session 状态：FlareSolverr 的 session 是一个常驻浏览器实例。
- * 建一次之后所有请求复用它，Cloudflare 的 clearance 会留在里面，
- * 后续请求从「启浏览器 + 解挑战」的 20-40 秒降到 1-2 秒。
- */
 let sessionUp = false;
 let lastSessionUse = 0;
+let idleTimer: NodeJS.Timeout | null = null;
+
+function touchSessionIdle(endpoint: string): void {
+  lastSessionUse = Date.now();
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    if (sessionUp && Date.now() - lastSessionUse >= SESSION_IDLE_MS - 1000) {
+      void dropSession(endpoint);
+    }
+  }, SESSION_IDLE_MS);
+  idleTimer.unref?.();
+}
 
 async function ensureSession(endpoint: string): Promise<void> {
-  // 超过 20 分钟没用过就重建一次，避免拿到已被回收的 session
   if (sessionUp && Date.now() - lastSessionUse < 20 * 60_000) return;
   const created = await post(endpoint, { cmd: "sessions.create", session: SESSION });
-  // already exists 也算可用
   if (created.status !== "ok" && !/already exists/i.test(created.message ?? "")) {
     throw new Error(`创建 session 失败: ${created.message ?? created.status}`);
   }
   sessionUp = true;
-  lastSessionUse = Date.now();
+  touchSessionIdle(endpoint);
 }
 
 async function dropSession(endpoint: string): Promise<void> {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
   sessionUp = false;
   try {
-    await post(endpoint, { cmd: "sessions.destroy", session: SESSION });
+    await post(endpoint, { cmd: "sessions.destroy", session: SESSION }, 10_000);
   } catch {
     /* 销毁失败无所谓，下次会重建 */
   }
+}
+
+export async function releaseFlareSession(): Promise<void> {
+  if (!sessionUp || !config.flaresolverrUrl) return;
+  await dropSession(endpointOf(config.flaresolverrUrl));
 }
 
 async function request(endpoint: string, url: string, timeoutMs: number, session: string | null): Promise<FlareResult> {
@@ -71,7 +88,7 @@ async function request(endpoint: string, url: string, timeoutMs: number, session
   }
   const raw = String(payload.solution.response ?? "");
   const pre = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(raw);
-  lastSessionUse = Date.now();
+  if (session) touchSessionIdle(endpoint);
   return {
     status: payload.solution.status ?? 0,
     url: payload.solution.url ?? url,
@@ -80,10 +97,7 @@ async function request(endpoint: string, url: string, timeoutMs: number, session
 }
 
 /**
- * 通过 FlareSolverr 取页面。它自带 Chromium，能解 Cloudflare 挑战。
- *
- * 关键：必须用 session。不带 session 时每个请求都会新起一个浏览器，
- * linux.do 单次 40-70 秒；建了 session 之后复用同一个浏览器，降到 1-2 秒。
+ * 通过 FlareSolverr 取页面。使用 session 复用并在空闲 90 秒后自动销毁释放浏览器内存。
  */
 export async function flaresolverrGet(url: string, timeoutMs = config.flaresolverrTimeoutMs): Promise<FlareResult> {
   if (!config.flaresolverrUrl) throw new Error("FLARESOLVERR_URL 未配置，无法访问被 Cloudflare 保护的源");
@@ -94,13 +108,11 @@ export async function flaresolverrGet(url: string, timeoutMs = config.flaresolve
     return await request(endpoint, url, timeoutMs, SESSION);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // session 被回收或损坏：重建一次再试
     if (/session|not found|invalid/i.test(message)) {
       await dropSession(endpoint);
       await ensureSession(endpoint);
       return request(endpoint, url, timeoutMs, SESSION);
     }
-    // 其他错误（挑战超时等）：退回无 session 单发，至少把这次拿到
     return request(endpoint, url, timeoutMs, null);
   }
 }

@@ -27,7 +27,7 @@ function slugOf(e: Element): string {
 export const epicCollector: Collector = {
   kind: "epic",
   label: "Epic Games 喜加一",
-  defaults: { config: { includeUpcoming: true } },
+  defaults: { config: { includeUpcoming: false } },
   async collect(ctx) {
     const locale = String(ctx.config.locale ?? "zh-CN");
     const country = String(ctx.config.country ?? "CN");
@@ -44,7 +44,7 @@ export const epicCollector: Collector = {
     if (res.status !== 200) throw new Error("Epic HTTP " + res.status);
     const elements = res.data?.data?.Catalog?.searchStore?.elements ?? [];
 
-    const includeUpcoming = ctx.config.includeUpcoming !== false;
+    const includeUpcoming = ctx.config.includeUpcoming === true;
     const items: RawItem[] = [];
 
     for (const e of elements) {
@@ -58,6 +58,9 @@ export const epicCollector: Collector = {
         : [];
 
       if (!current.length && !upcoming.length) continue;
+      // 跳过原本就永久免费（原价 0）的游戏，如常驻免费网游
+      const origNum = e.price?.totalPrice?.originalPrice;
+      if (typeof origNum === "number" && origNum === 0) continue;
       const slug = slugOf(e);
       const isNow = current.length > 0;
       const window0 = (isNow ? current[0] : upcoming[0]) ?? {};

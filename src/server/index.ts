@@ -13,6 +13,7 @@ import { digestExists, runDaily } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
 import { getRetention, runCleanup } from "./retention.ts";
 import { ensureSources } from "./collectors/index.ts";
+import { releaseFlareSession } from "./flaresolverr.ts";
 
 migrate();
 ensureSources();
@@ -112,6 +113,8 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: config.hos
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     server.close();
-    process.exit(0);
+    Promise.race([releaseFlareSession(), new Promise((r) => setTimeout(r, 800))]).finally(() => {
+      process.exit(0);
+    });
   });
 }
