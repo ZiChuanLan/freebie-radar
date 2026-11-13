@@ -1,7 +1,7 @@
 import { all, get, migrate, run } from "./db.ts";
 import { enrichItem, isCategory } from "./enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "./enrich/alias.ts";
-import { reviewItems } from "./enrich/ai.ts";
+import { backfillAi } from "./ai-admin.ts";
 import { runAll, runSource, ensureSources } from "./collectors/index.ts";
 import { lastDigests, runDaily } from "./digest.ts";
 import { getPushSettings, passesPushFilters } from "./push.ts";
@@ -109,62 +109,10 @@ async function main() {
       break;
     }
     case "ai-review": {
-      // 补审历史条目：AI 上线前入库的 item 没有 verdict，会导致新闻/提问混进推送
       const limit = Number(args[0] ?? 200);
-      const rows = all<{
-        id: number;
-        source_id: string;
-        external_id: string;
-        title: string;
-        summary: string | null;
-        url: string;
-        score: number;
-        category: string | null;
-      }>(
-        `SELECT id, source_id, external_id, title, summary, url, score, category
-         FROM items WHERE status = 'active' AND ai IS NULL
-         ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?`,
-        limit,
-      );
-      if (!rows.length) {
-        console.log("[ai-review] 没有待审条目");
-        break;
-      }
-      let rejected = 0;
-      let reviewed = 0;
-      const CHUNK = 20;
-      for (let start = 0; start < rows.length; start += CHUNK) {
-        const chunk = rows.slice(start, start + CHUNK);
-        const raws = chunk.map((r) => ({
-          externalId: r.external_id,
-          url: r.url,
-          title: r.title,
-          summary: r.summary ?? "",
-        }));
-        const map = await reviewItems(raws as never).catch(() => null);
-        if (!map) {
-          console.log("[ai-review] 第 " + start + " 批失败，跳过");
-          continue;
-        }
-        for (let i = 0; i < chunk.length; i += 1) {
-          const row = chunk[i]!;
-          const v = map.get(i);
-          if (!v) continue;
-          reviewed += 1;
-          if (!v.keep) rejected += 1;
-          run(
-            "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ? WHERE id = ?",
-            JSON.stringify(v),
-            v.keep ? 1 : 0,
-            v.keep ? row.score : Math.round(row.score * 0.5),
-            v.category || row.category,
-            row.id,
-          );
-        }
-        process.stdout.write(".");
-      }
-      console.log("");
-      console.log("[ai-review] 送审 " + rows.length + "，有结论 " + reviewed + "，判非福利 " + rejected);
+      const modeArg = args[1] === "recent" || args[1] === "rejected" ? args[1] : "pending";
+      const out = await backfillAi(limit, modeArg);
+      console.log(`[ai-review:${out.mode}] 扫描 ${out.scanned}，有结论 ${out.reviewed}，判非福利 ${out.rejected}`);
       break;
     }
     case "stats": {
