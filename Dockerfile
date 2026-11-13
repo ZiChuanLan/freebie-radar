@@ -16,7 +16,11 @@ ENV NODE_ENV=production
 RUN npm i -g pnpm@10
 # curl：Node 的 undici fetch 有独立 TLS 指纹，linux.do 的 Cloudflare 会单独给它 403，
 # 而 curl 能拿 200。装 curl 让 RSS 直连走它，绕开 FlareSolverr 的几十秒开销。
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# ca-certificates 必装：node:24-slim 自带缺失，否则 curl 报
+# (77) error setting certificate file，又会回退到 fetch 被 403。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=build /app/dist ./dist
