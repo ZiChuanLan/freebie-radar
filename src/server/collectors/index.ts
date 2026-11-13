@@ -1,9 +1,9 @@
-import { aiEnabled, config } from "../config.ts";
+import { aiEnabled, config, pushEnabled } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
 import { enrichItem } from "../enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
-import { reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
-import { enqueueForAi } from "../enrich/ai-queue.ts";
+import { getAiSettings, reviewItems, shouldReview, type AiVerdict } from "../enrich/ai.ts";
+import { enqueueForAi, reviewFreshNow } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
 import { pushInstant } from "../instant.ts";
 import { createHttp, type HttpClient } from "../http.ts";
@@ -96,6 +96,58 @@ export const SEEDS: SourceSeed[] = [
 ];
 
 /** 供本机 Playwright 采集器把结果回传到服务器；同时补写 runs / sources 状态，保证 /status 有记录。 */
+const SYNC_PRE_PUSH_LIMIT = 12;
+
+/**
+ * 新条目二审与推送调度：
+ * - reviewBeforePush=true（默认）：优先对高价值/待推条目同步走完 AI 二审，再触发即时推送，其余入后台队列
+ * - reviewBeforePush=false（极速抢码）：先按规则即时推送，AI 结论随后在后台队列补齐
+ */
+async function dispatchFresh(
+  sourceId: string,
+  fresh: FreshItem[],
+  log: (msg: string) => void = console.log,
+): Promise<void> {
+  if (!fresh.length) return;
+  const reviewOn = shouldReview();
+  const aiSettings = reviewOn ? getAiSettings() : null;
+
+  if (reviewOn && aiSettings?.reviewBeforePush) {
+    const ranked = [...fresh].sort(
+      (a, b) => (b.codes.length > 0 ? 1 : 0) - (a.codes.length > 0 ? 1 : 0) || b.score - a.score,
+    );
+    const syncBatch = ranked.slice(0, SYNC_PRE_PUSH_LIMIT);
+    const restBatch = ranked.slice(SYNC_PRE_PUSH_LIMIT);
+    const verdicts = await reviewFreshNow(
+      syncBatch.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+    );
+    for (const f of syncBatch) {
+      const v = verdicts.get(f.id);
+      if (!v) continue;
+      f.aiKeep = v.aiKeep;
+      if (v.category) f.category = v.category;
+      if (v.obtain) f.obtain = v.obtain;
+      f.score = v.score;
+    }
+    log(`[${sourceId}] 推送前 AI 二审 ${syncBatch.length} 条（拦截 ${syncBatch.filter((f) => f.aiKeep === false).length} 条）`);
+    await pushInstant(sourceId, syncBatch);
+    if (restBatch.length) {
+      enqueueForAi(
+        restBatch.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+      );
+      log(`[${sourceId}] 其余 ${restBatch.length} 条入 AI 后台队列`);
+    }
+    return;
+  }
+
+  await pushInstant(sourceId, fresh);
+  if (reviewOn) {
+    enqueueForAi(
+      fresh.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
+    );
+    log(`[${sourceId}] ${fresh.length} 条入 AI 待审队列`);
+  }
+}
 export function ingestItems(sourceId: string, items: RawItem[]): { inserted: number; skipped: number } {
   ensureSources();
   const startedAt = new Date().toISOString();
@@ -104,11 +156,8 @@ export function ingestItems(sourceId: string, items: RawItem[]): { inserted: num
   const runId = Number(runRow.lastInsertRowid);
   try {
     const saved = persist(sourceId, items, null);
-    // 本机采集回传的条目同样走异步二审队列，不阻塞响应
-    if (shouldReview() && saved.fresh.length) {
-      enqueueForAi(
-        saved.fresh.map((f) => ({ itemId: f.id, url: f.url, title: f.title, summary: f.summary ?? "" })),
-      );
+    if (saved.fresh.length && (shouldReview() || pushEnabled)) {
+      void dispatchFresh(sourceId, saved.fresh).catch(() => {});
     }
     const durationMs = Date.now() - t0;
     run(
@@ -380,25 +429,11 @@ export async function runSource(
       log: (m) => log(`[${sourceId}] ${m}`),
     });
     fetched = result.items.length;
-    // 不再同步等 AI 二审：MG 是反代网页，单批 1.6-9 秒、偶发 49 秒，
-    // 同步送审会把 linux.do 一轮采集拖到 33 秒以上，送码帖早被抢光。
-    // 改成：规则判定 → 立即入库 → 立即推送 → 后台队列补 AI 结论。
     const saved = persist(sourceId, result.items, null);
     inserted = saved.inserted;
     skipped = saved.skipped;
-    // 有新条目就立刻判断是否值得即时推送（送码类 1 分钟就没了）
-    if (saved.fresh.length) await pushInstant(sourceId, saved.fresh);
-    // 新条目丢进 AI 队列，结论回填到 items.ai_keep，供列表筛选与后续推送用
-    if (shouldReview() && saved.fresh.length) {
-      enqueueForAi(
-        saved.fresh.map((f) => ({
-          itemId: f.id,
-          url: f.url,
-          title: f.title,
-          summary: f.summary ?? "",
-        })),
-      );
-      log(`[${sourceId}] ${saved.fresh.length} 条入 AI 待审队列`);
+    if (saved.fresh.length) {
+      await dispatchFresh(sourceId, saved.fresh, log);
     }
     if (result.cursor !== undefined) cursor = result.cursor;
     if (result.degraded) {

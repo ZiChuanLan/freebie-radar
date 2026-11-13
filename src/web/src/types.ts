@@ -153,6 +153,7 @@ export type AiSettings = {
   maxItems: number;
   /** 空字符串表示用内置默认 */
   systemPrompt: string;
+  reviewBeforePush: boolean;
   hasKey: boolean;
   keyHint: string;
   ready: boolean;

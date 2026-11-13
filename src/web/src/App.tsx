@@ -314,7 +314,7 @@ export function App() {
   const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
   // 管理接口只在就绪后请求，避免公开区刷出一堆 401，也避免无密码模式卡住加载
   const push = useApi<PushPayload>(adminReady ? "/api/push" : null);
-  const ai = useApi<AiPayload>(adminReady && tab === "ai" ? "/api/ai" : null);
+  const ai = useApi<AiPayload>(adminReady && (tab === "ai" || tab === "push") ? "/api/ai" : null);
   const pushLogs = useApi<{ logs: PushLogItem[] }>(adminReady && tab === "push" ? "/api/push/log?limit=40" : null);
   const [pushPreview, setPushPreview] = useState<{
     instant: string[];
@@ -1113,6 +1113,20 @@ export function App() {
                 const res = await fetch("/api/push/test", { method: "POST" });
                 notify(res.ok ? "测试消息已发送到 Telegram" : "推送未启用或缺少凭据");
                 pushLogs.reload();
+              }}
+              aiReviewBeforePush={ai.data?.settings.reviewBeforePush}
+              onToggleReviewBeforePush={async (v) => {
+                const res = await fetch("/api/ai", {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ reviewBeforePush: v }),
+                });
+                if (!res.ok) {
+                  notify("保存失败");
+                  return;
+                }
+                ai.reload();
+                notify(v ? "已切为：推送前先过 AI 二审" : "已切为：先即时推送再后台补审");
               }}
             />
           )}

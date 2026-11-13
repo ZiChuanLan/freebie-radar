@@ -26,6 +26,8 @@ export type AiSettings = {
   maxItems: number;
   /** 自定义提示词；留空用内置 */
   systemPrompt: string;
+  /** true = 推送前先等 AI 二审（更准但多 1-3 秒）；false = 先即时推再后台补审（极速抢码） */
+  reviewBeforePush: boolean;
 };
 
 const SETTINGS_KEY = "ai";
@@ -54,7 +56,7 @@ const DEFAULT_PROMPT = [
   "  理由：这是资讯/导购文，东西是长期免费的，不是福利；用户随时都能搜到，推给他没有价值。",
   "- 【重点】盘点、榜单、合集、最强推荐、实测、评测、对比、使用心得这类内容形态",
   "- 新闻、资讯、政策解读、行业报告、公司财报",
-  "- 软件版本发布/更新公告、技术教程、开源项目介绍、故障排查",
+  "- 软件/游戏免费更新或补丁说明（如「某游戏免费更新屠戮模式/新地图」「版本更新公告」——本体仍需购买，仅现有玩家内容更新）",
   "- 求助/提问/求推荐/求优惠券（谁有 XX 优惠券、求推荐便宜 VPS）",
   "- 纯讨论、吐槽、比价心得",
   "- 二手交易、账号共享、盗版",
@@ -87,6 +89,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   model: config.aiModel,
   maxItems: DEFAULT_MAX_ITEMS,
   systemPrompt: "",
+  reviewBeforePush: true,
 };
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
@@ -107,6 +110,7 @@ export function getAiSettings(): AiSettings {
       model: typeof raw.model === "string" ? raw.model : DEFAULT_AI_SETTINGS.model,
       maxItems: numOr(raw.maxItems, DEFAULT_AI_SETTINGS.maxItems, 20, 500),
       systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : "",
+      reviewBeforePush: raw.reviewBeforePush !== false,
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -122,6 +126,7 @@ export function saveAiSettings(patch: Partial<AiSettings>): AiSettings {
     model: typeof patch.model === "string" ? patch.model.trim() : cur.model,
     maxItems: numOr(patch.maxItems ?? cur.maxItems, cur.maxItems, 20, 500),
     systemPrompt: typeof patch.systemPrompt === "string" ? patch.systemPrompt : cur.systemPrompt,
+    reviewBeforePush: typeof patch.reviewBeforePush === "boolean" ? patch.reviewBeforePush : cur.reviewBeforePush,
   };
   run(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -147,6 +152,7 @@ export function publicAiSettings(s = getAiSettings()) {
     model: s.model,
     maxItems: s.maxItems,
     systemPrompt: s.systemPrompt,
+    reviewBeforePush: s.reviewBeforePush,
     hasKey: Boolean(s.apiKey),
     keyHint: s.apiKey ? "••••" + s.apiKey.slice(-4) : "",
     ready: aiReady(s),

@@ -283,6 +283,54 @@ export function AiPanel({ data, reload }: { data: AiPayload | null; reload: () =
           </label>
         </div>
 
+        {/* 二审时机：推送前拦截 vs 推送后补审 */}
+        <div className="mt-3 rounded-lg border border-ink-200 bg-surface p-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-[12px] font-medium text-ink-800">AI 二审时机</span>
+            <span className="text-[11px] text-ink-500">
+              {form.reviewBeforePush ? "当前：发 Telegram 前先过模型审核" : "当前：命中规则先即时推送，随后后台补审"}
+            </span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                setForm({ ...form, reviewBeforePush: true });
+                void save({ reviewBeforePush: true });
+              }}
+              className={
+                "rounded-lg border px-3 py-2 text-left text-[12px] transition-colors " +
+                (form.reviewBeforePush
+                  ? "border-brand bg-brand-subtle font-medium text-brand"
+                  : "border-ink-200 bg-surface-hover text-ink-700 hover:bg-ink-100")
+              }
+            >
+              <div>推送前先审（推荐）</div>
+              <div className="mt-0.5 text-[11px] font-normal text-ink-500">
+                新条目先过 AI 验真再发 Telegram，多等 1~3 秒，拦掉更新公告/水帖
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setForm({ ...form, reviewBeforePush: false });
+                void save({ reviewBeforePush: false });
+              }}
+              className={
+                "rounded-lg border px-3 py-2 text-left text-[12px] transition-colors " +
+                (!form.reviewBeforePush
+                  ? "border-brand bg-brand-subtle font-medium text-brand"
+                  : "border-ink-200 bg-surface-hover text-ink-700 hover:bg-ink-100")
+              }
+            >
+              <div>推送后补审（极速抢码）</div>
+              <div className="mt-0.5 text-[11px] font-normal text-ink-500">
+                高分/兑换码 0 延迟立刻推送，AI 随后在后台补写结论（只影响后续列表）
+              </div>
+            </button>
+          </div>
+        </div>
+
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"

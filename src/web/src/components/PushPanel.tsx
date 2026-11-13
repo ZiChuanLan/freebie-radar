@@ -104,6 +104,8 @@ export function PushPanel({
   onPreview,
   onFlush,
   onTest,
+  aiReviewBeforePush,
+  onToggleReviewBeforePush,
 }: {
   payload: PushPayload | null;
   preview: { instant: string[]; batch: string[]; queued: number; scanned?: number; matched?: number } | null;
@@ -112,6 +114,8 @@ export function PushPanel({
   onPreview: () => Promise<void>;
   onFlush: () => Promise<void>;
   onTest: () => Promise<void>;
+  aiReviewBeforePush?: boolean;
+  onToggleReviewBeforePush?: (v: boolean) => Promise<void>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const s = payload?.settings;
@@ -344,13 +348,21 @@ export function PushPanel({
             抽奖、试用、推广算不算福利有争议，默认只推「直接白嫖」；一个都不选表示不限制
           </p>
         </div>
-        <div className="grid gap-2.5 sm:grid-cols-3">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <Toggle
             label="只推 AI 验真福利"
             hint="拦掉新闻、求问、评测等非福利帖"
             value={s.onlyAiKeep}
             onChange={(v) => save({ onlyAiKeep: v })}
           />
+          {typeof aiReviewBeforePush === "boolean" && onToggleReviewBeforePush && (
+            <Toggle
+              label="推送前先过 AI 二审"
+              hint={aiReviewBeforePush ? "已开启：先审后发，防非福利漏推" : "已关闭：先即时发再后台补审"}
+              value={aiReviewBeforePush}
+              onChange={(v) => void onToggleReviewBeforePush(v)}
+            />
+          )}
           <Toggle
             label="订阅命中优先直推"
             hint="命中「我的订阅」词条立刻单发"

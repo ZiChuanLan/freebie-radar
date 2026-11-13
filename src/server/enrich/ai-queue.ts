@@ -1,4 +1,4 @@
-import { reviewItems } from "./ai-settings.ts";
+import { reviewItems, type AiVerdict } from "./ai-settings.ts";
 import { isCategory } from "./index.ts";
 import { calibrateScoreByObtain } from "./alias.ts";
 import type { RawItem } from "../collectors/types.ts";
@@ -51,6 +51,82 @@ export function aiQueueStats(): { queued: number; processed: number; dropped: nu
   return { queued: queue.length, processed, dropped, running };
 }
 
+export type AppliedVerdict = {
+  aiKeep: boolean;
+  category: string | null;
+  obtain: string | null;
+  score: number;
+};
+
+function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict | null {
+  const keep = verdict.keep ? 1 : 0;
+  const nextCategory = isCategory(verdict.category) ? verdict.category : null;
+  const nextObtain = verdict.obtain && VALID_OBTAIN.has(verdict.obtain) ? verdict.obtain : null;
+  try {
+    const cur = get<{ score: number; ai_keep: number | null; obtain: string | null; category: string | null }>(
+      "SELECT score, ai_keep, obtain, category FROM items WHERE id = ?",
+      itemId,
+    );
+    const effectiveObtain = nextObtain ?? cur?.obtain ?? null;
+    const nextScore =
+      cur && cur.ai_keep === null
+        ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep)
+        : cur?.score ?? 0;
+    run(
+      `UPDATE items
+          SET ai = ?,
+              ai_keep = ?,
+              obtain = COALESCE(?, obtain),
+              category = COALESCE(?, category),
+              score = ?
+        WHERE id = ?`,
+      JSON.stringify(verdict),
+      keep,
+      nextObtain,
+      nextCategory,
+      nextScore,
+      itemId,
+    );
+    return {
+      aiKeep: verdict.keep,
+      category: nextCategory ?? cur?.category ?? null,
+      obtain: effectiveObtain,
+      score: nextScore,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 推送前同步二审：把本轮待推送新条目先送模型判定并写库，返回各 itemId 的最新结论。 */
+export async function reviewFreshNow(items: Job[]): Promise<Map<number, AppliedVerdict>> {
+  const out = new Map<number, AppliedVerdict>();
+  if (!items.length) return out;
+  const raws = items.map((j) => ({
+    externalId: String(j.itemId),
+    url: j.url,
+    title: j.title,
+    summary: j.summary,
+  })) as RawItem[];
+  try {
+    const map = await reviewItems(raws);
+    if (!map) return out;
+    for (const [idx, verdict] of map) {
+      const job = items[idx];
+      if (!job) continue;
+      const applied = applyVerdictToItem(job.itemId, verdict);
+      if (applied) {
+        processed += 1;
+        out.set(job.itemId, applied);
+      } else {
+        dropped += 1;
+      }
+    }
+  } catch {
+    /* 同步二审失败时不抛错，留给后续推送规则兜底 */
+  }
+  return out;
+}
 async function drain(): Promise<void> {
   if (running) return;
   running = true;
@@ -81,38 +157,8 @@ async function drain(): Promise<void> {
       for (const [idx, verdict] of map) {
         const job = batch[idx];
         if (!job) continue;
-        const keep = verdict.keep ? 1 : 0;
-        const nextCategory = isCategory(verdict.category) ? verdict.category : null;
-        const nextObtain = verdict.obtain && VALID_OBTAIN.has(verdict.obtain) ? verdict.obtain : null;
-        try {
-          const cur = get<{ score: number; ai_keep: number | null; obtain: string | null }>(
-            "SELECT score, ai_keep, obtain FROM items WHERE id = ?",
-            job.itemId,
-          );
-          const effectiveObtain = nextObtain ?? cur?.obtain ?? null;
-          const nextScore =
-            cur && cur.ai_keep === null
-              ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep)
-              : cur?.score ?? 0;
-          run(
-            `UPDATE items
-                SET ai = ?,
-                    ai_keep = ?,
-                    obtain = COALESCE(?, obtain),
-                    category = COALESCE(?, category),
-                    score = ?
-              WHERE id = ?`,
-            JSON.stringify(verdict),
-            keep,
-            nextObtain,
-            nextCategory,
-            nextScore,
-            job.itemId,
-          );
-          processed += 1;
-        } catch {
-          dropped += 1;
-        }
+        if (applyVerdictToItem(job.itemId, verdict)) processed += 1;
+        else dropped += 1;
       }
     }
   } finally {

@@ -206,3 +206,35 @@ test("活动积分福利：「华为小红书Skill报名领codearts 每天1000�
     (config as { ingestToken: string }).ingestToken = prevToken;
   }
 });
+
+test("免费更新拦截 & AI 二审时机配置持久化", async () => {
+  const { NOISE_TITLE } = await import("../src/server/enrich/noise.ts");
+  const { extractPrice } = await import("../src/server/enrich/pricing.ts");
+
+  const patchTitle = "《毁灭战士：黑暗时代》将于11月16日免费更新屠戮模式";
+  assert.equal(NOISE_TITLE.test(patchTitle), true);
+  assert.equal(extractPrice(patchTitle, "").isFree, false);
+
+  // /api/ai 默认 reviewBeforePush=true，PATCH 可来回切换
+  const g1 = await app.request("/api/ai");
+  assert.equal(g1.status, 200);
+  const j1 = (await g1.json()) as { settings: { reviewBeforePush: boolean } };
+  assert.equal(j1.settings.reviewBeforePush, true);
+
+  const p1 = await app.request("/api/ai", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reviewBeforePush: false }),
+  });
+  assert.equal(p1.status, 200);
+  const j2 = (await p1.json()) as { settings: { reviewBeforePush: boolean } };
+  assert.equal(j2.settings.reviewBeforePush, false);
+
+  const p2 = await app.request("/api/ai", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reviewBeforePush: true }),
+  });
+  const j3 = (await p2.json()) as { settings: { reviewBeforePush: boolean } };
+  assert.equal(j3.settings.reviewBeforePush, true);
+});
