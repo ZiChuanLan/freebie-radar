@@ -261,7 +261,7 @@ export function OpsPanel({
               <button
                 type="button"
                 onClick={() => setShowAddRss((v) => !v)}
-                className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-3 py-1.5 text-[12px] font-medium text-brand hover:bg-blue-100/70"
+                className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-3 py-1.5 text-[12px] font-medium text-brand hover:bg-ink-200/70"
               >
                 <Plus size={13} /> {showAddRss ? "收起" : "添加 RSS / Atom"}
               </button>
@@ -269,7 +269,7 @@ export function OpsPanel({
               </div>
 
             {showIngestGuide && (
-              <div className="space-y-3 border-b border-ink-100 bg-blue-50/40 px-4 py-3 text-[12.5px] text-ink-700">
+              <div className="space-y-3 border-b border-ink-100 bg-brand-subtle/60 px-4 py-3 text-[12.5px] text-ink-700">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 font-medium text-ink-900">
                     <ShieldCheck size={14} className="text-brand" />
@@ -339,18 +339,18 @@ export function OpsPanel({
                     value={rssName}
                     onChange={(e) => setRssName(e.target.value)}
                     placeholder="源名称（如 某博客羊毛）"
-                    className="rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] text-ink-950 outline-none focus:border-brand sm:col-span-3"
+                    className="rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12.5px] text-ink-950 outline-none focus:border-brand sm:col-span-3"
                   />
                   <input
                     value={rssUrl}
                     onChange={(e) => setRssUrl(e.target.value)}
                     placeholder="https://example.com/feed"
-                    className="rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] text-ink-950 outline-none focus:border-brand sm:col-span-5"
+                    className="rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12.5px] text-ink-950 outline-none focus:border-brand sm:col-span-5"
                   />
                   <select
                     value={rssInterval}
                     onChange={(e) => setRssInterval(Number(e.target.value))}
-                    className="rounded-xl border border-ink-200 bg-surface px-2 py-2 text-[12px] text-ink-800 outline-none focus:border-brand sm:col-span-2"
+                    className="rounded-lg border border-ink-200 bg-surface px-2 py-2 text-[12px] text-ink-800 outline-none focus:border-brand sm:col-span-2"
                   >
                     {INTERVAL_OPTIONS.map((o) => (
                       <option key={o.sec} value={o.sec}>
@@ -372,7 +372,7 @@ export function OpsPanel({
                         setAddingRss(false);
                       }
                     }}
-                    className="inline-flex items-center justify-center gap-1 rounded-xl bg-brand px-3 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-40 sm:col-span-2"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-40 sm:col-span-2"
                   >
                     {addingRss ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
                     加入并采集
@@ -450,7 +450,7 @@ export function OpsPanel({
                         <button
                           type="button"
                           onClick={() => void startLoopbackLogin(s.id)}
-                          className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-2 text-[12px] font-medium text-brand hover:bg-blue-100/70"
+                          className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-2 text-[12px] font-medium text-brand hover:bg-ink-200/70"
                           title="通过本机回环助手扫码登录并采集，Cookie 仅留在本机"
                         >
                           <ExternalLink size={11} />
@@ -566,7 +566,7 @@ export function OpsPanel({
                             <button
                               type="button"
                               onClick={() => void startLoopbackLogin(s.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-1 text-[12px] font-medium text-brand hover:bg-blue-100/70"
+                              className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-1 text-[12px] font-medium text-brand hover:bg-ink-200/70"
                               title="通过本机回环助手扫码登录并采集，Cookie 仅留在本机"
                             >
                               <ExternalLink size={11} />
@@ -670,7 +670,7 @@ export function OpsPanel({
                 { key: "pushLogDays" as const, label: "推送日志", hint: "天" },
                 { key: "digestDays" as const, label: "每日精选", hint: "天" },
               ].map((f) => (
-                <label key={f.key} className="block rounded-xl border border-ink-200 bg-surface-hover p-3">
+                <label key={f.key} className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
                   <span className="mb-1.5 block text-[12px] font-medium text-ink-700">{f.label}</span>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -710,7 +710,7 @@ export function OpsPanel({
               <button
                 type="button"
                 onClick={previewCleanup}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
               >
                 <Search size={13} /> 预演清理量
               </button>
@@ -718,7 +718,7 @@ export function OpsPanel({
                 type="button"
                 disabled={cleaning}
                 onClick={doCleanup}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-alert-border bg-alert-subtle px-3.5 py-1.5 text-[12.5px] font-medium text-alert hover:bg-red-100/80 disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-alert-border bg-alert-subtle px-3.5 py-1.5 text-[12.5px] font-medium text-alert hover:bg-red-100/80 disabled:opacity-60"
               >
                 {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} 立即清理
               </button>
@@ -726,7 +726,7 @@ export function OpsPanel({
           </div>
 
           {cleanPreview && (
-            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3 text-[12.5px] text-ink-700">
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3 text-[12.5px] text-ink-700">
               将清理：
               {Object.entries(cleanPreview)
                 .filter(([, n]) => n > 0)

@@ -41,7 +41,7 @@ export function AdminGate({
                 onAuthChange?.(false);
                 setInput("");
               }}
-              className="text-[12px] font-medium text-brand hover:underline"
+              className="text-[12px] font-medium text-accent hover:underline"
             >
               退出登录
             </button>
@@ -56,7 +56,7 @@ export function AdminGate({
     <div className="mx-auto max-w-sm">
       <div className="panel space-y-4 p-6">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-subtle text-brand">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-subtle text-accent">
             <Lock size={17} />
           </div>
           <div>
@@ -103,7 +103,7 @@ export function AdminGate({
           <button
             type="submit"
             disabled={checking || !input.trim()}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-medium text-white hover:bg-brand-hover disabled:opacity-60"
           >
             {checking ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
             进入管理区

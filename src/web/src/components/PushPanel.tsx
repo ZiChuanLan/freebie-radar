@@ -43,7 +43,7 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
     >
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink-900">{label}</div>
@@ -98,7 +98,7 @@ function NumberField({
   };
 
   return (
-    <div className="rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
+    <div className="rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium text-ink-900">{label}</span>
         <div className="flex items-center gap-1">
@@ -237,7 +237,7 @@ export function PushPanel({
       <section className="panel flex flex-wrap items-center justify-between gap-4 p-4">
         <div className="flex flex-wrap items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className={`grid h-10 w-10 place-items-center rounded-xl ${s.enabled ? "bg-deal-subtle text-deal" : "bg-ink-100 text-ink-500"}`}>
+            <div className={`grid h-10 w-10 place-items-center rounded-lg ${s.enabled ? "bg-deal-subtle text-deal" : "bg-ink-100 text-ink-500"}`}>
               <BellRing size={18} />
             </div>
             <div>
@@ -287,7 +287,7 @@ export function PushPanel({
             <button
               type="button"
               onClick={() => void save(payload.defaults)}
-              className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12px] font-medium text-ink-600 hover:bg-ink-100"
+              className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12px] font-medium text-ink-600 hover:bg-ink-100"
               title="恢复全部推送规则为默认值"
             >
               <RotateCcw size={13} /> 恢复默认
@@ -297,7 +297,7 @@ export function PushPanel({
             type="button"
             onClick={() => save({ enabled: !s.enabled })}
             className={
-              "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[13px] font-medium transition-colors " +
+              "inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-[13px] font-medium transition-colors " +
               (s.enabled
                 ? "border-deal-border bg-deal-subtle text-deal hover:bg-emerald-100"
                 : "border-ink-200 bg-ink-100 text-ink-600 hover:bg-ink-200")
@@ -309,7 +309,7 @@ export function PushPanel({
       </section>
 
       {!payload?.ready && (
-        <div className="rounded-xl border border-code-border bg-code-subtle p-3.5 text-[12.5px] text-amber-900">
+        <div className="rounded-lg border border-code-border bg-code-subtle p-3.5 text-[12.5px] text-amber-900">
           服务端尚未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID（或 PUSH_CHANNEL=none），这里的设置会提前保存，配好凭据后立即生效。
         </div>
       )}
@@ -359,7 +359,7 @@ export function PushPanel({
                 type="button"
                 onClick={() => save({ pushTiming: "wait_ai" })}
                 className={
-                  "rounded-xl border px-3.5 py-2.5 text-left transition-colors " +
+                  "rounded-lg border px-3.5 py-2.5 text-left transition-colors " +
                   (s.pushTiming === "wait_ai"
                     ? "border-brand bg-brand-subtle text-brand"
                     : "border-ink-200 bg-surface-hover text-ink-700 hover:bg-ink-100")
@@ -374,7 +374,7 @@ export function PushPanel({
                 type="button"
                 onClick={() => save({ pushTiming: "instant_first" })}
                 className={
-                  "rounded-xl border px-3.5 py-2.5 text-left transition-colors " +
+                  "rounded-lg border px-3.5 py-2.5 text-left transition-colors " +
                   (s.pushTiming === "instant_first"
                     ? "border-brand bg-brand-subtle text-brand"
                     : "border-ink-200 bg-surface-hover text-ink-700 hover:bg-ink-100")
@@ -425,7 +425,7 @@ export function PushPanel({
                     type="button"
                     onClick={() => save({ aiFallbackMode: opt.key })}
                     className={
-                      "rounded-xl border px-3 py-2 text-left transition-colors " +
+                      "rounded-lg border px-3 py-2 text-left transition-colors " +
                       (s.aiFallbackMode === opt.key
                         ? "border-brand bg-brand-subtle text-brand"
                         : "border-ink-200 bg-surface-hover text-ink-700 hover:bg-ink-100")
@@ -468,7 +468,7 @@ export function PushPanel({
 
             <div className="grid gap-4 lg:grid-cols-3">
               {/* 最高价格上限 */}
-              <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+              <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[13px] font-medium text-ink-900">最高推送价格</span>
                   <span className="font-mono text-[12px] text-brand">
@@ -522,7 +522,7 @@ export function PushPanel({
               </div>
 
               {/* 语言过滤 */}
-              <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+              <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
                 <div className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-ink-900">
                   <Languages size={14} className="text-ink-500" /> 语言过滤
                 </div>
@@ -553,7 +553,7 @@ export function PushPanel({
               </div>
 
               {/* 新帖时效上限 */}
-              <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+              <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[13px] font-medium text-ink-900">新帖时效闸门</span>
                   <span className="font-mono text-[12px] text-brand">
@@ -584,7 +584,7 @@ export function PushPanel({
             </div>
 
             {/* 分类白名单 */}
-            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[13px] font-medium text-ink-900">只推哪些分类（不勾选表示全部分类都推）</span>
                 {s.categories.length > 0 && (
@@ -621,7 +621,7 @@ export function PushPanel({
             </div>
 
             {/* 获取方式白名单 */}
-            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[13px] font-medium text-ink-900">只推这些获取方式（都不选表示不限制）</span>
                 {s.obtainModes.length > 0 && (
@@ -665,7 +665,7 @@ export function PushPanel({
             </div>
 
             {/* 数据源范围控制 */}
-            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[13px] font-medium text-ink-900">数据源推送范围</span>
                 <div className="flex items-center gap-1.5">
@@ -788,7 +788,7 @@ export function PushPanel({
               </div>
             </div>
 
-            <label className="block rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
+            <label className="block rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5">
               <span className="text-[12.5px] font-medium text-ink-900">自定义消息头前缀（失焦保存，留空用默认）</span>
               <input
                 value={customHeaderDraft}
@@ -838,7 +838,7 @@ export function PushPanel({
               />
             </div>
 
-            <label className="block rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
+            <label className="block rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-medium text-ink-900">攒批周期（修改后立即重建定时器）</span>
                 <span className="font-mono text-[12px] text-brand">
@@ -860,7 +860,7 @@ export function PushPanel({
               </select>
             </label>
 
-            <div className="space-y-2.5 rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="space-y-2.5 rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-900">
                   <Moon size={13} className="text-ink-500" /> 夜间免打扰时段
@@ -976,7 +976,7 @@ export function PushPanel({
                       setBusy(null);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover"
                 >
                   {busy === "preview" ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} 试算推送预览
                 </button>
@@ -990,7 +990,7 @@ export function PushPanel({
                       setBusy(null);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
                 >
                   {busy === "flush" ? <Loader2 size={13} className="animate-spin" /> : <ListOrdered size={13} />} 立即发攒批
                 </button>
@@ -1004,7 +1004,7 @@ export function PushPanel({
                       setBusy(null);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
                 >
                   {busy === "test" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} 发测试消息
                 </button>
@@ -1014,7 +1014,7 @@ export function PushPanel({
             {preview && (
               <div className="space-y-3 pt-1">
                 {preview.rejectedBy && (
-                  <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-ink-200 bg-surface-hover px-3 py-2 text-[11.5px]">
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-200 bg-surface-hover px-3 py-2 text-[11.5px]">
                     <span className="font-medium text-ink-700">
                       扫描 {preview.scanned} 条 · 通过筛选 {preview.matched} 条 · 拦截分布：
                     </span>
@@ -1027,7 +1027,7 @@ export function PushPanel({
                 )}
 
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-xl border border-ink-200 bg-surface-hover p-3">
+                  <div className="rounded-lg border border-ink-200 bg-surface-hover p-3">
                     <div className="mb-1.5 flex items-center justify-between text-[12px] font-medium text-deal">
                       <span>⚡ 立即推送（命中 {preview.instant.length}）</span>
                       <span className="font-mono text-[11px] text-ink-500">
@@ -1038,7 +1038,7 @@ export function PushPanel({
                       {preview.instant.length ? preview.instant.join("\n\n") : "（当前条件下没有触发立即推送的条目）"}
                     </pre>
                   </div>
-                  <div className="rounded-xl border border-ink-200 bg-surface-hover p-3">
+                  <div className="rounded-lg border border-ink-200 bg-surface-hover p-3">
                     <div className="mb-1.5 text-[12px] font-medium text-brand">
                       📦 攒批队列（本批 {preview.batch.length}，内存中已排队 {preview.queued}）
                     </div>

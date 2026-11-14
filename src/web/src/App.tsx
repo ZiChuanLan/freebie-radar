@@ -21,6 +21,7 @@ import {
   Sparkles,
   Tag,
   Wrench,
+  X,
   Zap,
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
@@ -116,8 +117,8 @@ function useApi<T>(url: string | null): { data: T | null; loading: boolean; erro
 function Toast({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-xl border border-ink-200 bg-surface px-4 py-2.5 text-[13px] font-medium text-ink-900 shadow-lg">
-      <Check size={14} className="text-deal" />
+    <div className="fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-lg border border-ink-800 bg-ink-950 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-lg">
+      <Check size={14} className="text-emerald-400" />
       {message}
     </div>
   );
@@ -208,7 +209,19 @@ export function App() {
   /** 移动端：侧栏「筛选与数据源」展开态与顶部筛选栏展开态 */
   const [mobileFilters, setMobileFilters] = useState(false);
   const [mobileFilterBar, setMobileFilterBar] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    const onSlash = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement | null)?.isContentEditable) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onSlash);
+    return () => window.removeEventListener("keydown", onSlash);
+  }, []);
   const notify = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -489,185 +502,203 @@ export function App() {
   const exportUrl = "/api/export?format=md&" + query.replace(/limit=\d+/, "limit=300");
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* 顶部固定命令栏 */}
-      <header className="sticky top-0 z-30 border-b border-ink-200 bg-surface/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1560px] flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
-          <div className="flex shrink-0 items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-white shadow-sm">
-              <Radar size={19} />
-            </div>
-            <div className="leading-tight">
-              <h1 className="text-[15px] font-semibold tracking-tight text-ink-950">白嫖雷达</h1>
-              <p className="text-[11px] text-ink-500">自动聚合 + AI 验真</p>
-            </div>
+    <div className="flex min-h-screen flex-col bg-surface lg:flex-row">
+      {/* 左侧连续导轨（移动端为顶部收拢区） */}
+      <aside className="w-full shrink-0 border-b border-ink-200 bg-canvas/70 px-3.5 py-3 lg:flex lg:w-[240px] lg:flex-col lg:gap-4 lg:border-r lg:border-b-0 lg:bg-canvas lg:px-3 lg:py-4">
+        {/* 品牌行 + 移动端快捷导出/刷新 */}
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+            <h1 className="text-[14.5px] font-semibold tracking-tight text-ink-950">白嫖雷达</h1>
           </div>
-
-          <div className="relative order-last w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[280px] sm:flex-1">
-            <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-ink-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索福利资源（按 Enter 即时筛选）…"
-              className="w-full rounded-xl border border-ink-200 bg-canvas py-2 pr-3 pl-9 text-[13.5px] text-ink-950 transition-colors outline-none placeholder:text-ink-400 focus:border-brand focus:bg-surface"
-            />
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <div className="mr-1 hidden items-center gap-3 border-r border-ink-200 pr-3 text-[12px] lg:flex">
-              <div className="text-center">
-                <span className="block font-mono text-[14px] leading-tight font-semibold tabular-nums text-ink-950">
-                  {stats.data?.totals.aiKept ?? "—"}
-                </span>
-                <span className="text-ink-500">真福利</span>
-              </div>
-              <div className="text-center">
-                <span className="block font-mono text-[14px] leading-tight font-semibold tabular-nums text-ink-950">
-                  {stats.data?.totals.last24h ?? "—"}
-                </span>
-                <span className="text-ink-500">24h 新增</span>
-              </div>
-              <div className="text-center">
-                <span className="block font-mono text-[14px] leading-tight font-semibold tabular-nums text-ink-950">
-                  {stats.data?.totals.withCodes ?? "—"}
-                </span>
-                <span className="text-ink-500">含码</span>
-              </div>
-            </div>
-
+          <span className="hidden font-mono text-[11px] tabular-nums text-ink-400 lg:inline">
+            {stats.data?.totals.aiKept ?? "—"} 精选
+          </span>
+          <div className="flex items-center gap-1.5 lg:hidden">
             <a
               href={exportUrl}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-2.5 py-2.5 text-[12.5px] font-medium text-ink-700 transition-colors hover:bg-ink-100 sm:px-3 sm:py-2"
+              className="rounded-md border border-ink-200 bg-surface p-2 text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-950"
               title="按当前筛选导出 Markdown"
             >
-              <Download size={13} /> <span className="hidden sm:inline">导出</span>
+              <Download size={14} />
             </a>
             <button
               type="button"
               onClick={refreshAll}
-              className="rounded-xl border border-ink-200 bg-surface p-2.5 text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 sm:p-2"
+              className="rounded-md border border-ink-200 bg-surface p-2 text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-950"
               title="刷新数据"
             >
-              <RefreshCw size={15} className={items.loading ? "animate-spin" : ""} />
+              <RefreshCw size={14} className={items.loading ? "animate-spin" : ""} />
             </button>
           </div>
         </div>
-      </header>
 
-      <div className="mx-auto flex w-full max-w-[1560px] flex-1 flex-col gap-3 px-3 py-3 sm:gap-5 sm:px-6 sm:py-5 lg:flex-row">
-        {/* 左侧导航与筛选坞 */}
-        <aside className="w-full shrink-0 space-y-2 sm:space-y-4 lg:w-[232px]">
-          <nav className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:pb-0">
-            {tabs.slice(0, 2).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => handleTab(t.key)}
-                className={
-                  "flex shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
-                  (tab === t.key
-                    ? "bg-brand text-white shadow-sm"
-                    : "text-ink-600 hover:bg-surface hover:text-ink-950")
+        {/* 搜索框（/ 快捷键聚焦） */}
+        <div className="relative mt-2.5 lg:mt-0">
+          <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-400" />
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                if (search) {
+                  setSearch("");
+                  setDebounced("");
+                } else {
+                  e.currentTarget.blur();
                 }
-              >
-                <span className="flex items-center gap-2">
-                  <t.icon size={15} />
-                  {t.label}
-                </span>
-              </button>
-            ))}
-            <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-ink-200 lg:hidden" />
-            <div className="hidden px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-ink-400 uppercase lg:block">
-              系统管理
-            </div>
-            {tabs.slice(2).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => handleTab(t.key)}
-                className={
-                  "flex shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
-                  (tab === t.key
-                    ? "bg-brand text-white shadow-sm"
-                    : "text-ink-600 hover:bg-surface hover:text-ink-950")
-                }
-              >
-                <span className="flex items-center gap-2">
-                  <t.icon size={15} />
-                  {t.label}
-                </span>
-                {typeof t.badge === "number" && t.badge > 0 && (
-                  <span
-                    className={
-                      "rounded-md px-1.5 py-0.5 font-mono text-[11px] " +
-                      (tab === t.key ? "bg-white/25 text-white" : "bg-ink-200 text-ink-700")
-                    }
-                  >
-                    {t.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
+              }
+            }}
+            placeholder="搜索福利、兑换码…"
+            className="h-8 w-full rounded-md border border-ink-200 bg-surface pr-8 pl-8 text-[12.5px] text-ink-950 transition-colors outline-none placeholder:text-ink-400 focus:border-accent"
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setDebounced("");
+              }}
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+              title="清空搜索"
+            >
+              <X size={12} />
+            </button>
+          ) : (
+            <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border border-ink-200 bg-canvas px-1.5 py-0.5 font-mono text-[10.5px] text-ink-400 lg:inline">
+              /
+            </kbd>
+          )}
+        </div>
 
-          {tab === "feed" && (
-            <>
-              <button
-                type="button"
-                onClick={() => setMobileFilters((v) => !v)}
-                className="panel flex w-full items-center justify-between px-3 py-2.5 text-[12.5px] font-medium text-ink-700 transition-colors hover:border-ink-300 lg:hidden"
-              >
-                <span className="flex items-center gap-1.5">
-                  <SlidersHorizontal size={13} /> 场景与数据源
+        {/* 导航：手机横向可滚，桌面纵列无边框 */}
+        <nav className="-mx-3.5 mt-2.5 flex gap-1 overflow-x-auto px-3.5 pb-0.5 lg:mx-0 lg:mt-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
+          {tabs.slice(0, 2).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => handleTab(t.key)}
+              className={
+                "flex shrink-0 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
+                (tab === t.key
+                  ? "bg-ink-950 text-white lg:bg-canvas-subtle lg:font-semibold lg:text-ink-950"
+                  : "text-ink-600 hover:bg-canvas-subtle/70 hover:text-ink-950")
+              }
+            >
+              <span className="flex items-center gap-2">
+                <t.icon size={14} className={tab === t.key ? "lg:text-accent" : "text-ink-400"} />
+                {t.label}
+              </span>
+              {t.key === "feed" && (stats.data?.totals.unread ?? 0) > 0 && (
+                <span
+                  className={
+                    "hidden font-mono text-[11px] tabular-nums lg:inline " +
+                    (tab === t.key ? "text-ink-600" : "text-ink-400")
+                  }
+                >
+                  {stats.data?.totals.unread}
                 </span>
-                <ChevronDown
-                  size={14}
-                  className={"text-ink-400 transition-transform " + (mobileFilters ? "rotate-180" : "")}
-                />
-              </button>
-              <div className={mobileFilters ? "space-y-4" : "hidden space-y-4 lg:block"}>
-              <div className="panel p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold tracking-wide text-ink-500 uppercase">快速筛选</span>
+              )}
+            </button>
+          ))}
+          <div className="mx-1 h-4 w-px shrink-0 self-center bg-ink-200 lg:hidden" />
+          <div className="hidden px-2.5 pt-3 pb-1 text-[11px] font-medium text-ink-400 lg:block">
+            管理
+          </div>
+          {tabs.slice(2).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => handleTab(t.key)}
+              className={
+                "flex shrink-0 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
+                (tab === t.key
+                  ? "bg-ink-950 text-white lg:bg-canvas-subtle lg:font-semibold lg:text-ink-950"
+                  : "text-ink-600 hover:bg-canvas-subtle/70 hover:text-ink-950")
+              }
+            >
+              <span className="flex items-center gap-2">
+                <t.icon size={14} className={tab === t.key ? "lg:text-accent" : "text-ink-400"} />
+                {t.label}
+              </span>
+              {typeof t.badge === "number" && t.badge > 0 && (
+                <span
+                  className={
+                    "rounded px-1.5 py-0.5 font-mono text-[11px] tabular-nums " +
+                    (tab === t.key
+                      ? "bg-white/20 text-white lg:bg-surface lg:text-ink-700"
+                      : "bg-ink-200/80 text-ink-600")
+                  }
+                >
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* 场景预设 & 数据源（仅资源流 tab，手机默认折叠） */}
+        {tab === "feed" && (
+          <div className="mt-2.5 lg:mt-0 lg:flex lg:flex-col lg:gap-4">
+            <button
+              type="button"
+              onClick={() => setMobileFilters((v) => !v)}
+              className="flex w-full items-center justify-between rounded-md border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 transition-colors hover:border-ink-300 lg:hidden"
+            >
+              <span className="flex items-center gap-1.5">
+                <SlidersHorizontal size={13} /> 场景与数据源
+              </span>
+              <ChevronDown
+                size={14}
+                className={"text-ink-400 transition-transform " + (mobileFilters ? "rotate-180" : "")}
+              />
+            </button>
+
+            <div className={mobileFilters ? "mt-2.5 space-y-4 lg:mt-0" : "hidden space-y-4 lg:block"}>
+              {/* 快速筛选 */}
+              <div className="border-t border-ink-200 pt-3">
+                <div className="mb-1.5 flex items-center justify-between px-2">
+                  <span className="text-[11px] font-medium text-ink-400">常用场景</span>
                   {activeFilterCount > 0 && (
                     <button
                       type="button"
                       onClick={resetFilters}
-                      className="inline-flex items-center gap-0.5 text-[11px] font-medium text-brand hover:underline"
+                      className="inline-flex items-center gap-0.5 text-[11px] font-medium text-accent hover:underline"
                       title="清除全部筛选条件"
                     >
-                      <RotateCcw size={11} /> 清除 {activeFilterCount}
+                      <RotateCcw size={10} /> 清除 {activeFilterCount}
                     </button>
                   )}
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {PRESETS.map((p) => (
                     <button
                       key={p.key}
                       type="button"
                       onClick={() => setPreset(p.key)}
                       className={
-                        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-colors " +
+                        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors " +
                         (preset === p.key
-                          ? "bg-brand-subtle text-brand"
-                          : "text-ink-600 hover:bg-surface-hover hover:text-ink-900")
+                          ? "bg-canvas-subtle font-semibold text-ink-950"
+                          : "font-medium text-ink-600 hover:bg-canvas-subtle/60 hover:text-ink-950")
                       }
                     >
-                      <p.icon size={13} />
+                      <p.icon size={13} className={preset === p.key ? "text-accent" : "text-ink-400"} />
                       {p.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-
-              <div className="panel p-3">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold tracking-wide text-ink-500 uppercase">数据源</span>
+              {/* 数据源树 */}
+              <div className="border-t border-ink-200 pt-3">
+                <div className="mb-1.5 flex items-center justify-between px-2">
+                  <span className="text-[11px] font-medium text-ink-400">数据源</span>
                   <button
                     type="button"
                     onClick={() => setShowAllSources((v) => !v)}
-                    className="text-[11px] text-ink-400 hover:text-brand"
+                    className="text-[11px] text-ink-400 hover:text-ink-700"
                   >
                     {showAllSources ? "隐藏禁用" : "显示全部"}
                   </button>
@@ -676,8 +707,10 @@ export function App() {
                   type="button"
                   onClick={() => setSource("")}
                   className={
-                    "mb-1 w-full rounded-lg px-2 py-1 text-left text-[12px] font-medium transition-colors " +
-                    (source === "" ? "bg-brand-subtle text-brand" : "text-ink-600 hover:bg-surface-hover")
+                    "mb-1 w-full rounded-md px-2.5 py-1 text-left text-[12px] transition-colors " +
+                    (source === ""
+                      ? "bg-canvas-subtle font-semibold text-ink-950"
+                      : "font-medium text-ink-600 hover:bg-canvas-subtle/60")
                   }
                 >
                   全部来源
@@ -690,11 +723,11 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setCollapsedGroups((m) => ({ ...m, [g.key]: !m[g.key] }))}
-                        className="flex w-full items-center gap-1 rounded-md px-1 py-1 text-[11px] font-medium tracking-wide text-ink-400 uppercase hover:text-ink-700"
+                        className="flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-ink-400 hover:text-ink-700"
                       >
                         {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
                         <span className="flex-1 text-left">{g.label}</span>
-                        <span className="font-mono">{total}</span>
+                        <span className="font-mono tabular-nums">{total}</span>
                       </button>
                       {!collapsed && (
                         <div className="space-y-0.5">
@@ -704,16 +737,16 @@ export function App() {
                               type="button"
                               onClick={() => setSource(s.id === source ? "" : s.id)}
                               className={
-                                "flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-[12px] transition-colors " +
+                                "flex w-full items-center justify-between rounded-md px-2.5 py-1 text-left text-[12px] transition-colors " +
                                 (source === s.id
-                                  ? "bg-brand-subtle font-medium text-brand"
-                                  : "text-ink-600 hover:bg-surface-hover") +
+                                  ? "bg-canvas-subtle font-semibold text-ink-950"
+                                  : "text-ink-600 hover:bg-canvas-subtle/60") +
                                 (s.enabled ? "" : " opacity-45")
                               }
                               title={s.id + " · 采集周期 " + formatInterval(s.interval_sec)}
                             >
                               <span className="truncate">{s.name}</span>
-                              <span className="ml-1.5 shrink-0 font-mono text-[11px] text-ink-400">{s.items}</span>
+                              <span className="ml-1.5 shrink-0 font-mono text-[11px] tabular-nums text-ink-400">{s.items}</span>
                             </button>
                           ))}
                         </div>
@@ -722,13 +755,75 @@ export function App() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* 右侧纯白主工作区 */}
+      <div className="flex min-w-0 flex-1 flex-col bg-surface">
+        {/* 桌面 48px 顶栏 */}
+        <header className="sticky top-0 z-20 hidden h-12 items-center justify-between gap-4 border-b border-ink-200 bg-surface/95 px-6 backdrop-blur-sm lg:flex">
+          <div className="flex min-w-0 items-center gap-2 text-[13px]">
+            {tab === "feed" ? (
+              <div className="flex items-center gap-1">
+                {PRESETS.slice(0, 5).map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setPreset(p.key)}
+                    className={
+                      "rounded-full px-3 py-1 text-[12.5px] transition-colors " +
+                      (preset === p.key
+                        ? "bg-ink-950 font-medium text-white"
+                        : "text-ink-600 hover:bg-ink-100 hover:text-ink-950")
+                    }
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-            </>
-          )}
-        </aside>
+            ) : (
+              <span className="font-semibold text-ink-950">
+                {tabs.find((t) => t.key === tab)?.label ?? "管理区"}
+              </span>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3 text-[12px] text-ink-500">
+            <span className="font-mono tabular-nums">
+              24h <strong className="font-semibold text-ink-900">+{stats.data?.totals.last24h ?? "—"}</strong>
+            </span>
+            <span className="text-ink-300" aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums">
+              含码 <strong className="font-semibold text-ink-900">{stats.data?.totals.withCodes ?? "—"}</strong>
+            </span>
+            {(stats.data?.totals.aiRejected ?? 0) > 0 && (
+              <>
+                <span className="text-ink-300" aria-hidden="true">·</span>
+                <span>已滤 {stats.data?.totals.aiRejected} 条水帖</span>
+              </>
+            )}
+            <a
+              href={exportUrl}
+              className="ml-1 inline-flex h-7 items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-2.5 text-[12px] font-medium text-ink-700 transition-colors hover:bg-ink-100 hover:text-ink-950"
+              title="按当前筛选导出 Markdown"
+            >
+              <Download size={12} /> 导出
+            </a>
+            <button
+              type="button"
+              onClick={refreshAll}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-ink-200 bg-surface text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-950"
+              title="刷新数据"
+            >
+              <RefreshCw size={13} className={items.loading ? "animate-spin" : ""} />
+            </button>
+          </div>
+        </header>
 
         {/* 主内容区 */}
-        <main className="min-w-0 flex-1">
+        <main className={tab === "feed" ? "min-w-0 flex-1" : "min-w-0 flex-1 px-3.5 py-3.5 sm:px-6 sm:py-5"}>
           {((tab as string) === "admin" || (ADMIN_TABS.has(tab) && !adminReady)) && (
             <AdminGate protectedMode={protectedMode} onAuthChange={setAdminAuthed}>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -742,11 +837,11 @@ export function App() {
                     key={entry.key}
                     type="button"
                     onClick={() => setTab(entry.key)}
-                    className="panel flex flex-col items-start gap-1.5 p-4 text-left transition-colors hover:border-brand"
+                    className="panel flex flex-col items-start gap-1.5 p-4 text-left transition-colors hover:border-ink-400"
                   >
-                    <entry.icon size={16} className="text-brand" />
-                    <span className="text-[13.5px] font-semibold text-ink-900">{entry.label}</span>
-                    <span className="text-[11.5px] leading-relaxed text-ink-500">{entry.desc}</span>
+                    <entry.icon size={16} className="text-accent" />
+                    <span className="text-[13.5px] font-semibold text-ink-950">{entry.label}</span>
+                    <span className="text-[12px] leading-relaxed text-ink-500">{entry.desc}</span>
                   </button>
                 ))}
               </div>
@@ -755,42 +850,75 @@ export function App() {
 
           {tab === "feed" && (
             <>
-              {/* 顶部紧凑多维筛选栏：与左侧视图零冲突 */}
-              <button
-                type="button"
-                onClick={() => setMobileFilterBar((v) => !v)}
+              {/* 移动端：筛选条件折叠按钮 + 视图切换 */}
+              <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMobileFilterBar((v) => !v)}
+                  className={
+                    "flex flex-1 items-center justify-between rounded-md border px-3 py-2 text-[12.5px] font-medium transition-colors " +
+                    (mobileFilterBar
+                      ? "border-ink-950 bg-ink-950 text-white"
+                      : "border-ink-200 bg-surface text-ink-700")
+                  }
+                >
+                  <span className="flex items-center gap-1.5">
+                    <SlidersHorizontal size={13} /> 筛选条件
+                    {activeFilterCount > 0 && (
+                      <span
+                        className={
+                          "rounded px-1.5 py-0.5 font-mono text-[10.5px] " +
+                          (mobileFilterBar ? "bg-white/20 text-white" : "bg-ink-950 text-white")
+                        }
+                      >
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={"transition-transform " + (mobileFilterBar ? "rotate-180" : "")}
+                  />
+                </button>
+                <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5">
+                  {[
+                    { key: "compact" as const, icon: AlignJustify, label: "紧凑列表" },
+                    { key: "card" as const, icon: LayoutGrid, label: "卡片视图" },
+                  ].map((v) => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      onClick={() => setViewMode(v.key)}
+                      className={
+                        "rounded px-2 py-1.5 text-[12px] font-medium transition-colors " +
+                        (viewMode === v.key ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
+                      }
+                      title={v.label}
+                    >
+                      <v.icon size={13} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 40px 细线筛选条 */}
+              <div
                 className={
-                  "mb-2 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-[12.5px] font-medium transition-colors sm:hidden " +
-                  (mobileFilterBar
-                    ? "border-brand bg-brand-subtle text-brand"
-                    : "border-ink-200 bg-surface text-ink-700")
+                  "border-b border-ink-200 bg-[#FCFCFD] px-3.5 py-2.5 sm:px-6 sm:py-2 " +
+                  (mobileFilterBar ? "block" : "hidden sm:block")
                 }
               >
-                <span className="flex items-center gap-1.5">
-                  <SlidersHorizontal size={13} /> 筛选条件
-                  {activeFilterCount > 0 && (
-                    <span className="rounded-md bg-brand px-1.5 py-0.5 font-mono text-[10.5px] text-white">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </span>
-                <ChevronDown
-                  size={14}
-                  className={"transition-transform " + (mobileFilterBar ? "rotate-180" : "")}
-                />
-              </button>
-              <div className={"panel mb-3 p-2.5 sm:space-y-2.5 sm:p-3 " + (mobileFilterBar ? "" : "hidden sm:block")}>
-                <div className={"flex flex-wrap items-center gap-2 " + (mobileFilterBar ? "" : "hidden sm:flex")}>
+                <div className="flex flex-wrap items-center gap-2">
                   {/* 分类多选浮层 */}
                   <div className="relative" ref={catRef}>
                     <button
                       type="button"
                       onClick={() => setCatOpen((v) => !v)}
                       className={
-                        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors " +
+                        "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors " +
                         (categories.length
-                          ? "border-brand bg-brand-subtle font-medium text-brand"
-                          : "border-ink-200 bg-surface text-ink-800 hover:bg-ink-100")
+                          ? "border-ink-950 bg-ink-950 font-medium text-white"
+                          : "border-ink-200 bg-surface text-ink-700 hover:border-ink-300")
                       }
                     >
                       <span>
@@ -810,7 +938,7 @@ export function App() {
                             <button
                               type="button"
                               onClick={() => setCategories([])}
-                              className="font-medium text-brand hover:underline"
+                              className="font-medium text-accent hover:underline"
                             >
                               清空
                             </button>
@@ -830,14 +958,16 @@ export function App() {
                                   )
                                 }
                                 className={
-                                  "flex items-center justify-between rounded-md border px-2 py-1 text-left text-[11.5px] transition-colors " +
+                                  "flex items-center justify-between rounded border px-2 py-1 text-left text-[11.5px] transition-colors " +
                                   (checked
-                                    ? "border-brand bg-brand-subtle font-medium text-brand"
+                                    ? "border-ink-950 bg-ink-950 font-medium text-white"
                                     : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
                                 }
                               >
                                 <span className="truncate">{CATEGORY_LABEL[key] ?? key}</span>
-                                <span className="ml-1 font-mono text-[10.5px] text-ink-400">{c.n}</span>
+                                <span className={"ml-1 font-mono text-[10.5px] " + (checked ? "text-white/70" : "text-ink-400")}>
+                                  {c.n}
+                                </span>
                               </button>
                             );
                           })}
@@ -850,7 +980,7 @@ export function App() {
                   <select
                     value={lang}
                     onChange={(e) => setLang(e.target.value as "all" | "zh" | "en")}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="按标题语言筛选"
                   >
                     <option value="all">全部语言</option>
@@ -861,7 +991,7 @@ export function App() {
                   <select
                     value={priceCap}
                     onChange={(e) => setPriceCap(e.target.value)}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="价格上限"
                   >
                     <option value="auto">
@@ -878,7 +1008,7 @@ export function App() {
                   <select
                     value={obtain}
                     onChange={(e) => setObtain(e.target.value)}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title={OBTAIN_HINT[obtain] ?? "获取方式"}
                   >
                     <option value="auto">
@@ -895,7 +1025,7 @@ export function App() {
                   <select
                     value={range}
                     onChange={(e) => setRange(e.target.value)}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="发布时间窗口"
                   >
                     <option value="auto">
@@ -911,7 +1041,7 @@ export function App() {
                   <select
                     value={minScore}
                     onChange={(e) => setMinScore(e.target.value)}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="最低评分"
                   >
                     <option value="all">评分：不限</option>
@@ -923,7 +1053,7 @@ export function App() {
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
-                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="排序方式"
                   >
                     <option value="score">综合评分</option>
@@ -937,10 +1067,10 @@ export function App() {
                     type="button"
                     onClick={() => setUnreadOnly((v) => !v)}
                     className={
-                      "rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition-colors " +
+                      "h-7 rounded-md border px-2.5 text-[12px] font-medium transition-colors " +
                       (unreadOnly
-                        ? "border-brand bg-brand-subtle text-brand"
-                        : "border-ink-200 bg-surface text-ink-600 hover:bg-ink-100")
+                        ? "border-ink-950 bg-ink-950 text-white"
+                        : "border-ink-200 bg-surface text-ink-600 hover:border-ink-300")
                     }
                   >
                     只看未读
@@ -950,15 +1080,49 @@ export function App() {
                     <button
                       type="button"
                       onClick={resetFilters}
-                      className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand-subtle"
+                      className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-accent hover:bg-brand-subtle"
                     >
-                      <RotateCcw size={12} /> 重置 ({activeFilterCount})
+                      <RotateCcw size={11} /> 重置 ({activeFilterCount})
                     </button>
                   )}
+
+                  {/* 右端统计与视图切换 */}
+                  <div className="ml-auto hidden items-center gap-3 sm:flex">
+                    <span className="text-[12px] text-ink-500">
+                      {items.loading ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Loader2 size={11} className="animate-spin" /> 加载中…
+                        </span>
+                      ) : (
+                        <>
+                          共 <strong className="font-mono font-semibold tabular-nums text-ink-900">{items.data?.total ?? 0}</strong> 条
+                        </>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5">
+                      {[
+                        { key: "compact" as const, icon: AlignJustify, label: "紧凑列表" },
+                        { key: "card" as const, icon: LayoutGrid, label: "卡片视图" },
+                      ].map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() => setViewMode(v.key)}
+                          className={
+                            "rounded px-2 py-1 text-[12px] transition-colors " +
+                            (viewMode === v.key ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
+                          }
+                          title={v.label}
+                        >
+                          <v.icon size={13} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {activeFilterCount > 0 && (
-                  <div className={"flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2 text-[11.5px] " + (mobileFilterBar ? "" : "hidden sm:flex")}>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2 text-[11.5px]">
                     <span className="text-ink-400">当前条件：</span>
                     {debounced && (
                       <button
@@ -967,7 +1131,7 @@ export function App() {
                           setSearch("");
                           setDebounced("");
                         }}
-                        className="rounded-md bg-ink-100 px-2 py-0.5 text-ink-700 hover:bg-ink-200"
+                        className="rounded bg-ink-100 px-2 py-0.5 text-ink-700 hover:bg-ink-200"
                       >
                         搜索：{debounced} ×
                       </button>
@@ -976,7 +1140,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setSource("")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         源：{sourceName(source)} ×
                       </button>
@@ -986,7 +1150,7 @@ export function App() {
                         key={cat}
                         type="button"
                         onClick={() => setCategories((cur) => cur.filter((x) => x !== cat))}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         分类：{CATEGORY_LABEL[cat] ?? cat} ×
                       </button>
@@ -995,7 +1159,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setLang("all")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         语言：{lang === "zh" ? "仅看中文" : "仅看英文"} ×
                       </button>
@@ -1004,7 +1168,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setPriceCap("auto")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         价格：{priceCap === "all" ? "不限" : priceCap === "free" ? "仅白嫖" : `≤${priceCap}元`} ×
                       </button>
@@ -1013,7 +1177,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setObtain("auto")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         方式：{obtain === "all" ? "全部" : (OBTAIN_LABEL[obtain] ?? obtain)} ×
                       </button>
@@ -1022,7 +1186,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setRange("auto")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         时间：{range === "all" ? "不限" : range} ×
                       </button>
@@ -1031,7 +1195,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setMinScore("all")}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         评分：≥{minScore} ×
                       </button>
@@ -1040,7 +1204,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setUnreadOnly(false)}
-                        className="rounded-md bg-brand-subtle px-2 py-0.5 text-brand hover:bg-blue-100"
+                        className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
                         仅未读 ×
                       </button>
@@ -1048,145 +1212,114 @@ export function App() {
                   </div>
                 )}
               </div>
-              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 sm:mb-3">
-                <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-500">
-                  {items.loading ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Loader2 size={12} className="animate-spin" /> 正在加载…
-                    </span>
-                  ) : (
-                    <>
-                      <span>
-                        共 <span className="font-mono font-semibold text-ink-900">{items.data?.total ?? 0}</span> 条
-                      </span>
-                      {preset === "verified" && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-deal-subtle px-2 py-0.5 font-medium text-deal">
-                          <Sparkles size={10} /> AI 验真福利
-                        </span>
-                      )}
-                      {debounced && <span className="rounded-md bg-ink-100 px-2 py-0.5">搜索：{debounced}</span>}
-                      {(stats.data?.totals.aiRejected ?? 0) > 0 && (
-                        <span className="text-ink-400">· 已自动隐藏 {stats.data?.totals.aiRejected} 条非福利内容</span>
-                      )}
-                    </>
-                  )}
-                </div>
 
-                <div className="flex items-center gap-0.5 rounded-lg border border-ink-200 bg-surface p-0.5">
-                  {[
-                    { key: "compact" as const, icon: AlignJustify, label: "紧凑列表" },
-                    { key: "card" as const, icon: LayoutGrid, label: "卡片视图" },
-                  ].map((v) => (
-                    <button
-                      key={v.key}
-                      type="button"
-                      onClick={() => setViewMode(v.key)}
-                      className={
-                        "rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors " +
-                        (viewMode === v.key ? "bg-brand text-white shadow-sm" : "text-ink-500 hover:text-ink-900")
-                      }
-                      title={v.label}
-                    >
-                      <v.icon size={13} />
-                    </button>
-                  ))}
-                </div>
+              {/* 移动端统计一行 */}
+              <div className="flex items-center justify-between border-b border-ink-100 px-3.5 py-1.5 text-[12px] text-ink-500 sm:hidden">
+                <span>
+                  共 <strong className="font-mono font-semibold text-ink-900">{items.data?.total ?? 0}</strong> 条
+                  {preset === "verified" && <span className="ml-1.5 font-medium text-deal">· AI 验真</span>}
+                </span>
+                {(stats.data?.totals.aiRejected ?? 0) > 0 && (
+                  <span className="text-ink-400">已滤 {stats.data?.totals.aiRejected} 条</span>
+                )}
               </div>
 
               {items.error && (
-                <div className="panel mb-3 border-alert-border bg-alert-subtle p-4 text-[13px] text-alert">
+                <div className="mx-3.5 my-3 rounded-lg border border-alert-border bg-alert-subtle p-4 text-[13px] text-alert sm:mx-6">
                   加载失败：{items.error}
                 </div>
               )}
 
               {viewMode === "compact" ? (
-                <div className="panel overflow-hidden">
+                <div>
                   {visible.map((item) => (
                     <Fragment key={item.id}>
-                    <CompactRow
-                      item={item}
-                      sourceName={sourceName}
-                      selected={detail?.id === item.id}
-                      onPatch={patch}
-                      onOpen={setDetail}
-                      onQuickBlock={setQuickBlock}
-                      onCopyCode={copyCode}
-                      expanded={relatedOpen === item.id}
-                      onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
-                    />
-                    {relatedOpen === item.id && relatedMap[item.id] ? (
-                      <div className="border-b border-ink-100 bg-surface-subtle px-3 py-2 sm:px-6">
-                        <div className="mb-1 text-[11px] font-medium text-ink-500">
-                          同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                      <CompactRow
+                        item={item}
+                        sourceName={sourceName}
+                        selected={detail?.id === item.id}
+                        onPatch={patch}
+                        onOpen={setDetail}
+                        onQuickBlock={setQuickBlock}
+                        onCopyCode={copyCode}
+                        expanded={relatedOpen === item.id}
+                        onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
+                      />
+                      {relatedOpen === item.id && relatedMap[item.id] ? (
+                        <div className="border-b border-ink-100 bg-surface-hover px-3.5 py-2 sm:px-6">
+                          <div className="mb-1 text-[11px] font-medium text-ink-500">
+                            同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                          </div>
+                          <ul className="space-y-1">
+                            {relatedMap[item.id]!.map((r) => (
+                              <li key={r.id} className="flex items-center gap-2 text-[12px]">
+                                <span className="w-20 shrink-0 truncate text-ink-500 sm:w-28">{r.sourceName ?? r.source_id}</span>
+                                <a
+                                  href={r.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="truncate text-ink-700 hover:text-accent hover:underline"
+                                >
+                                  {r.title}
+                                </a>
+                                <span className="shrink-0 font-mono text-[11px] text-ink-400">
+                                  {String(r.first_seen_at).slice(5, 16).replace("T", " ")}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                        <ul className="space-y-1">
-                          {relatedMap[item.id]!.map((r) => (
-                            <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                              <span className="w-20 shrink-0 truncate text-ink-500 sm:w-28">{r.sourceName ?? r.source_id}</span>
-                              <a
-                                href={r.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="truncate text-ink-700 hover:text-brand hover:underline"
-                              >
-                                {r.title}
-                              </a>
-                              <span className="shrink-0 text-ink-400">{String(r.first_seen_at).slice(5, 16).replace("T", " ")}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
+                      ) : null}
                     </Fragment>
                   ))}
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2.5 px-3.5 py-3 sm:px-6 sm:py-4">
                   {visible.map((item) => (
                     <Fragment key={item.id}>
-                    <ItemCard
-                      item={item}
-                      sourceName={sourceName}
-                      onPatch={patch}
-                      onOpen={setDetail}
-                      onQuickBlock={setQuickBlock}
-                      onCopyCode={copyCode}
-                      expanded={relatedOpen === item.id}
-                      onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
-                    />
-                    {relatedOpen === item.id && relatedMap[item.id] ? (
-                      <div className="panel px-4 py-3">
-                        <div className="mb-2 text-[12px] font-medium text-ink-500">
-                          同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                      <ItemCard
+                        item={item}
+                        sourceName={sourceName}
+                        onPatch={patch}
+                        onOpen={setDetail}
+                        onQuickBlock={setQuickBlock}
+                        onCopyCode={copyCode}
+                        expanded={relatedOpen === item.id}
+                        onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
+                      />
+                      {relatedOpen === item.id && relatedMap[item.id] ? (
+                        <div className="panel px-4 py-3">
+                          <div className="mb-2 text-[12px] font-medium text-ink-500">
+                            同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                          </div>
+                          <ul className="space-y-1.5">
+                            {relatedMap[item.id]!.map((r) => (
+                              <li key={r.id} className="flex items-center gap-2 text-[12px]">
+                                <span className="w-24 shrink-0 truncate text-ink-500 sm:w-32">{r.sourceName ?? r.source_id}</span>
+                                <a
+                                  href={r.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="truncate text-ink-700 hover:text-accent hover:underline"
+                                >
+                                  {r.title}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                        <ul className="space-y-1.5">
-                          {relatedMap[item.id]!.map((r) => (
-                            <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                              <span className="w-24 shrink-0 truncate text-ink-500 sm:w-32">{r.sourceName ?? r.source_id}</span>
-                              <a
-                                href={r.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="truncate text-ink-700 hover:text-brand hover:underline"
-                              >
-                                {r.title}
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
+                      ) : null}
                     </Fragment>
                   ))}
                 </div>
               )}
 
               {!items.loading && !visible.length && (
-                <div className="panel flex flex-col items-center gap-3 px-6 py-20 text-center">
-                  <Radar size={30} className="text-ink-300" />
+                <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
+                  <Radar size={28} className="text-ink-300" />
                   <div className="text-[15px] font-medium text-ink-900">当前条件下没有福利资源</div>
                   <p className="max-w-md text-[12.5px] leading-relaxed text-ink-500">
-                    试试把「快速筛选」切到「全部收录」，或放宽价格上限；也可能是屏蔽词把结果挡掉了。
+                    试试把「常用场景」切到「全部收录」，或放宽价格上限；也可能是屏蔽词把结果挡掉了。
                   </p>
                   <button
                     type="button"
@@ -1194,7 +1327,7 @@ export function App() {
                       resetFilters();
                       setPreset("all");
                     }}
-                    className="mt-1 rounded-xl bg-brand px-4 py-2 text-[12.5px] font-medium text-white hover:bg-brand-hover"
+                    className="mt-1 rounded-md bg-brand px-4 py-2 text-[12.5px] font-medium text-white hover:bg-brand-hover"
                   >
                     清除全部筛选
                   </button>
@@ -1330,6 +1463,7 @@ export function App() {
               onNotify={notify}
             />
           )}
+
           {adminReady && tab === "ops" && (
             <OpsPanel
               sources={sources.data?.sources ?? []}
@@ -1384,14 +1518,14 @@ export function App() {
             />
           )}
         </main>
-      </div>
 
-      <footer className="mx-auto flex w-full max-w-[1560px] flex-wrap items-center justify-between gap-2 border-t border-ink-200 px-3 py-4 text-[12px] text-ink-500 sm:px-6">
-        <span>白嫖雷达 · 自动多源聚合 · AI 语义验真 · 所筛即所推</span>
-        <span className="font-mono">
-          {stats.data?.totals.active ?? 0} 条在库 · {stats.data?.totals.unread ?? 0} 条未读
-        </span>
-      </footer>
+        <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-ink-200 px-3.5 py-3 text-[11.5px] text-ink-400 sm:px-6">
+          <span>白嫖雷达 · 自动多源聚合 · AI 语义验真 · 所筛即所推</span>
+          <span className="font-mono tabular-nums">
+            {stats.data?.totals.active ?? 0} 条在库 · {stats.data?.totals.unread ?? 0} 条未读
+          </span>
+        </footer>
+      </div>
 
       {detail && (
         <ItemDetailDrawer

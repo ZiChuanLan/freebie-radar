@@ -30,10 +30,10 @@ export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string
         window.setTimeout(() => setCopied(false), 1400);
       }}
       className={
-        "inline-flex max-w-[46vw] items-center gap-1 truncate rounded-md border px-2 py-1 font-mono text-[11px] font-semibold transition-colors sm:max-w-none sm:py-0.5 " +
+        "inline-flex max-w-[46vw] items-center gap-1 truncate rounded px-2 py-1 font-mono text-[11px] font-semibold transition-colors sm:max-w-none sm:py-0.5 " +
         (copied
-          ? "border-deal-border bg-deal-subtle text-deal"
-          : "border-code-border bg-code-subtle text-amber-800 hover:bg-amber-100/80")
+          ? "bg-deal-subtle text-deal"
+          : "bg-code-subtle text-code hover:bg-amber-200/70")
       }
       title="点击复制兑换码"
     >
@@ -43,44 +43,62 @@ export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string
   );
 }
 
-function PriceBadge({ item }: { item: Item }) {
+function PriceBadge({ item, inline = false }: { item: Item; inline?: boolean }) {
   if (item.is_free === 1 || item.price === 0) {
-    return (
-      <span className="inline-flex items-center rounded-md border border-deal-border bg-deal-subtle px-1.5 py-0.5 text-[11px] font-medium text-deal">
+    return inline ? (
+      <span className="shrink-0 text-[11.5px] font-semibold text-deal">免费</span>
+    ) : (
+      <span className="inline-flex items-center rounded bg-deal-subtle px-1.5 py-0.5 text-[11px] font-semibold text-deal">
         免费
       </span>
     );
   }
   if (typeof item.price === "number" && item.price > 0) {
     const label = item.price < 1 ? "<1 元" : Math.round(item.price) + " 元内";
-    return (
-      <span className="inline-flex items-center rounded-md border border-brand-border bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-brand">
+    return inline ? (
+      <span className="shrink-0 text-[11.5px] font-semibold text-accent">{label}</span>
+    ) : (
+      <span className="inline-flex items-center rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-semibold text-accent">
         {label}
       </span>
     );
   }
   return null;
-  return null;
 }
 
 const OBTAIN_STYLE: Record<string, string> = {
-  conditional: "border-amber-300 bg-amber-50 text-amber-800",
-  lottery: "border-purple-300 bg-purple-50 text-purple-700",
-  trial: "border-sky-300 bg-sky-50 text-sky-700",
-  promo: "border-slate-300 bg-slate-100 text-slate-600",
-  paid: "border-slate-300 bg-slate-100 text-slate-600",
+  conditional: "bg-code-subtle text-code",
+  lottery: "bg-purple-50 text-purple-700",
+  trial: "bg-sky-50 text-sky-700",
+  promo: "bg-ink-100 text-ink-600",
+  paid: "bg-ink-100 text-ink-600",
+};
+
+const OBTAIN_TEXT: Record<string, string> = {
+  conditional: "text-code",
+  lottery: "text-purple-700",
+  trial: "text-sky-700",
+  promo: "text-ink-500",
+  paid: "text-ink-500",
 };
 
 /** 获取方式徽章：非 free 的一律标出来，避免抽奖/试用/推广混进「完全白嫖」。 */
-function ObtainBadge({ obtain }: { obtain: string | null | undefined }) {
+function ObtainBadge({ obtain, inline = false }: { obtain: string | null | undefined; inline?: boolean }) {
   const mode = obtain ?? "free";
   if (mode === "free") return null;
+  if (inline) {
+    return (
+      <span
+        className={"shrink-0 text-[11.5px] font-semibold " + (OBTAIN_TEXT[mode] ?? OBTAIN_TEXT.promo)}
+        title={OBTAIN_HINT[mode] ?? ""}
+      >
+        {OBTAIN_LABEL[mode] ?? mode}
+      </span>
+    );
+  }
   return (
     <span
-      className={
-        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium " +
-        (OBTAIN_STYLE[mode] ?? OBTAIN_STYLE.promo)
-      }
+      className={"inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium " + (OBTAIN_STYLE[mode] ?? OBTAIN_STYLE.promo)}
       title={OBTAIN_HINT[mode] ?? ""}
     >
       {OBTAIN_LABEL[mode] ?? mode}
@@ -120,27 +138,28 @@ export function CompactRow({
     <div
       onClick={() => onOpen(item)}
       className={
-        "group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-2 border-b border-ink-100 px-3 py-3 transition-colors last:border-b-0 sm:flex sm:gap-x-3 sm:gap-y-0 sm:px-4 " +
-        (selected ? "bg-brand-subtle/50" : "hover:bg-surface-hover") +
+        "group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1.5 border-b border-ink-100 px-3.5 py-3 transition-colors last:border-b-0 sm:flex sm:items-center sm:gap-x-3 sm:gap-y-0 sm:px-6 sm:py-3 " +
+        (selected ? "bg-surface-hover" : "hover:bg-surface-hover") +
         (item.read ? " opacity-60 hover:opacity-100" : "")
       }
     >
-      {/* 评分 + 未读小点 */}
-      <div className="flex shrink-0 items-center gap-1.5 pt-0.5 sm:gap-2">
+      {/* 未读圆点 + 纯数字评分 */}
+      <div className="flex shrink-0 items-center gap-2 pt-0.5 sm:pt-0">
         <span
           className={
-            "h-2 w-2 rounded-full " + (item.read ? "bg-transparent" : "bg-brand")
+            "h-[7px] w-[7px] rounded-full " +
+            (item.read ? "border border-ink-300 bg-transparent" : "bg-accent")
           }
           title={item.read ? "已读" : "未读"}
         />
         <span
           className={
-            "inline-flex w-8 justify-center rounded-md px-1 py-0.5 font-mono text-[11px] font-semibold tabular-nums " +
+            "w-7 text-right font-mono text-[12.5px] font-semibold tabular-nums " +
             (item.score >= 70
-              ? "bg-deal-subtle text-deal"
+              ? "text-deal"
               : item.score >= 45
-                ? "bg-ink-100 text-ink-700"
-                : "bg-ink-100 text-ink-500")
+                ? "text-ink-700"
+                : "text-ink-400")
           }
           title="综合评分"
         >
@@ -150,18 +169,20 @@ export function CompactRow({
 
       {/* 主信息 */}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span
             className={
-              "text-[14px] leading-snug font-medium text-ink-950 transition-colors group-hover:text-brand " +
-              (aiRejected ? "line-through decoration-ink-300" : "")
+              "text-[14px] leading-snug font-medium text-ink-950 transition-colors group-hover:text-accent " +
+              (aiRejected ? "line-through decoration-ink-300 text-ink-500" : "")
             }
           >
             {item.title}
           </span>
+          <PriceBadge item={item} inline />
+          <ObtainBadge obtain={item.obtain} inline />
           {matched.length > 0 && (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
-              订阅：{matched.join("/")}
+            <span className="rounded bg-code-subtle px-1.5 py-0.5 text-[11px] font-medium text-code">
+              命中：{matched.join("/")}
             </span>
           )}
           {(item.dupCount ?? 1) > 1 && (
@@ -173,47 +194,48 @@ export function CompactRow({
                 onToggleRelated?.(item.id);
               }}
               title="同一福利被多个源报道，点击看全部来源"
-              className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-brand hover:bg-brand hover:text-white"
+              className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-ink-200/70"
             >
               {expanded ? "收起" : `${item.dupCount} 个来源`}
             </button>
           )}
           {item.blockedBy && (
             <span className="rounded bg-alert-subtle px-1.5 py-0.5 text-[11px] text-alert">
-              屏蔽命中：{item.blockedBy}
+              屏蔽：{item.blockedBy}
             </span>
           )}
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-500">
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-ink-500">
           <span className="font-medium text-ink-700">{sourceName(item.source_id)}</span>
-          <span>·</span>
+          <span aria-hidden="true">·</span>
           <span>{CATEGORY_LABEL[item.category ?? "other"] ?? item.category}</span>
-          <PriceBadge item={item} />
-          <ObtainBadge obtain={item.obtain} />
           {item.ai?.reason && (
-            <span
-              className={
-                "inline-flex items-center gap-1 " +
-                (item.ai.keep === false ? "text-ink-400" : "text-deal")
-              }
-            >
-              <Sparkles size={10} />
-              {item.ai.reason}
-            </span>
+            <>
+              <span aria-hidden="true">·</span>
+              <span className={item.ai.keep === false ? "text-ink-400" : "text-ink-600"}>
+                {item.ai.reason}
+              </span>
+            </>
           )}
           {exp && (
-            <span className={"inline-flex items-center gap-0.5 " + (exp.urgent ? "font-medium text-amber-700" : "")}>
-              <Clock3 size={10} /> {exp.text}
-            </span>
+            <>
+              <span aria-hidden="true">·</span>
+              <span className={exp.urgent ? "font-medium text-code" : "text-ink-500"}>
+                {exp.text}
+              </span>
+            </>
           )}
-          <span className="tabular-nums text-ink-400">{timeAgo(item.published_at ?? item.first_seen_at)}</span>
+          <span aria-hidden="true" className="sm:hidden">·</span>
+          <span className="tabular-nums text-ink-400 sm:hidden">
+            {timeAgo(item.published_at ?? item.first_seen_at)}
+          </span>
         </div>
       </div>
 
-      {/* 右端：兑换码 & 快捷操作 */}
+      {/* 右端：兑换码 & 快捷操作 & 相对时间 */}
       <div
-        className="col-span-2 flex w-full items-center justify-between gap-1.5 sm:col-span-1 sm:w-auto sm:shrink-0 sm:justify-end"
+        className="col-span-2 flex w-full items-center justify-between gap-2 sm:col-span-1 sm:w-auto sm:shrink-0 sm:justify-end"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-1.5">
@@ -221,7 +243,7 @@ export function CompactRow({
             <CodeChip key={code} code={code} onCopy={onCopyCode} />
           ))}
         </div>
-        <div className="flex items-center gap-0.5 sm:gap-1.5">
+        <div className="flex items-center gap-0.5 transition-opacity sm:opacity-45 sm:group-hover:opacity-100">
           <a
             href={item.url}
             target="_blank"
@@ -229,7 +251,7 @@ export function CompactRow({
             onClick={() => {
               if (!item.read) onPatch(item.id, { read: true });
             }}
-            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-brand sm:p-1.5"
+            className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-950 sm:p-1.5"
             title="新标签打开原帖"
           >
             <ArrowUpRight size={15} />
@@ -238,8 +260,8 @@ export function CompactRow({
             type="button"
             onClick={() => onPatch(item.id, { starred: !item.starred })}
             className={
-              "rounded-lg p-2 transition-colors hover:bg-ink-100 sm:p-1.5 " +
-              (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-700")
+              "rounded-md p-2 transition-colors hover:bg-ink-100 sm:p-1.5 " +
+              (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-800")
             }
             title={item.starred ? "取消收藏" : "收藏"}
           >
@@ -248,7 +270,7 @@ export function CompactRow({
           <button
             type="button"
             onClick={() => onQuickBlock(item)}
-            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-alert-subtle hover:text-alert sm:p-1.5"
+            className="rounded-md p-2 text-ink-400 transition-colors hover:bg-alert-subtle hover:text-alert sm:p-1.5"
             title="加入屏蔽词 / 屏蔽"
           >
             <Ban size={14} />
@@ -256,12 +278,15 @@ export function CompactRow({
           <button
             type="button"
             onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
-            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 sm:p-1.5"
+            className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-800 sm:p-1.5"
             title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
           >
             <EyeOff size={14} />
           </button>
         </div>
+        <span className="hidden w-14 text-right font-mono text-[11.5px] tabular-nums text-ink-400 sm:inline-block">
+          {timeAgo(item.published_at ?? item.first_seen_at)}
+        </span>
       </div>
     </div>
   );
@@ -295,32 +320,31 @@ export function ItemCard({
     <article
       onClick={() => onOpen(item)}
       className={
-        "panel group cursor-pointer p-3 transition-all hover:border-ink-300 sm:p-4 " +
+        "panel group cursor-pointer p-3.5 transition-colors hover:border-ink-300 sm:p-4 " +
         (item.read ? "opacity-65 hover:opacity-100" : "")
       }
     >
       <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-medium text-ink-700">
-              {sourceName(item.source_id)}
-            </span>
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-500">
+            <span className="font-medium text-ink-700">{sourceName(item.source_id)}</span>
             {item.category && (
-              <span className="rounded-md bg-brand-subtle px-2 py-0.5 font-medium text-brand">
-                {CATEGORY_LABEL[item.category] ?? item.category}
-              </span>
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{CATEGORY_LABEL[item.category] ?? item.category}</span>
+              </>
             )}
             <PriceBadge item={item} />
             <ObtainBadge obtain={item.obtain} />
             {exp && (
-              <span className={"inline-flex items-center gap-1 " + (exp.urgent ? "font-medium text-amber-700" : "")}>
+              <span className={"inline-flex items-center gap-1 " + (exp.urgent ? "font-medium text-code" : "")}>
                 <Clock3 size={11} /> {exp.text}
               </span>
             )}
-            <span className="tabular-nums">{timeAgo(item.published_at ?? item.first_seen_at)}</span>
+            <span className="tabular-nums text-ink-400">{timeAgo(item.published_at ?? item.first_seen_at)}</span>
           </div>
 
-          <h3 className="text-[15px] leading-snug font-semibold text-ink-950 transition-colors group-hover:text-brand">
+          <h3 className="text-[15px] leading-snug font-semibold text-ink-950 transition-colors group-hover:text-accent">
             {item.title}
             {(item.dupCount ?? 1) > 1 && (
               <button
@@ -331,7 +355,7 @@ export function ItemCard({
                   onToggleRelated?.(item.id);
                 }}
                 title="同一福利被多个源报道，点击看全部来源"
-                className="ml-2 rounded bg-brand-subtle px-1.5 py-0.5 align-middle text-[11px] font-medium text-brand hover:bg-brand hover:text-white"
+                className="ml-2 rounded bg-brand-subtle px-1.5 py-0.5 align-middle text-[11px] font-medium text-accent hover:bg-ink-200/70"
               >
                 {expanded ? "收起" : `${item.dupCount} 个来源`}
               </button>
@@ -342,33 +366,30 @@ export function ItemCard({
             <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-ink-600">{item.summary}</p>
           )}
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            {matched.length > 0 && (
-              <span className="rounded-md border border-code-border bg-code-subtle px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                订阅命中：{matched.join(" / ")}
-              </span>
-            )}
-            {codes.map((code) => (
-              <CodeChip key={code} code={code} onCopy={onCopyCode} />
-            ))}
-            {item.ai?.reason && (
-              <span
-                className={
-                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] " +
-                  (item.ai.keep === false ? "bg-ink-100 text-ink-500" : "bg-deal-subtle text-deal")
-                }
-              >
-                <Sparkles size={10} /> {item.ai.reason}
-              </span>
-            )}
-          </div>
+          {(matched.length > 0 || codes.length > 0 || item.ai?.reason) && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11.5px]" onClick={(e) => e.stopPropagation()}>
+              {matched.length > 0 && (
+                <span className="rounded bg-code-subtle px-2 py-0.5 font-medium text-code">
+                  命中：{matched.join(" / ")}
+                </span>
+              )}
+              {codes.map((code) => (
+                <CodeChip key={code} code={code} onCopy={onCopyCode} />
+              ))}
+              {item.ai?.reason && (
+                <span className={item.ai.keep === false ? "text-ink-400" : "text-deal"}>
+                  {item.ai.reason}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <span
             className={
-              "inline-flex min-w-8 justify-center rounded-lg px-2 py-1 font-mono text-xs font-semibold tabular-nums " +
-              (item.score >= 70 ? "bg-deal-subtle text-deal" : "bg-ink-100 text-ink-700")
+              "font-mono text-[13px] font-semibold tabular-nums " +
+              (item.score >= 70 ? "text-deal" : "text-ink-600")
             }
           >
             {Math.round(item.score)}
@@ -381,7 +402,7 @@ export function ItemCard({
               onClick={() => {
                 if (!item.read) onPatch(item.id, { read: true });
               }}
-              className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand"
+              className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-950"
               title="打开原文"
             >
               <ArrowUpRight size={15} />
@@ -390,8 +411,8 @@ export function ItemCard({
               type="button"
               onClick={() => onPatch(item.id, { starred: !item.starred })}
               className={
-                "rounded-lg p-1.5 hover:bg-ink-100 " +
-                (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-700")
+                "rounded-md p-1.5 hover:bg-ink-100 " +
+                (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-800")
               }
               title={item.starred ? "取消收藏" : "收藏"}
             >
@@ -400,7 +421,7 @@ export function ItemCard({
             <button
               type="button"
               onClick={() => onQuickBlock(item)}
-              className="rounded-lg p-1.5 text-ink-400 hover:bg-alert-subtle hover:text-alert"
+              className="rounded-md p-1.5 text-ink-400 hover:bg-alert-subtle hover:text-alert"
               title="屏蔽"
             >
               <Ban size={14} />
@@ -408,7 +429,7 @@ export function ItemCard({
             <button
               type="button"
               onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
-              className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+              className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-800"
               title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
             >
               <EyeOff size={14} />
@@ -506,13 +527,13 @@ export function ItemDetailDrawer({
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
           <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
             {item.category && (
-              <span className="rounded-md bg-brand-subtle px-2 py-0.5 font-medium text-brand">
+              <span className="rounded bg-brand-subtle px-2 py-0.5 font-medium text-accent">
                 {CATEGORY_LABEL[item.category] ?? item.category}
               </span>
             )}
             <PriceBadge item={item} />
             <ObtainBadge obtain={item.obtain} />
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-ink-700">
+            <span className="rounded bg-ink-100 px-2 py-0.5 font-mono text-ink-700">
               评分 {Math.round(item.score)}
             </span>
             {exp && (
@@ -527,10 +548,10 @@ export function ItemDetailDrawer({
           {item.ai?.reason && (
             <div
               className={
-                "flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-[12.5px] " +
+                "flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-[12.5px] " +
                 (item.ai.keep === false
                   ? "border-ink-200 bg-ink-100/70 text-ink-600"
-                  : "border-deal-border bg-deal-subtle text-emerald-900")
+                  : "border-deal-border bg-deal-subtle/70 text-emerald-900")
               }
             >
               <Sparkles size={14} className={item.ai.keep === false ? "text-ink-500" : "text-deal"} />
@@ -543,7 +564,7 @@ export function ItemDetailDrawer({
           )}
 
           {codes.length > 0 && (
-            <div className="rounded-xl border border-code-border bg-code-subtle p-3.5">
+            <div className="rounded-lg border border-code-border bg-code-subtle/70 p-3.5">
               <div className="mb-2 text-[12px] font-medium text-amber-900">提取到的兑换码（点击复制）</div>
               <div className="flex flex-wrap gap-2">
                 {codes.map((code) => (
@@ -561,7 +582,7 @@ export function ItemDetailDrawer({
           )}
 
           {item.content && item.content !== item.summary && (
-            <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="mb-1.5 text-[12px] font-medium text-ink-500">正文快照（原帖被删也能留档）</div>
               <p className="max-h-[260px] overflow-auto text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-700">
                 {item.content}
@@ -569,7 +590,7 @@ export function ItemDetailDrawer({
             </div>
           )}
 
-          <dl className="grid grid-cols-2 gap-3 rounded-xl border border-ink-200 bg-surface-hover p-3.5 text-[12px]">
+          <dl className="grid grid-cols-2 gap-3 rounded-lg border border-ink-200 bg-surface-hover p-3.5 text-[12px]">
             <div>
               <dt className="text-ink-500">发布时间</dt>
               <dd className="mt-0.5 font-mono text-ink-900">
@@ -612,7 +633,7 @@ export function ItemDetailDrawer({
             onClick={() => {
               if (!item.read) onPatch(item.id, { read: true });
             }}
-            className="inline-flex min-w-full flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover sm:min-w-0 sm:py-2"
+            className="inline-flex min-w-full flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover sm:min-w-0 sm:py-2"
           >
             打开原帖领取 <ArrowUpRight size={14} />
           </a>
@@ -620,7 +641,7 @@ export function ItemDetailDrawer({
             type="button"
             onClick={() => onPatch(item.id, { starred: !item.starred })}
             className={
-              "inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border px-3 py-2.5 text-[13px] transition-colors sm:grow-0 sm:basis-auto sm:py-2 " +
+              "inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border px-3 py-2.5 text-[13px] transition-colors sm:grow-0 sm:basis-auto sm:py-2 " +
               (item.starred
                 ? "border-amber-300 bg-code-subtle text-amber-800"
                 : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
@@ -631,7 +652,7 @@ export function ItemDetailDrawer({
           <button
             type="button"
             onClick={() => onPatch(item.id, { read: !item.read })}
-            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
           >
             <Eye size={14} /> {item.read ? "标未读" : "标已读"}
           </button>
@@ -641,7 +662,7 @@ export function ItemDetailDrawer({
               onClose();
               onQuickBlock(item);
             }}
-            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-alert-border bg-alert-subtle px-3 py-2.5 text-[13px] text-alert hover:bg-red-100/80 sm:grow-0 sm:basis-auto sm:py-2"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-alert-border bg-alert-subtle px-3 py-2.5 text-[13px] text-alert hover:bg-red-100/80 sm:grow-0 sm:basis-auto sm:py-2"
           >
             <ShieldAlert size={14} /> 屏蔽
           </button>
@@ -651,7 +672,7 @@ export function ItemDetailDrawer({
               onPatch(item.id, { status: "ignored" });
               onClose();
             }}
-            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
             title="单纯不想看，不进屏蔽词"
           >
             <EyeOff size={14} /> 关闭
@@ -687,7 +708,7 @@ export function QuickBlockModal({
       onClick={onClose}
     >
       <div
-        className="panel max-h-[90vh] w-full max-w-md overflow-y-auto rounded-b-none p-4 sm:rounded-b-[14px] sm:p-5"
+        className="panel max-h-[90vh] w-full max-w-md overflow-y-auto rounded-b-none rounded-t-xl p-4 sm:rounded-xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -699,7 +720,7 @@ export function QuickBlockModal({
           </button>
         </div>
 
-        <p className="mb-3 line-clamp-2 rounded-xl border border-ink-200 bg-surface-hover p-2.5 text-[12.5px] text-ink-700">
+        <p className="mb-3 line-clamp-2 rounded-lg border border-ink-200 bg-surface-hover p-2.5 text-[12.5px] text-ink-700">
           {item.title}
         </p>
 
@@ -733,7 +754,7 @@ export function QuickBlockModal({
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
               placeholder="输入要屏蔽的关键词…"
-              className="w-full rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand"
+              className="w-full rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand"
             />
           </div>
 
@@ -747,7 +768,7 @@ export function QuickBlockModal({
                 type="button"
                 onClick={() => setScope(o.key)}
                 className={
-                  "flex-1 truncate rounded-xl border px-2.5 py-2.5 text-left transition-colors sm:py-2 " +
+                  "flex-1 truncate rounded-lg border px-2.5 py-2.5 text-left transition-colors sm:py-2 " +
                   (scope === o.key
                     ? "border-alert-border bg-alert-subtle font-medium text-alert"
                     : "border-ink-200 text-ink-600 hover:bg-ink-100")
@@ -765,7 +786,7 @@ export function QuickBlockModal({
                 onIgnoreOne(item.id);
                 onClose();
               }}
-              className="rounded-xl border border-ink-200 px-3 py-2 text-[12.5px] text-ink-600 hover:bg-ink-100"
+              className="rounded-lg border border-ink-200 px-3 py-2 text-[12.5px] text-ink-600 hover:bg-ink-100"
             >
               仅隐藏这一条
             </button>
@@ -781,7 +802,7 @@ export function QuickBlockModal({
                   setBusy(false);
                 }
               }}
-              className="rounded-xl bg-alert px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40"
+              className="rounded-lg bg-alert px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40"
             >
               加入屏蔽规则
             </button>

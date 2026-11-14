@@ -53,7 +53,7 @@ function SwitchRow({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
+      className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
     >
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink-900">{label}</div>
@@ -284,7 +284,7 @@ export function AiPanel({
         </div>
 
         {/* 补审 / 重审工具条 */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5">
           <div className="text-[12px] text-ink-700">
             <span className="font-medium text-ink-900">历史库补审 / 重审：</span>
             改完补充规则或提示词后，可立即拿历史条目复审验证
@@ -433,7 +433,7 @@ export function AiPanel({
         </div>
 
         {form.preFilterEnabled && (
-          <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+          <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[12.5px] font-medium text-ink-900">自定义入口噪音拦截词（命中即跳过送审）</span>
               <span className="text-[11px] text-ink-500">已配置 {form.customNoiseKeywords.length} 个</span>
@@ -479,7 +479,7 @@ export function AiPanel({
           </div>
         )}
 
-        <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+        <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12.5px] font-medium text-ink-900">送审数据源范围</span>
             <div className="flex items-center gap-1.5">
@@ -586,7 +586,7 @@ export function AiPanel({
 
         {/* 性能参数 */}
         <div className="grid gap-3 sm:grid-cols-4">
-          <label className="block rounded-xl border border-ink-200 bg-surface-hover p-3">
+          <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">单轮送审上限 (20~500)</span>
             <input
               type="number"
@@ -598,7 +598,7 @@ export function AiPanel({
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
-          <label className="block rounded-xl border border-ink-200 bg-surface-hover p-3">
+          <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">每批条数 (2~20)</span>
             <input
               type="number"
@@ -609,7 +609,7 @@ export function AiPanel({
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
-          <label className="block rounded-xl border border-ink-200 bg-surface-hover p-3">
+          <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">并发批数 (1~8)</span>
             <input
               type="number"
@@ -620,7 +620,7 @@ export function AiPanel({
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
-          <label className="block rounded-xl border border-ink-200 bg-surface-hover p-3">
+          <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">单批超时秒数 (5~60)</span>
             <input
               type="number"
@@ -634,7 +634,7 @@ export function AiPanel({
         </div>
 
         {/* 偏好自适应 */}
-        <div className="rounded-xl border border-ink-200 bg-surface-hover p-3.5">
+        <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-[12.5px] font-medium text-ink-900">从收藏与关闭自动学习偏好</div>

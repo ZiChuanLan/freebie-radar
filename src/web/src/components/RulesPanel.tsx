@@ -47,7 +47,7 @@ export function RulesPanel({
       <section className="panel space-y-4 p-5 lg:col-span-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[14.5px] font-semibold text-ink-950">
-            <Bell size={16} className="text-brand" /> 我的关注关键词
+            <Bell size={16} className="text-accent" /> 我的关注关键词
           </div>
           <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-700">
             {subscriptions.length} 个
@@ -69,7 +69,7 @@ export function RulesPanel({
               }
             }}
             placeholder="例如：epic / Claude / 域名…"
-            className="min-w-0 flex-1 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand"
+            className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand"
           />
           <button
             type="button"
@@ -78,13 +78,13 @@ export function RulesPanel({
               await onAddSub(kw.trim());
               setKw("");
             }}
-            className="inline-flex items-center gap-1 rounded-xl bg-brand px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover"
+            className="inline-flex items-center gap-1 rounded-lg bg-brand px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover"
           >
             <Plus size={14} /> 添加
           </button>
         </div>
 
-        <div className="divide-y divide-ink-100 rounded-xl border border-ink-200 bg-surface">
+        <div className="divide-y divide-ink-100 rounded-lg border border-ink-200 bg-surface">
           {subscriptions.map((s) => (
             <div key={s.id} className="flex items-center justify-between px-3.5 py-2.5 text-[13px]">
               <button
@@ -134,7 +134,7 @@ export function RulesPanel({
                   setBusy(false);
                 }
               }}
-              className="inline-flex items-center gap-1 rounded-xl border border-brand-border bg-brand-subtle px-3 py-1.5 text-[12px] font-medium text-brand hover:bg-blue-100/70 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-3 py-1.5 text-[12px] font-medium text-brand hover:bg-ink-200/70 disabled:opacity-50"
               title={"包含：" + presets.map((p) => p.pattern).join("、")}
             >
               <Sparkles size={12} /> 导入常见噪音屏蔽词（{presets.length} 条）
@@ -152,12 +152,12 @@ export function RulesPanel({
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
             placeholder={mode === "regex" ? "正则表达式，如 ^(请问|求推荐)" : "屏蔽词，如 汽车 / 测评 / 避坑"}
-            className="rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand sm:col-span-5"
+            className="rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand sm:col-span-5"
           />
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "keyword" | "regex")}
-            className="rounded-xl border border-ink-200 bg-surface px-2.5 py-2 text-[12.5px] text-ink-800 outline-none focus:border-brand sm:col-span-2"
+            className="rounded-lg border border-ink-200 bg-surface px-2.5 py-2 text-[12.5px] text-ink-800 outline-none focus:border-brand sm:col-span-2"
           >
             <option value="keyword">关键词</option>
             <option value="regex">正则</option>
@@ -165,7 +165,7 @@ export function RulesPanel({
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value)}
-            className="rounded-xl border border-ink-200 bg-surface px-2.5 py-2 text-[12.5px] text-ink-800 outline-none focus:border-brand sm:col-span-3"
+            className="rounded-lg border border-ink-200 bg-surface px-2.5 py-2 text-[12.5px] text-ink-800 outline-none focus:border-brand sm:col-span-3"
           >
             <option value="all">全部来源</option>
             {sources.map((s) => (
@@ -187,13 +187,13 @@ export function RulesPanel({
                 setBusy(false);
               }
             }}
-            className="rounded-xl bg-alert px-3 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40 sm:col-span-2"
+            className="rounded-lg bg-alert px-3 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40 sm:col-span-2"
           >
             添加屏蔽
           </button>
         </div>
 
-        <div className="max-h-[420px] divide-y divide-ink-100 overflow-auto rounded-xl border border-ink-200 bg-surface">
+        <div className="max-h-[420px] divide-y divide-ink-100 overflow-auto rounded-lg border border-ink-200 bg-surface">
           {rules.map((r) => (
             <div
               key={r.id}
@@ -254,7 +254,7 @@ export function RulesPanel({
             </button>
           </div>
           {blockedPreview && (
-            <div className="mt-2.5 max-h-[220px] space-y-1.5 overflow-auto rounded-xl border border-ink-200 bg-surface-hover p-3">
+            <div className="mt-2.5 max-h-[220px] space-y-1.5 overflow-auto rounded-lg border border-ink-200 bg-surface-hover p-3">
               {blockedPreview.filter((it) => it.blockedBy).length === 0 ? (
                 <div className="py-2 text-center text-[12px] text-ink-500">前 80 条里没有命中屏蔽规则的条目</div>
               ) : (
@@ -263,7 +263,7 @@ export function RulesPanel({
                   .slice(0, 20)
                   .map((it) => (
                     <div key={it.id} className="flex items-center justify-between gap-2 text-[12px]">
-                      <a href={it.url} target="_blank" rel="noreferrer noopener" className="truncate text-ink-700 hover:text-brand">
+                      <a href={it.url} target="_blank" rel="noreferrer noopener" className="truncate text-ink-700 hover:text-accent">
                         {it.title}
                       </a>
                       <span className="shrink-0 rounded bg-alert-subtle px-1.5 py-0.5 font-mono text-[11px] text-alert">

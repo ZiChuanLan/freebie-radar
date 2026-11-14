@@ -1,153 +1,185 @@
+---
+name: 白嫖雷达 · Freebie Radar
+description: Daylight borderless precision workbench (Linear / Things 3 aesthetic) for multi-source freebie aggregation, AI verification, and synced Telegram push.
+colors:
+  canvas: "#f6f7f9"
+  canvas-subtle: "#eceef2"
+  surface: "#ffffff"
+  surface-hover: "#f7f8fb"
+  surface-muted: "#f1f3f6"
+  ink-950: "#111318"
+  ink-900: "#1b1e26"
+  ink-700: "#374151"
+  ink-600: "#4b5563"
+  ink-500: "#525c6b"
+  ink-400: "#646f80"
+  ink-300: "#d1d5de"
+  ink-200: "#e6e8ec"
+  ink-100: "#f1f3f6"
+  brand: "#111318"
+  brand-hover: "#272b36"
+  brand-subtle: "#eef0ff"
+  brand-border: "#c7d0f8"
+  accent: "#312e81"
+  deal: "#047857"
+  deal-subtle: "#ecfdf5"
+  deal-border: "#a7f3d0"
+  code: "#92400e"
+  code-subtle: "#fef3c7"
+  code-border: "#fde68a"
+  alert: "#dc2626"
+  alert-subtle: "#fef2f2"
+  alert-border: "#fecaca"
+typography:
+  drawer-title:
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.35
+  row-title:
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: "14px"
+    fontWeight: 500
+    lineHeight: 1.35
+  body:
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.5
+  meta:
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+  micro:
+    fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, Liberation Mono, monospace"
+    fontSize: "11px"
+    fontWeight: 600
+    lineHeight: 1.3
+rounded:
+  sm: "4px"
+  md: "6px"
+  lg: "8px"
+  xl: "12px"
+spacing:
+  xs: "4px"
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "24px"
+components:
+  button-primary:
+    backgroundColor: "{colors.brand}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.md}"
+    padding: "8px 14px"
+  button-secondary:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink-700}"
+    rounded: "{rounded.md}"
+    padding: "6px 12px"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink-950}"
+    rounded: "{rounded.md}"
+    height: "32px"
+  code-chip:
+    backgroundColor: "{colors.code-subtle}"
+    textColor: "{colors.code}"
+    rounded: "{rounded.sm}"
+    padding: "2px 8px"
+---
+
 # Design System · 白嫖雷达
 
-> 极简浅灰 · 现代桌面工具台。白天长时间扫货用的操作面，不是看板也不是营销页。
-> 生成于 2026-11-12，依据 `.impeccable/surfaces/src-web-src-app-tsx.md` 的方向契约与 `impeccable detect` 的实测结果。
+## Overview
 
-## 世界
+极净无框日光效率台（Daylight Precision Workbench，Linear / Things 3 风格）。白天高强度扫货用的操作面，彻底撤掉「灰底套白圆角卡片 + 满屏蓝胶囊 + 四色描边药丸」的 AI 后台味。
 
-**Daylight utility workbench.** 一个技术型用户在工作日上午的浏览器里连续扫几十条福利，眼睛已经累，界面不该再给他一块黑屏。
+- 桌面端为双区一体架构：左 `240px` 冷雾灰连续导轨（`#F6F7F9`）+ 右全幅纯白主画布（`#FFFFFF`），中间以单一 `1px solid #E6E8EC` 细线切分。
+- 移动端（`< 640px`）自动收拢为顶行品牌与快捷操作 + 全宽搜索 + 横向滚动导航 + 折叠筛选 + 标题全宽的双行紧凑网格。
 
-形态参考：编辑器 / 交易终端的**工作面**，不是暗色终端。浅底、纯白面板、一根根 1px 冷灰线把内容切开，颜色只用来标状态。
-
-## 色板
-
-三层中性 + 四个有任务的语义色。没有任何装饰性配色。
+## Colors
 
 | Token | 值 | 用途 |
 |---|---|---|
-| `canvas` | `#f4f5f7` | 页面底 |
-| `surface` | `#ffffff` | 面板 / 卡片 / 抽屉 |
-| `surface-hover` | `#f8fafc` | 行 hover、内嵌区块 |
-| `ink-950` | `#0f172a` | 标题 |
-| `ink-700` | `#334155` | 正文强调 |
-| `ink-600` | `#475569` | 次要正文 |
-| `ink-500` | `#475569` | 元信息 |
-| `ink-400` | `#5a6b82` | 弱提示（**已从 #94a3b8 加深，原值只有 2.4:1**） |
-| `ink-200` | `#e2e8f0` | 1px 分隔线 |
-| `brand` | `#1d4ed8` | 主操作、选中态、筛选激活 |
-| `deal` | `#047857` | 真福利徽章、AI 判定通过（**原 #059669 只有 3.6:1**） |
-| `code` | `#b45309` | 兑换码、截止紧迫 |
+| `canvas` | `#f6f7f9` | 桌面左导轨、管理区次级区块底 |
+| `canvas-subtle` | `#eceef2` | 导轨激活态底色 |
+| `surface` | `#ffffff` | 主画布、输入框、详情抽屉 |
+| `surface-hover` | `#f7f8fb` | 行悬停、选中行、内嵌区块 |
+| `ink-950` | `#111318` | 主标题、深炭墨主按钮 |
+| `ink-700` | `#374151` | 次级按钮文字、来源名称 |
+| `ink-600` | `#4b5563` | 摘要正文、AI 说明 |
+| `ink-500` | `#525c6b` | 元信息行 |
+| `ink-400` | `#646f80` | 辅助标签、时间戳（保持 ≥ 4.5:1 对比度） |
+| `ink-200` | `#e6e8ec` | 1px 细分隔线、面板描边 |
+| `brand` | `#111318` | 主按钮、激活态胶囊、开关开启态 |
+| `accent` | `#312e81` | 品牌小圆点、未读圆点、焦点环、链接高亮 |
+| `deal` | `#047857` | 「免费」语义标识、≥70 高分、AI 保留判定 |
+| `code` | `#92400e` | 兑换码、有条件提示、临期提醒 |
 | `alert` | `#dc2626` | 屏蔽、失败、删除 |
 
-语义色一律「深字 + 浅底 + 同色描边」三件套，例如 `bg-deal-subtle` + `text-deal` + `border-deal-border`。**不出现纯色块配白字**（除主按钮），因为浅底上深字对比度更高也更耐看。
+## Typography
 
-## 字阶
+- 字体栈：系统无衬线字体（`-apple-system / Segoe UI / PingFang SC / Microsoft YaHei`），代码与数字统一 `tabular-nums` 等宽字体。
+- 固定字阶（无夸张 display 标题）：`11px` 微标 → `12px` 元信息/筛选控件 → `13px` 导航/正文 → `14px` 列表标题 → `17px` 抽屉标题。**`11px` 是硬地板**。
 
-11 / 12 / 13 / 14 / 15 / 17 px，无 display 字级。这是一个工作面，标题不该比内容响。
+## Layout
 
-| 层级 | 字号 | 用法 |
-|---|---|---|
-| 行标题 | 14px / 500 | 资源流条目标题 |
-| 正文 | 13px | 摘要、说明 |
-| 元信息 | 12px | 来源、分类、时间、评分 |
-| 微标签 | 11px | 侧栏分组名、计数、`#tag` |
-| 区块标题 | 14–15px / 600 | 面板头 |
-| 抽屉标题 | 17px / 600 | 详情标题 |
-
-**11px 是硬地板。** `impeccable detect` 抓到 100+ 处 10px / 10.5px 功能文字（分组标签、源计数、徽章），全部抬到 11px；11.5px 的正文元信息抬到 12px。
-
-字体：`-apple-system / Segoe UI / PingFang SC` 系统栈。数字一律 `tabular-nums`，评分、计数、时间戳在换行时不跳位。
-
-## 布局
+### 桌面端（`≥ 1024px`）
 
 ```
-┌─ sticky header ──────────────────────────────┐
-│ logo · 全宽搜索 · 三个统计 · 导出 · 刷新      │
-├──────┬───────────────────────────────────────┤
-│ 导航  │ 资源流 / 每日精选 / 订阅与屏蔽 /       │
-│ 筛选  │ 推送规则 / 数据源运维                  │
-│ 源树  │                                       │
-│248px │ 主画布                                 │
-└──────┴───────────────────────────────────────┘
+┌────────────┬─────────────────────────────────────────────────────┐
+│ ● 白嫖雷达  │ 真福利精选  完全白嫖  含兑换码 ...     24h +57 [导出][↻] │
+│ [搜索…   /] ├─────────────────────────────────────────────────────┤
+│ 资源流  41  │ [分类▾][语言▾][价格▾][方式▾][时间▾][评分▾][排序▾] 共N条 │
+│ 每日精选    ├─────────────────────────────────────────────────────┤
+│ ── 管理 ──  │ ● 96  标题文字  免费  命中:Epic            ↗ ★ ⊘  1h前 │
+│ 订阅与屏蔽  │       epic-free · 游戏 · 官方永久入库 · 2天后截止       │
+│ 推送规则    │ ─────────────────────────────────────────────────── │
+│ AI 引擎     │ ● 91  天翼云电脑体验券  免费  有条件  [BVHPQEP8C6]  2h前 │
+│ 数据源运维  │       linuxdo-welfare · 云服务 · 需实名 · 今日截止      │
+│ ── 常用场景 │                                                     │
+│ ── 数据源   │                                                     │
+└────────────┴─────────────────────────────────────────────────────┘
 ```
 
-- 左栏固定 248px：五个 tab → 快速筛选（6 个场景预设）→ 价格上限 → 高级（分类/时间/排序，按需展开）→ 分组源树
-- 主画布最大 1560px，两侧 24px 呼吸
-- 面板圆角 14px，1px `ink-200` 描边，阴影 `0 1px 3px rgba(15,23,42,.05)`——几乎看不见，只是让面板从灰底上浮起来 1px
+- 快捷键：`/` 聚焦搜索框，`Esc` 清空或退出抽屉，`↑/↓` 抽屉内切换上下条。
+- `feed` 紧凑模式下列表直接铺在纯白主画布上，**不套外层白框**。
 
-### 移动端（< 640px，2026-11-14 补齐）
+### 移动端（`< 640px`）
 
-桌面仍是第一形态；手机上不换设计语言，只重排同一套组件。
+- 断点保持 `sm` 640 / `lg` 1024 两档。
+- **顶部收拢区**：品牌圆点 + 右端导出/刷新图标；全宽搜索；横向可滚动 tabs；「场景与数据源」默认收起，保证打开首屏即见福利流。
+- **筛选条**：收进「筛选条件」折叠按钮（带激活计数）+ 右侧紧凑/卡片视图切换。
+- **紧凑行**：`grid-cols-[auto_minmax(0,1fr)]` 两列网格，标题独占整行（390px 下实测宽 309px），兑换码与 4 个快捷操作放在底部独立一行；图标按钮 `p-2`（约 34px 触控区）。
+- **详情抽屉与屏蔽弹窗**：`sm` 以下全宽；抽屉底部「打开原帖领取」独占整行，其余四键两列网格；屏蔽弹窗改底部贴边 sheet 并保留 `env(safe-area-inset-bottom)`。
+- **数据源运维表**：`sm` 以下切换为卡片式源列表；采集记录表保留 `overflow-x-auto`。
 
-```
-┌─ sticky header ─────────────────┐
-│ logo            [导出][刷新]     │
-│ 全宽搜索                         │
-├─────────────────────────────────┤
-│ 资源流 每日精选 ｜ 订阅与屏蔽 …  │ ← 横向滚动 chips
-│ ▸ 场景与数据源                   │ ← 折叠
-│ ▸ 筛选条件                       │ ← 折叠
-│ 共 N 条 · AI 验真福利            │
-│ ● 100 标题（整行宽，2 行内）      │
-│       来源 · 分类 · 免费 · 截止   │
-│       [兑换码]        ↗ ★        │ ← 操作独立一行
-└─────────────────────────────────┘
-```
+## Elevation & Depth
 
-- 断点只有 `sm` 640 / `lg` 1024 两档。`sm` 以下是手机，`sm`–`lg` 是平板：平板保持桌面左栏但横向 chips。
-- **导航区**：`lg` 以下所有 tab 变一行横向滚动 chips（`shrink-0` + `whitespace-nowrap`），「系统管理」竖排标签换成一条 1px 分隔线。
-- **侧栏筛选**：`lg` 以下折叠成「场景与数据源」一行按钮，默认收起——手机打开就看见资源流，不被 6 个预设 + 源树顶到第二屏。
-- **顶部筛选栏**：`sm` 以下折叠成「筛选条件」按钮（带激活条件计数），默认收起。
-- **紧凑行**：`sm` 以下从 3 列 flex 变 2 列 grid（评分 + 主信息），兑换码与 4 个快捷操作掉到第二行（`col-span-2`），标题独占整行宽。这是修复「标题被挤成 1 字一行」的关键。
-- **卡片视图 / 详情抽屉 / 屏蔽弹窗**：抽屉与弹窗 `sm` 以下全宽；抽屉底部动作栏主按钮独占一行，其余四键两列网格（`basis-[calc(50%-0.25rem)]`）；屏蔽弹窗改成底部贴边的 sheet。
-- **触控目标**：图标按钮手机上 `p-2`（约 34px 命中区），`sm` 以上回到 `p-1.5`；开关、select 手机上加高到约 34px。
-- **表格**：`数据源运维` 在 `sm` 以下换成卡片式源列表；采集记录表保留横向滚动（`min-w-[560px]` + `overflow-x-auto`）。
-- 安全区：抽屉/弹窗底部 `env(safe-area-inset-bottom)`。
+- 默认静态面板 **零阴影**（`--shadow-panel: none`），仅以 `1px solid #e6e8ec` 细线区分层次。
+- 仅抽屉（`--shadow-drawer`）、分类多选浮层与底部 Toast 使用克制投影，传达浮层层级。
 
-**验收标准**：390×844 下 `document.documentElement.scrollWidth === innerWidth`（无横向溢出），紧凑行标题列 ≥ 280px。
+## Shapes
 
-## 组件
+- 统一 `6px–8px` 克制圆角：输入框、下拉框、按钮、导航项统一 `rounded-md`（6px）或 `rounded-lg`（8px）；兑换码片 `rounded`（4px）；仅顶栏场景胶囊与未读点用 `rounded-full`。
 
-**资源流条目（默认紧凑行）**
-```
-● 78 │ 标题文字…                        [兑换码] ↗ ★ ⊘
-      │ LINUX DO 福利 · 游戏 · 完全白嫖 · 可领 Epic 免费游戏 · 3 小时后截止
-```
-- 左侧未读圆点 8px（`brand`）+ 评分（≥70 用 `deal` 底，否则 `ink-100`）
-- 标题 14px，hover 变 `brand`；AI 判非福利的加删除线
-- 元信息行一条读完：来源 · 分类 · 价格徽章 · AI 理由 · 截止 · 相对时间
-- 右端兑换码琥珀色药丸，点一下即复制并 toast
+## Components
 
-**详情抽屉**：右侧 500px 滑出，`Esc` 关闭，`↑/↓` 上下条。顶部 AI 判定条，中间兑换码块与正文快照，底部固定「打开原帖领取」主按钮。
+- **CompactRow**：7px 深靛青未读点 + 无底色等宽评分 + 标题与内联价格/方式文字（取消彩色描边药丸）+ 居中小点元信息 + 淡显 hover 操作组 + 等宽右对齐相对时间。
+- **DetailDrawer**：右侧 500px 滑出（手机全宽），顶部上下条切换与来源，中部 AI 判定条、兑换码复制区与正文快照，底部固定炭黑主按钮。
+- **Admin Subpanels**：`DigestPanel / RulesPanel / PushPanel / AiPanel / OpsPanel / AdminGate` 全站共用炭黑主按钮、浅靛青激活提示底、红底深字危险操作与统一 8px 面板容器。
 
-**状态徽章**：白嫖（绿）/ N 元内（蓝）/ 订阅命中（琥珀）/ 屏蔽命中（红）/ 评分（绿或灰）。全部 ≤11px 圆角 6px。
+## Do's and Don'ts
 
-## 动效
+- Do：使用纯净白画布 + 1px 冷灰分隔线区分内容；在列表行内用字重与少量语义色传递价格/条件，不画多余边框。
+- Do：所有管理操作在界面热生效；`::selection`、`focus-visible` 与 6px 滚动条统一跟随系统色板。
+- Don't：不恢复灰底套 14px 圆角白卡片套娃、不加回满屏 `#1d4ed8` 蓝胶囊按钮、不在列表行堆砌四色描边小药丸、不用暗黑荧光绿终端风、不用 `<11px` 字体。
 
-只有两处，都是「已经有反应了」而不是「表演给你看」：
+## Verification
 
-1. 面板 `hover:border-ink-300` 0.15s——鼠标扫过时的边界确认
-2. 抽屉滑出 + 遮罩 `backdrop-blur-[1px]`——空间层次
-
-不用弹簧、不用入场动画、不做逐条 stagger。扫货时动效是噪音。
-
-## 交互约定
-
-- **默认只看真福利**：进入页面时 `preset=verified`（未过期 + AI 判定 keep=1），顶部显示「已自动隐藏 N 条非福利内容」，一键切「全部收录」可看原始流。
-- **所筛即所推**：左栏的价格上限、分类、快捷筛选，与「推送规则」页共用同一套语义，改推送页的 maxPrice 就等于改这里的价格筛选口径。
-- **复制即确认**：点兑换码 → `navigator.clipboard` → toast「已复制兑换码 XXX」，1.9s 后自动消失，不弹模态。
-- **屏蔽双入口**：行内 ⊘ 图标 → 弹窗可只隐藏这条、或把标题切片一键加成屏蔽词（全局 / 仅本源）。
-- **危险操作永远红底深字**：删除屏蔽规则、屏蔽按钮。
-
-## 反模式（本项目显式禁止）
-
-- 深色底 + 荧光绿（上一版被用户判定「黑不拉几」）
-- 卡片里嵌卡片
-- 每块都用「图标 + 标题 + 说明」的同构卡片
-- 渐变文字、玻璃拟态装饰
-- 卡片左右 2px 以上彩色边条
-- 非数据场景使用等宽字体
-- emoji 当图标（图标统一 lucide-react，1.5px 描边）
-
-## 验证
-
-```bash
-# 静态规则（无元素级检查）
-impeccable detect src/web/src/App.tsx src/web/src/components/*.tsx
-
-# 真实渲染检测（需先起 preview）
-node scripts/preview.mjs            # 127.0.0.1:8994
-impeccable detect http://127.0.0.1:8994/ --json
-```
-
-**2026-11-12 实测**：首次 130 findings（含 100+ 处 undersized-ui-text、30+ 处 low-contrast），修复字阶与色板后 **0 findings**。
+- `npm run build`（`tsc --noEmit` + `vite build`）：通过
+- `npm test`：36/36 通过
+- `impeccable detect --json`（全量 `src/web/src` 样式与组件）：**0 findings**
+- Playwright 1440×900 & 390×844 验证：`scrollWidth === innerWidth`（零横向溢出），390px 紧凑行标题列宽 309px，零 `pageerror`。

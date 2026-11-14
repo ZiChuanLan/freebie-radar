@@ -70,7 +70,7 @@ export function DigestPanel({
                 setRunning(false);
               }
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
           >
             {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
             立即生成今日精选
@@ -103,7 +103,7 @@ export function DigestPanel({
                 {detail.data.pushed_at ? " · 已发 Telegram" : " · 仅落库"}
               </span>
             </div>
-            <pre className="mt-2 max-h-[240px] overflow-auto rounded-xl border border-ink-200 bg-surface-hover p-3.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink-700">
+            <pre className="mt-2 max-h-[240px] overflow-auto rounded-lg border border-ink-200 bg-surface-hover p-3.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink-700">
               {detail.data.text}
             </pre>
           </div>
