@@ -40,9 +40,6 @@
 | :---: | :---: |
 | ![多路由精准推送](docs/ui-push-panel.png) | ![AI 语义引擎](docs/ui-ai-panel.png) |
 
-| 移动端自适应（<640px 顶部折叠筛选、触控友好操作栏与全宽排版） |
-| :---: |
-| ![移动端视图](docs/ui-mobile.png) |
 
 ---
 
