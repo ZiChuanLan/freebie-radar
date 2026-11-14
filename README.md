@@ -38,9 +38,6 @@
 | ![推送规则](docs/ui-push-panel.png) | ![AI 引擎](docs/ui-ai-panel.png) |
 
 
-| 移动端（<640px 响应式：筛选折叠、全宽标题、触控目标与底部安全区适配） |
-| :---: |
-| ![移动端](docs/ui-mobile.png) |
 ## 核心特性
 
 - **63 个内置数据源（精简提纯后默认启用 33 个高信噪比源）**：覆盖 LINUX DO RSS、OpenRouter 新免费大模型、NodeSeek 福利情报（按板块与免费关键词提纯）、V2EX、其乐 Keylol、Epic Games、Steam、itch.io 100% 限免、GamerPower 游戏与礼包 Key、CheapShark、IsThereAnyDeal、FreeSteamKeys、SharewareOnSale 100% 限免、TickCoupon、Giveaway of the Day、果核剥壳、Reddit、Telegram 频道，并支持本机回环助手或油猴脚本零 Cookie 上传回传知乎、小红书、小黑盒。
