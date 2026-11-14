@@ -25,7 +25,7 @@ Instead of forwarding raw RSS noise, it runs every item through a configurable m
 
 ## Screenshots
 
-| Feed Workbench (AI-verified filtering, one-click code copy & cross-source clustering) |
+| Feed Workbench (AI-verified filtering, one-click code copy & cross-source clustering · newest-first by default) |
 | :---: |
 | ![Feed Workbench](docs/ui-public.png) |
 
@@ -33,6 +33,10 @@ Instead of forwarding raw RSS noise, it runs every item through a configurable m
 | :---: | :---: |
 | ![Push Rules](docs/ui-push-panel.png) | ![AI Engine](docs/ui-ai-panel.png) |
 
+
+| Mobile (responsive <640px: collapsible filters, full-width titles, touch-sized targets & safe-area aware) |
+| :---: |
+| ![Mobile](docs/ui-mobile.png) |
 ## Key Features
 
 - **63 Built-in Sources (33 High-Signal Curated Enabled by Default)**: Games, software giveaways, cloud/AI credits, Reddit (`r/FreeGameFindings`, `r/eFreebies`, `r/AppHookup`, etc.), Bluesky, Telegram channels, plus custom RSS/Atom feeds.

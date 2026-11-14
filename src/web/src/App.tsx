@@ -196,7 +196,7 @@ export function App() {
   const [catOpen, setCatOpen] = useState(false);
   const catRef = useRef<HTMLDivElement | null>(null);
   const [lang, setLang] = useState<"all" | "zh" | "en">("all");
-  const [sort, setSort] = useState("score");
+  const [sort, setSort] = useState("newest");
   const [range, setRange] = useState("auto");
   const [priceCap, setPriceCap] = useState("auto");
   const [minScore, setMinScore] = useState("all");
@@ -345,7 +345,7 @@ export function App() {
       priceCap !== "auto",
       obtain !== "auto",
       range !== "auto",
-      sort !== "score",
+      sort !== "newest",
     ].filter(Boolean).length;
 
   const resetFilters = useCallback(() => {
@@ -359,7 +359,7 @@ export function App() {
     setPriceCap("auto");
     setObtain("auto");
     setRange("auto");
-    setSort("score");
+    setSort("newest");
     setPreset("verified");
   }, []);
   const stats = useApi<Stats>("/api/stats");
@@ -1056,8 +1056,8 @@ export function App() {
                     className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="排序方式"
                   >
-                    <option value="score">综合评分</option>
                     <option value="newest">最新发布</option>
+                    <option value="score">综合评分</option>
                     <option value="oldest">最早发布</option>
                     <option value="expiring">截止时间最近</option>
                     <option value="price_asc">价格从低到高</option>

@@ -172,7 +172,7 @@ export function CompactRow({
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span
             className={
-              "text-[14px] leading-snug font-medium text-ink-950 transition-colors group-hover:text-accent " +
+              "[overflow-wrap:anywhere] text-[14px] leading-snug font-medium text-ink-950 transition-colors group-hover:text-accent " +
               (aiRejected ? "line-through decoration-ink-300 text-ink-500" : "")
             }
           >

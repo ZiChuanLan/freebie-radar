@@ -358,7 +358,7 @@ export function registerApi(app: Hono) {
       );
     }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const order = SORTS[q.sort ?? "score"] ?? SORTS.score;
+    const order = SORTS[q.sort ?? "newest"] ?? SORTS.newest;
     const rows = all<ItemRow & { dup_count?: number }>(
       merge
         ? `SELECT items.*, (SELECT COUNT(*) FROM items d
@@ -414,7 +414,7 @@ export function registerApi(app: Hono) {
     const rules = loadActiveBlockRules();
     const { where, params, subKeywords } = buildItemsQuery(q, rules, false);
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const order = SORTS[q.sort ?? "score"] ?? SORTS.score;
+    const order = SORTS[q.sort ?? "newest"] ?? SORTS.newest;
     const rows = all<ItemRow>(`SELECT * FROM items ${clause} ORDER BY ${order} LIMIT 300`, ...params);
 
     if (format === "json") {
