@@ -9,11 +9,11 @@ import { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind } f
 
 export { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind };
 export type Category =
-  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "dev" | "design" | "security" | "hardware" | "media" | "game" | "carpool" | "trade" | "headline" | "finance" | "news" | "goods" | "invite" | "edu" | "other";
+  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "dev" | "design" | "security" | "hardware" | "media" | "game" | "carpool" | "trade" | "headline" | "world" | "finance" | "stock" | "tech" | "news" | "goods" | "invite" | "edu" | "other";
 
 const CATEGORIES = new Set<string>([
   "ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware",
-  "media", "game", "carpool", "trade", "headline", "finance", "news", "goods", "invite", "edu", "other",
+  "media", "game", "carpool", "trade", "headline", "world", "finance", "stock", "tech", "news", "goods", "invite", "edu", "other",
 ]);
 
 export function isCategory(value: unknown): value is Category {
@@ -35,9 +35,12 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   game: "游戏",
   carpool: "拼车/合租",
   trade: "二手/交易",
-  headline: "时政/要闻",
-  finance: "财经/商业",
-  news: "综合快讯",
+  headline: "时政要闻",
+  world: "国际要闻",
+  finance: "经济/商业",
+  stock: "股票/市场",
+  tech: "科技动态",
+  news: "综合资讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",
@@ -55,7 +58,7 @@ const RULES: Rule[] = [
   {
     category: "vps",
     weight: 1.15,
-    keywords: ["vps", "云服务器", "云主机", "独立服务器", "独服", "小鸡", "kvm", "nat", "cn2", "gia", "9929", "cmin2", "racknerd", "dmit", "bandwagon", "搬瓦工", "claw", "ovh", "hetzner", "netcup", "动态ip", "公网ip", "vps 测试", "年付", "月付"],
+    keywords: ["vps", "云服务器", "云主机", "独立服务器", "独服", "小鸡", "kvm", "nat", "cn2", "gia", "9929", "cmin2", "三网", "家宽", "现车", "racknerd", "dmit", "bandwagon", "搬瓦工", "bwh", "claw", "ovh", "hetzner", "netcup", "dedirock", "inmotion", "deluxhost", "cloudcone", "greencloud", "virmach", "动态ip", "公网ip", "vps 测试", "年付", "月付"],
   },
   {
     category: "cloud",
@@ -120,18 +123,33 @@ const RULES: Rule[] = [
   },
   {
     category: "headline",
-    weight: 1.0,
-    keywords: ["国务院", "央行", "外交部", "新规", "法规", "政策", "法案", "制裁", "峰会", "关税", "国常会", "发改委", "工信部", "通告", "突发", "白皮书", "监管", "国务院办公厅", "政府工作"],
+    weight: 1.05,
+    keywords: ["国务院", "央行", "新规", "法规", "政策", "法案", "国常会", "发改委", "工信部", "通告", "白皮书", "监管", "国务院办公厅", "政府工作", "教育部", "卫健委", "医保", "商保", "人社部", "两会", "全会", "央视", "焦点访谈"],
+  },
+  {
+    category: "world",
+    weight: 1.05,
+    keywords: ["外交部", "联合国", "峰会", "关税", "制裁", "大使馆", "多国", "欧盟", "白宫", "俄乌", "中东", "亚太", "apec", "g20", "国际社会", "国外", "海外"],
+  },
+  {
+    category: "stock",
+    weight: 1.1,
+    keywords: ["a股", "港股", "美股", "纳斯达克", "标普", "道指", "恒生", "上证", "沪指", "创业板", "科创板", "etf", "股票", "股市", "涨停", "跌停", "牛市", "熊市", "券商", "北向资金", "股价", "市值", "ipo", "上市", "分红", "回购", "板块", "指数"],
   },
   {
     category: "finance",
     weight: 1.05,
-    keywords: ["财报", "营收", "市值", "股价", "上市", "ipo", "融资", "并购", "收购", "降息", "加息", "通胀", "汇率", "油价", "黄金", "美联储", "gdp", "基金", "债券", "业绩", "利润", "估值"],
+    keywords: ["财报", "营收", "融资", "并购", "收购", "降息", "加息", "通胀", "汇率", "油价", "黄金", "美联储", "gdp", "基金", "债券", "业绩", "利润", "估值", "宏观经济", "资本市场", "货币政策"],
+  },
+  {
+    category: "tech",
+    weight: 1.0,
+    keywords: ["科技", "芯片", "半导体", "光刻机", "英伟达", "nvidia", "amd", "intel", "苹果", "华为", "小米", "特斯拉", "机器人", "具身智能", "量子计算", "航天", "卫星", "新能源", "自动驾驶", "操作系统", "鸿蒙", "大模型发布", "互联网", "商用飞机"],
   },
   {
     category: "news",
-    weight: 0.9,
-    keywords: ["新闻", "快讯", "发布", "更新", "上线", "预告", "公告", "周刊", "日报", "新版本", "changelog", "release notes", "announcing", "launch"],
+    weight: 0.75,
+    keywords: ["新闻", "快讯", "要闻", "播报", "周刊", "日报", "changelog", "release notes"],
   },
   {
     category: "goods",
@@ -318,9 +336,14 @@ export function scoreItem(input: {
   } else if (input.kind === "opensource" && (input.category === "opensource" || OPENSOURCE_HINT.test(text))) {
     score += 10;
     notes.push("开源项目");
-  } else if (input.kind === "info" && OPENSOURCE_HINT.test(text)) {
-    score += 8;
-    notes.push("实用指南");
+  } else if (input.kind === "news" || input.kind === "info") {
+    if (OPENSOURCE_HINT.test(text)) {
+      score += 8;
+      notes.push("实用指南");
+    } else {
+      score += 4;
+      notes.push(input.kind === "news" ? "重要新闻" : "行业资讯");
+    }
   } else {
     score -= 8;
     notes.push("无福利词");

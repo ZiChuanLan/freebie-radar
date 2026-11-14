@@ -5,6 +5,7 @@ import { NOISE_TITLE } from "./noise.ts";
 import { FREEBIE_ONLY_SOURCES } from "./index.ts";
 import type { ObtainMode } from "./obtain.ts";
 import { isContentKind, type ContentKind } from "./kind.ts";
+import { finishAiJob, recordAiBatch, startAiJob } from "./ai-telemetry.ts";
 
 export type AiVerdict = {
   index: number;
@@ -62,13 +63,14 @@ const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
 
 const DEFAULT_PROMPT = [
-  "你是多主题社区与「资源雷达」的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 新闻资讯指南」，不要把开源项目、黑五特价、合规拼车或高价值重大新闻/科技资讯误杀成噪音。",
+  "你是多主题社区与「资源雷达」的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 重要新闻 / 行业资讯」，不要把开源项目、黑五特价、合规拼车或高价值重大新闻/经济股票科技资讯误杀成噪音。",
   "",
-  "判 keep=true 的四类有效内容（同时标清 kind）：",
+  "判 keep=true 的五类有效内容（同时标清 kind）：",
   "1. freebie（白嫖福利）：限免游戏/正版软件授权、兑换码/CDK/公益额度/送 Token、免费云主机/域名/GPU/算力/学生包、可照做领到手的白嫖攻略、OpenRouter 新上线 :free 免费模型。",
   "2. deal（特价好价/拼车/出鸡）：明确的高性价比付费促销、史低折扣（如黑五/周年庆特价 VPS、年付小鸡、Steam 史低、正版软件买断大促），以及明确标价发车的合规拼车合租（如 ChatGPT/Claude/Netflix 家庭组车位）或明确标价出鸡/转让帖。不要因为需要付钱就拦掉好价与发车。",
-  "3. opensource（开源项目）：有明确仓库、源码或可部署应用的开源项目、自托管工具、MCP/Agent/Docker 项目发布或深度推荐。",
-  "4. info（新闻资讯/指南）：高信噪比的重大新闻与行业动态（含时政/国际/社会要闻、财经/商业/财报并购、科技/AI/产品发布新闻、开发者技术周刊与深度测评避坑）。",
+  "3. opensource（开源项目）：必须有明确的 GitHub/GitLab 仓库、源码或可部署的自托管工具、MCP/Agent/Docker 项目发布或推荐。纯科技新闻（无开源仓库/源码发布）不得标为 opensource。",
+  "4. news（重要新闻）：央视新闻等权威渠道的时政要闻、国家政策法规、国务院/部委公告、国际局势、外交峰会、重大社会民生与突发要闻。",
+  "5. info（行业资讯）：经济金融宏观、股票/基金/IPO/财报市场动态、科技大厂/芯片/AI 前沿新闻、硬件数码评测与开发者技术周刊/深度指南。",
   "",
   "判 keep=false（同时 kind='noise'）的噪音（真正无价值的才拦截）：",
   "- 求助/提问/求推荐/求拼车/纯收鸡求购（如「谁有优惠券」「求推荐便宜VPS」「求一个ChatGPT拼车」「收一台RN传家宝」「报错429怎么解决」）",
@@ -77,8 +79,8 @@ const DEFAULT_PROMPT = [
   "- 八卦吐槽、吵架引战水贴、无实质内容的标题党软文",
   "- 毫无折扣亮点的普通原价推广",
   "",
-  "分类 category 只能是：ai | cloud | vps | domain | opensource | software | dev | design | security | hardware | media | game | carpool | trade | headline | finance | news | goods | invite | edu | other",
-  "细分类参考：vps=独立服务器/VPS/小鸡；cloud=云额度/对象存储/CDN/代理流量；dev=开发框架/CLI/SDK/插件；design=字体/图标/UI模板/素材；security=安全漏洞/VPN/隐私工具；hardware=硬件/路由器/NAS/数码；carpool=拼车合租车位；trade=明盘出鸡/账号转让；headline=时政/政策/重大社会要闻；finance=财经/财报/融资/股市宏观；news=综合快讯（科技动态优先归 ai/dev/opensource/security/hardware 等垂直类目）；goods=生活羊毛/话费红包/优惠券/实物；edu=课程/电子书/有声书。",
+  "分类 category 只能是：ai | cloud | vps | domain | opensource | software | dev | design | security | hardware | media | game | carpool | trade | headline | world | finance | stock | tech | news | goods | invite | edu | other",
+  "细分类参考：vps=独立服务器/VPS/小鸡/现车；cloud=云额度/对象存储/CDN/代理流量；dev=开发框架/CLI/SDK/插件；design=字体/图标/UI模板/素材；security=安全漏洞/VPN/隐私工具；hardware=硬件/路由器/NAS/数码；carpool=拼车合租车位；trade=明盘出鸡/账号转让；headline=国内时政/政策法规/民生要闻；world=国际局势/外交/海外要闻；finance=宏观经济/金融货币/商业并购/投融资；stock=A股/港股/美股/ETF/财报/IPO/股票市场；tech=科技前沿/芯片/互联网/航天/新能源；news=综合资讯快讯；goods=生活羊毛/话费红包/优惠券/实物；edu=课程/电子书/有声书。",
   "",
   "同时判断「获取方式」obtain，只能是：",
   "- free：点开即可直接免费拿或开源免费用，不需抽签/付费",
@@ -88,8 +90,8 @@ const DEFAULT_PROMPT = [
   "- promo：纯商业引流钩子",
   "- paid：需实际付费购买（如黑五特价 VPS、史低游戏、买断软件）",
   "",
-  "同时给出 1-5 的 quality 质量评分：5=极高价值（3A喜加一/神价黑五VPS/爆款开源/大额Token），4=明确好内容（新:free模型/高性价比年付鸡/实用开源工具/正版限免），3=一般或有条件，2=限制极多/鸡肋，1=噪音。",
-  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"kind":"deal","category":"cloud","obtain":"paid","quality":5,"reason":"黑五特价 $10.99/年 KVM VPS"}。',
+  "同时给出 1-5 的 quality 质量评分：5=极高价值（3A喜加一/神价黑五VPS/爆款开源/大额Token/重大央媒头条），4=明确好内容（新:free模型/高性价比年付鸡/实用开源工具/重要财经科技资讯），3=一般或有条件，2=限制极多/鸡肋，1=噪音。",
+  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"kind":"deal","category":"vps","obtain":"paid","quality":5,"reason":"黑五特价 $10.99/年 KVM VPS"}。',
   "reason 用一句不超过 20 字的中文说清亮点或拦截原因，不要输出多余文本。",
 ].join("\n");
 
@@ -281,10 +283,12 @@ function buildSystemPrompt(s: AiSettings): string {
   return parts.join("\n");
 }
 
+type CallResult = { map: Map<number, AiVerdict>; ttfbMs: number };
+
 async function callOnce(
   payload: { index: number; title: string; summary: string }[],
   s: AiSettings,
-): Promise<Map<number, AiVerdict> | null> {
+): Promise<CallResult> {
   const endpoint = s.baseUrl.replace(/\/+$/, "") + "/chat/completions";
   const timeoutMs = s.timeoutSec * 1000;
   const ac = new AbortController();
@@ -320,17 +324,30 @@ async function callOnce(
     for (const v of arr) {
       if (typeof v?.index === "number") map.set(v.index, v);
     }
-    return map;
+    return { map, ttfbMs: ttfb };
   } finally {
     clearTimeout(timer);
   }
 }
 
+export type ReviewBatchEvent = {
+  start: number;
+  count: number;
+  items: RawItem[];
+  verdicts: Map<number, AiVerdict> | null;
+  ttfbMs: number | null;
+  error?: string;
+};
+
 /**
  * 送审并返回 index → verdict 的映射。未启用或全部失败返回 null。
  * 条目多于 maxItems 时按 maxItems 截断送审，按 batchSize / concurrency 并发执行。
  */
-export async function reviewItems(items: RawItem[], settings?: AiSettings): Promise<Map<number, AiVerdict> | null> {
+export async function reviewItems(
+  items: RawItem[],
+  settings?: AiSettings,
+  hooks?: { onBatch?: (ev: ReviewBatchEvent) => void },
+): Promise<Map<number, AiVerdict> | null> {
   const s = settings ?? getAiSettings();
   if (!aiReady(s) || !items.length) return null;
 
@@ -338,12 +355,13 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
   const merged = new Map<number, AiVerdict>();
   let ok = 0;
 
-  type Job = { start: number; payload: { index: number; title: string; summary: string }[] };
+  type Job = { start: number; chunk: RawItem[]; payload: { index: number; title: string; summary: string }[] };
   const jobs: Job[] = [];
   for (let start = 0; start < total; start += s.batchSize) {
     const chunk = items.slice(start, Math.min(start + s.batchSize, total));
     jobs.push({
       start,
+      chunk,
       payload: chunk.map((it, i) => ({
         index: start + i,
         title: (it.title ?? "").slice(0, 140),
@@ -352,12 +370,22 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
     });
   }
 
-  const runJob = async (job: Job): Promise<Map<number, AiVerdict> | null> => {
+  const runJob = async (job: Job): Promise<CallResult | null> => {
+    let lastErr: string | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await callOnce(job.payload, s);
+        const res = await callOnce(job.payload, s);
+        hooks?.onBatch?.({
+          start: job.start,
+          count: job.chunk.length,
+          items: job.chunk,
+          verdicts: res.map,
+          ttfbMs: res.ttfbMs,
+        });
+        return res;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        lastErr = msg;
         if (attempt === 0) {
           console.log(`[ai] 重试 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
           continue;
@@ -365,15 +393,23 @@ export async function reviewItems(items: RawItem[], settings?: AiSettings): Prom
         console.log(`[ai] 放弃 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
       }
     }
+    hooks?.onBatch?.({
+      start: job.start,
+      count: job.chunk.length,
+      items: job.chunk,
+      verdicts: null,
+      ttfbMs: null,
+      error: lastErr,
+    });
     return null;
   };
 
   for (let i = 0; i < jobs.length; i += s.concurrency) {
     const wave = jobs.slice(i, i + s.concurrency);
     const results = await Promise.all(wave.map(runJob));
-    for (const map of results) {
-      if (!map) continue;
-      for (const [k, v] of map) merged.set(k, v);
+    for (const res of results) {
+      if (!res) continue;
+      for (const [k, v] of res.map) merged.set(k, v);
       ok += 1;
     }
   }
@@ -406,10 +442,50 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   ] as RawItem[];
 
   const t0 = Date.now();
+  const jobId = startAiJob({
+    stage: "test",
+    label: "草稿配置连通测试",
+    model: s.model,
+    total: samples.length,
+    totalBatches: Math.ceil(samples.length / s.batchSize),
+  });
   try {
-    const map = await reviewItems(samples, s);
+    const map = await reviewItems(samples, s, {
+      onBatch: (ev) => {
+        let kept = 0;
+        let rejected = 0;
+        const events = [];
+        for (let i = 0; i < ev.items.length; i += 1) {
+          const v = ev.verdicts?.get(ev.start + i);
+          if (!v) continue;
+          const keep = Boolean(v.keep);
+          if (keep) kept += 1;
+          else rejected += 1;
+          events.push({
+            title: ev.items[i]!.title,
+            keep,
+            kind: isContentKind(v.kind) ? v.kind : keep ? "freebie" : "noise",
+            category: v.category ?? "-",
+            quality: typeof v.quality === "number" ? v.quality : null,
+            reason: v.reason ?? "",
+            at: new Date().toISOString(),
+          });
+        }
+        recordAiBatch(jobId, {
+          events,
+          kept,
+          rejected,
+          failed: ev.verdicts ? 0 : ev.count,
+          ttfbMs: ev.ttfbMs,
+        });
+      },
+    });
     const ms = Date.now() - t0;
-    if (!map) return { ok: false, ms, model: s.model, results: [], error: "模型未返回有效结论（请检查端点/Key/模型名或超时设置）" };
+    if (!map) {
+      finishAiJob(jobId, { error: "模型未返回有效结论" });
+      return { ok: false, ms, model: s.model, results: [], error: "模型未返回有效结论（请检查端点/Key/模型名或超时设置）" };
+    }
+    finishAiJob(jobId);
     return {
       ok: true,
       ms,
@@ -430,12 +506,14 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
       }),
     };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    finishAiJob(jobId, { error: msg });
     return {
       ok: false,
       ms: Date.now() - t0,
       model: s.model,
       results: [],
-      error: err instanceof Error ? err.message : String(err),
+      error: msg,
     };
   }
 }

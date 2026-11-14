@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -8,17 +8,31 @@ import {
   ChevronUp,
   CircleCheck,
   CircleX,
+  Clock,
+  ExternalLink,
   FlaskConical,
   Loader2,
   RefreshCw,
   Save,
+  Search,
   Filter,
   Sparkles,
   Zap,
 } from "lucide-react";
-import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
-import { KIND_LABEL } from "../lib/sources.ts";
-import type { AiPayload, AiSettings, AiSourceMode, Source } from "../types.ts";
+import { CATEGORY_LABEL, KIND_LABEL, OBTAIN_LABEL, timeAgo } from "../lib/sources.ts";
+import type { AiPayload, AiSettings, AiSourceMode, AiStage, AiStats, Source } from "../types.ts";
+
+const STAGE_META: Record<AiStage, { label: string; cls: string }> = {
+  sync: { label: "推送前同步", cls: "bg-brand-subtle text-accent border-brand-border" },
+  queue: { label: "异步队列", cls: "bg-ink-100 text-ink-700 border-ink-200" },
+  backfill: { label: "历史补审", cls: "bg-code-subtle text-code border-code-border" },
+  test: { label: "连通测试", cls: "bg-deal-subtle text-deal border-deal-border" },
+};
+
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 type TestResult = {
   ok: boolean;
@@ -81,11 +95,15 @@ export function AiPanel({
   sources,
   reload,
   onNotify,
+  sourceName = (id: string) => id,
+  onOpenItem,
 }: {
   data: AiPayload | null;
   sources: Source[];
   reload: () => void;
   onNotify?: (msg: string) => void;
+  sourceName?: (id: string) => string;
+  onOpenItem?: (id: number) => void;
 }) {
   const [form, setForm] = useState<AiSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -98,16 +116,26 @@ export function AiPanel({
   const [backfill, setBackfill] = useState<{
     reviewed: number;
     rejected: number;
+    skippedBlocked?: number;
     scanned: number;
     mode?: BackfillMode;
     error?: string;
   } | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [liveStats, setLiveStats] = useState<AiStats | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [sampleFilter, setSampleFilter] = useState<"all" | "kept" | "rejected">("all");
+  const [sampleQuery, setSampleQuery] = useState("");
 
   useEffect(() => {
     if (data?.settings && !form) setForm({ ...data.settings });
   }, [data, form]);
+
+  useEffect(() => {
+    if (data?.stats) setLiveStats(data.stats);
+  }, [data?.stats]);
 
   useEffect(() => {
     if (!data?.settings) return;
@@ -135,12 +163,60 @@ export function AiPanel({
     data?.settings?.customNoiseKeywords,
   ]);
 
-  if (!data || !form) {
+  const st = liveStats ?? data?.stats;
+  const activeJobs = st?.telemetry?.active ?? [];
+  const isLiveActive = Boolean(backfilling || testing || st?.queue?.running || activeJobs.length > 0);
+
+  // 有任务运行时 750ms 高频刷新进度与实时判定流；空闲时 5s 静默同步后台采集结果
+  useEffect(() => {
+    if (!data) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/ai/live");
+        if (!r.ok || !alive) return;
+        const j = (await r.json()) as { stats?: AiStats };
+        if (j.stats && alive) setLiveStats(j.stats);
+      } catch {
+        /* ignore */
+      }
+    };
+    if (isLiveActive) void poll();
+    const timer = window.setInterval(() => void poll(), isLiveActive ? 750 : 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [Boolean(data), isLiveActive]);
+
+  // 活动任务计时器：每秒平滑更新已运行秒数
+  useEffect(() => {
+    if (!isLiveActive) return;
+    const t = window.setInterval(() => setNowTick(Date.now()), 250);
+    return () => window.clearInterval(t);
+  }, [isLiveActive]);
+
+  const recentFiltered = useMemo(() => {
+    const list = st?.recent ?? [];
+    const q = sampleQuery.trim().toLowerCase();
+    return list.filter((r) => {
+      if (sampleFilter === "kept" && !r.keep) return false;
+      if (sampleFilter === "rejected" && r.keep !== false) return false;
+      if (!q) return true;
+      const src = r.sourceId ? sourceName(r.sourceId).toLowerCase() : "";
+      return (
+        r.title.toLowerCase().includes(q) ||
+        r.reason.toLowerCase().includes(q) ||
+        src.includes(q)
+      );
+    });
+  }, [st?.recent, sampleFilter, sampleQuery, sourceName]);
+
+  if (!data || !form || !st) {
     return <div className="panel p-6 text-[13px] text-ink-500">正在读取 AI 配置…</div>;
   }
 
   const s = data.settings;
-  const st = data.stats;
   const total = st.kept + st.rejected + st.pending;
   const keptPct = total ? Math.round((st.kept / total) * 100) : 0;
   const enabledSources = sources.filter((src) => src.enabled);
@@ -186,6 +262,7 @@ export function AiPanel({
         body: JSON.stringify(draft),
       });
       setTest((await r.json()) as TestResult);
+      reload();
     } finally {
       setTesting(false);
     }
@@ -371,36 +448,217 @@ export function AiPanel({
         )}
 
         {backfill && (
-          <div className="rounded-lg border border-ink-200 bg-surface p-3 text-[12.5px]">
-            执行完成（{backfill.mode ?? "pending"}）：扫描 {backfill.scanned} 条，判定 {backfill.reviewed} 条，其中拦掉{" "}
-            {backfill.rejected} 条
+          <div className="rounded-lg border border-ink-200 bg-surface p-3 text-[12.5px] text-ink-700">
+            执行完成（{backfill.mode ?? "pending"}）：扫描 {backfill.scanned} 条，判定 {backfill.reviewed} 条（通过{" "}
+            {backfill.reviewed - backfill.rejected} / 拦掉 {backfill.rejected}）
+            {backfill.skippedBlocked ? (
+              <span className="text-ink-500">
+                {" "}
+                · 已跳过 {backfill.skippedBlocked} 条命中全局屏蔽词（省额度）
+              </span>
+            ) : null}
+            {backfill.reviewed === 0 && (backfill.skippedBlocked ?? 0) > 0 && !backfill.error ? (
+              <span className="ml-1 text-ink-500">— 当前没有未被屏蔽的待审条目</span>
+            ) : null}
             {backfill.error && <span className="text-red-700"> · {backfill.error}</span>}
           </div>
         )}
       </div>
 
-      {/* 2. 判定分布 */}
+      {/* 2. 实时审核台与执行流水 */}
+      <div className="panel space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {isLiveActive ? (
+              <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                <span className="ai-pulse-ring absolute inline-flex h-full w-full rounded-full bg-accent" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+              </span>
+            ) : (
+              <span className="inline-flex h-2 w-2 rounded-full bg-deal" />
+            )}
+            <h3 className="text-[13.5px] font-semibold text-ink-900">
+              {isLiveActive ? "AI 实时审核进行中" : "AI 执行监控"}
+            </h3>
+            <span className="text-[11.5px] text-ink-500">
+              {isLiveActive
+                ? "每完成一批请求自动刷新结论与进度"
+                : st.telemetry?.history?.length
+                  ? `最近记录 ${st.telemetry.history.length} 轮执行`
+                  : "等待下次采集或手动补审触发"}
+            </span>
+          </div>
+          {(st.telemetry?.history?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[11.5px] text-ink-600 hover:bg-ink-100"
+            >
+              {showHistory ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {showHistory ? "收起全部流水" : `最近执行流水 (${st.telemetry?.history?.length ?? 0})`}
+            </button>
+          )}
+        </div>
+
+        {activeJobs.length > 0 && (
+          <div className="space-y-3">
+            {activeJobs.map((job) => {
+              const pct = job.total > 0 ? Math.min(100, Math.round(((job.done + job.failed) / job.total) * 100)) : 0;
+              const elapsed = Math.max(0, nowTick - new Date(job.startedAt).getTime());
+              const meta = STAGE_META[job.stage];
+              return (
+                <div
+                  key={job.id}
+                  className="ai-enter space-y-2.5 rounded-lg border border-brand-border bg-brand-subtle/40 p-3.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={"rounded border px-1.5 py-0.5 text-[11px] font-medium " + meta.cls}>
+                        {meta.label}
+                      </span>
+                      <span className="text-[13px] font-medium text-ink-950">
+                        {job.sourceId ? `${sourceName(job.sourceId)} · ${job.label.replace(job.sourceId + " · ", "")}` : job.label}
+                      </span>
+                      <span className="font-mono text-[11px] text-ink-500">{job.model}</span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono text-[11.5px] tabular-nums text-ink-600">
+                      <span>
+                        第 {Math.min(job.completedBatches + 1, job.totalBatches)}/{job.totalBatches} 批
+                      </span>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Clock size={11} /> {fmtDuration(elapsed)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 柔和流光进度条 */}
+                  <div className="relative h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-brand-border/60">
+                    <div
+                      className="relative h-full overflow-hidden rounded-full bg-accent transition-[width] duration-300 ease-out"
+                      style={{ width: Math.max(6, pct) + "%" }}
+                    >
+                      <span className="ai-shimmer absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent" />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                    <div className="flex flex-wrap items-center gap-3 font-mono tabular-nums">
+                      <span className="text-ink-900">
+                        进度 {job.done}/{job.total}（{pct}%）
+                      </span>
+                      <span className="text-deal">通过 {job.kept}</span>
+                      <span className="text-alert">拦截 {job.rejected}</span>
+                      {job.failed > 0 && <span className="text-code">失败 {job.failed}</span>}
+                    </div>
+                  </div>
+
+                  {job.recentEvents.length > 0 && (
+                    <div className="space-y-1 border-t border-brand-border/50 pt-2">
+                      <div className="text-[11px] font-medium text-ink-500">刚落库的判定</div>
+                      {job.recentEvents.slice(0, 4).map((ev, idx) => (
+                        <div
+                          key={ev.title + idx}
+                          className="ai-enter flex items-center gap-2 rounded bg-white/85 px-2.5 py-1 text-[12px]"
+                        >
+                          <span className={"shrink-0 " + (ev.keep ? "text-deal" : "text-alert")}>
+                            {ev.keep ? <Check size={12} /> : <CircleX size={12} />}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-medium text-ink-800">{ev.title}</span>
+                          {typeof ev.quality === "number" && (
+                            <span className="shrink-0 rounded bg-brand-subtle px-1 py-0.5 font-mono text-[10.5px] text-accent">
+                              ★{ev.quality}
+                            </span>
+                          )}
+                          <span className="max-w-[220px] shrink-0 truncate text-[11px] text-ink-500">{ev.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {(st.telemetry?.history?.length ?? 0) > 0 && (
+          <div className="space-y-1.5">
+            {(st.telemetry?.history ?? []).slice(0, showHistory ? 25 : 4).map((run) => {
+              const meta = STAGE_META[run.stage];
+              const passRatio = run.reviewed > 0 ? Math.round((run.kept / run.reviewed) * 100) : 0;
+              return (
+                <div
+                  key={run.id}
+                  className="flex flex-wrap items-center gap-2.5 rounded-lg border border-ink-200 bg-surface-hover px-3 py-2 text-[12px]"
+                >
+                  <span className={"shrink-0 rounded border px-1.5 py-0.5 text-[10.5px] font-medium " + meta.cls}>
+                    {meta.label}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink-800">
+                    {run.sourceId ? sourceName(run.sourceId) : run.label}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-14 overflow-hidden rounded-full bg-ink-200" title={`留存 ${run.kept} / 拦截 ${run.rejected}`}>
+                      <div className="h-full bg-deal" style={{ width: passRatio + "%" }} />
+                    </div>
+                    <span className="font-mono text-[11.5px] tabular-nums text-ink-700">
+                      {run.reviewed} 条（<span className="text-deal">{run.kept}</span>/<span className="text-ink-500">{run.rejected}</span>）
+                    </span>
+                  </div>
+                  {run.skippedBlocked ? (
+                    <span className="font-mono text-[11px] text-ink-400">屏蔽跳过 {run.skippedBlocked}</span>
+                  ) : null}
+                  {run.error ? (
+                    <span className="max-w-[180px] truncate rounded bg-alert-subtle px-1.5 py-0.5 text-[11px] text-alert">
+                      {run.error}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[11px] tabular-nums text-ink-500">
+                      {fmtDuration(run.durationMs)}
+                      {run.ttfbAvgMs !== null ? ` · 首字 ${run.ttfbAvgMs}ms` : ""}
+                    </span>
+                  )}
+                  <span className="font-mono text-[11px] text-ink-400">{timeAgo(run.finishedAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 3. 判定分布 */}
       <div className="panel p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Activity size={14} className="text-ink-500" />
-          <h3 className="text-[13.5px] font-semibold text-ink-900">判定分布</h3>
-          <span className="text-[11.5px] text-ink-500">共 {total} 条在库</span>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Activity size={14} className="text-ink-500" />
+            <h3 className="text-[13.5px] font-semibold text-ink-900">判定分布</h3>
+            <span className="text-[11.5px] text-ink-500">共 {total} 条待/已审活跃条目</span>
+          </div>
+          {(st.blockedSkipped ?? 0) > 0 && (
+            <span className="text-[11.5px] text-ink-500">
+              另有 <span className="font-mono text-ink-700">{st.blockedSkipped}</span> 条命中全局屏蔽词，已免送 AI 省额度
+            </span>
+          )}
         </div>
         <div className="mb-3 h-2 overflow-hidden rounded-full bg-ink-100">
-          <div className="h-full bg-deal" style={{ width: keptPct + "%" }} />
+          <div className="h-full bg-deal transition-[width] duration-500" style={{ width: keptPct + "%" }} />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
-            <div className="font-mono text-[18px] font-semibold text-deal">{st.kept}</div>
-            <div className="text-[11.5px] text-ink-500">判定是福利</div>
+            <div className="font-mono text-[18px] font-semibold tabular-nums text-deal">{st.kept}</div>
+            <div className="text-[11.5px] text-ink-500">判定有效</div>
           </div>
           <div>
-            <div className="font-mono text-[18px] font-semibold text-ink-700">{st.rejected}</div>
-            <div className="text-[11.5px] text-ink-500">判定非福利</div>
+            <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-700">{st.rejected}</div>
+            <div className="text-[11.5px] text-ink-500">判定噪音</div>
           </div>
           <div>
-            <div className="font-mono text-[18px] font-semibold text-ink-500">{st.pending}</div>
-            <div className="text-[11.5px] text-ink-500">还没送审</div>
+            <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-900">{st.pending}</div>
+            <div className="text-[11.5px] text-ink-500">真正待送审</div>
+          </div>
+          <div>
+            <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-400">{st.blockedSkipped ?? 0}</div>
+            <div className="text-[11.5px] text-ink-500">屏蔽词跳过（省额度）</div>
           </div>
         </div>
         {st.byCategory.length > 0 && (
@@ -557,7 +815,7 @@ export function AiPanel({
         {/* 性能参数 */}
         <div className="grid gap-3 sm:grid-cols-4">
           <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">单轮送审上限 (20~500)</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">单次调用上限 (20~500)</span>
             <input
               type="number"
               min={20}
@@ -601,6 +859,14 @@ export function AiPanel({
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
+        </div>
+
+        <div className="rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2 text-[11.5px] leading-relaxed text-ink-600">
+          当前分波节奏：每次 HTTP 请求打包 <span className="font-mono font-medium text-ink-900">{form.batchSize}</span> 条 ×{" "}
+          <span className="font-mono font-medium text-ink-900">{form.concurrency}</span> 并发 = 每波{" "}
+          <span className="font-mono font-medium text-ink-900">{form.batchSize * form.concurrency}</span> 条 · 采集后先同步审核前{" "}
+          <span className="font-mono font-medium text-ink-900">{s.syncPrePushLimit ?? 20}</span> 条再推（可在「推送规则」调整），超出部分进异步队列每波最多{" "}
+          <span className="font-mono font-medium text-ink-900">{Math.min(Math.max(form.batchSize * form.concurrency, 12), 48)}</span> 条 · 上方「单次调用上限」仅限制直接批调用，「历史补审 50/200/500」则由右侧下拉单独控制。
         </div>
 
         {/* 偏好自适应 */}
@@ -771,40 +1037,108 @@ export function AiPanel({
         )}
       </div>
 
-      {/* 5. 最近判定 */}
+      {/* 5. 最近判定样本 */}
       <div className="panel p-4">
-        <h3 className="mb-2 text-[13.5px] font-semibold text-ink-900">最近判定样本</h3>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[13.5px] font-semibold text-ink-900">最近判定样本</h3>
+            <span className="text-[11.5px] text-ink-500">按实际 AI 判定时间倒序，展示最近 {st.recent.length} 条</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5 text-[11.5px]">
+              {[
+                { key: "all" as const, label: `全部 ${st.recent.length}` },
+                { key: "kept" as const, label: `通过 ${st.recent.filter((r) => r.keep).length}` },
+                { key: "rejected" as const, label: `拦截 ${st.recent.filter((r) => r.keep === false).length}` },
+              ].map((tabItem) => (
+                <button
+                  key={tabItem.key}
+                  type="button"
+                  onClick={() => setSampleFilter(tabItem.key)}
+                  className={
+                    "rounded px-2 py-0.5 font-medium transition-colors " +
+                    (sampleFilter === tabItem.key ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
+                  }
+                >
+                  {tabItem.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <Search size={12} className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-400" />
+              <input
+                value={sampleQuery}
+                onChange={(e) => setSampleQuery(e.target.value)}
+                placeholder="搜标题 / 理由 / 来源"
+                className="w-40 rounded-md border border-ink-200 bg-surface py-1 pr-2 pl-6 text-[11.5px] text-ink-800 outline-none focus:border-brand"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="divide-y divide-ink-100">
-          {st.recent.map((r) => (
-            <div key={r.id} className="flex flex-wrap items-center gap-2 py-1.5 text-[12.5px]">
-              <span className={"shrink-0 " + (r.keep ? "text-deal" : "text-red-600")}>
-                {r.keep ? <Check size={12} /> : <CircleX size={12} />}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-ink-800">{r.title}</span>
-              {r.kind && r.kind !== "noise" && (
-                <span className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-brand">
-                  {KIND_LABEL[r.kind] ?? r.kind}
+          {recentFiltered.map((r) => (
+            <div key={r.id} className="py-2.5 first:pt-1 last:pb-1">
+              <div className="flex items-start gap-2">
+                <span className={"mt-0.5 shrink-0 " + (r.keep ? "text-deal" : "text-alert")}>
+                  {r.keep ? <Check size={13} /> : <CircleX size={13} />}
                 </span>
-              )}
-              {r.category && (
-                <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-600">
-                  {CATEGORY_LABEL[r.category] ?? r.category}
-                </span>
-              )}
-              {r.obtain && r.obtain !== "free" && (
-                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">
-                  {OBTAIN_LABEL[r.obtain] ?? r.obtain}
-                </span>
-              )}
-              {typeof r.quality === "number" && (
-                <span className="rounded bg-brand-subtle px-1.5 py-0.5 font-mono text-[11px] text-brand">
-                  ★{r.quality}
-                </span>
-              )}
-              <span className="shrink-0 text-[12px] text-ink-500">{r.reason}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    {onOpenItem ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenItem(r.id)}
+                        className="group inline-flex min-w-0 flex-1 items-center gap-1 text-left text-[13px] font-medium text-ink-900 hover:text-accent hover:underline"
+                      >
+                        <span className="truncate">{r.title}</span>
+                        <ExternalLink size={11} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-70" />
+                      </button>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink-900">{r.title}</span>
+                    )}
+                    <span className="shrink-0 font-mono text-[11px] text-ink-400">
+                      {r.reviewedAt ? timeAgo(r.reviewedAt) : ""}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    {r.sourceId && (
+                      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-ink-600">{sourceName(r.sourceId)}</span>
+                    )}
+                    {r.kind && r.kind !== "noise" && (
+                      <span className="rounded bg-brand-subtle px-1.5 py-0.5 font-medium text-accent">
+                        {KIND_LABEL[r.kind] ?? r.kind}
+                      </span>
+                    )}
+                    {r.category && (
+                      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-ink-600">
+                        {CATEGORY_LABEL[r.category] ?? r.category}
+                      </span>
+                    )}
+                    {r.obtain && r.obtain !== "free" && (
+                      <span className="rounded bg-code-subtle px-1.5 py-0.5 text-code">
+                        {OBTAIN_LABEL[r.obtain] ?? r.obtain}
+                      </span>
+                    )}
+                    {typeof r.quality === "number" && (
+                      <span className="rounded bg-brand-subtle px-1.5 py-0.5 font-mono text-accent">★{r.quality}</span>
+                    )}
+                    <span className="font-mono text-ink-400">{Math.round(r.score)} 分</span>
+                    {r.reason && (
+                      <span className={"ml-0.5 " + (r.keep ? "text-ink-600" : "text-alert/90")}>
+                        · {r.reason}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           ))}
-          {!st.recent.length && <div className="py-2 text-[12.5px] text-ink-500">还没有判定记录</div>}
+          {!recentFiltered.length && (
+            <div className="py-6 text-center text-[12.5px] text-ink-500">
+              {st.recent.length ? "没有匹配的样本" : "还没有判定记录"}
+            </div>
+          )}
         </div>
       </div>
     </div>

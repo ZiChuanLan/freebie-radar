@@ -24,11 +24,12 @@ import { steamCollector } from "./steam.ts";
 import { cheapsharkCollector } from "./cheapshark.ts";
 import { openrouterCollector } from "./openrouter.ts";
 import { bskyCollector } from "./bsky.ts";
+import { cctvCollector } from "./cctv.ts";
 import type { Collector, RawItem, SourceSeed } from "./types.ts";
 
 export const COLLECTORS: Collector[] = [
   mockCollector, linuxdoCollector, v2exCollector, githubCollector, rssCollector, telegramCollector,
-  gamerpowerCollector, epicCollector, gogCollector, steamCollector, cheapsharkCollector, bskyCollector, openrouterCollector,
+  gamerpowerCollector, epicCollector, gogCollector, steamCollector, cheapsharkCollector, bskyCollector, openrouterCollector, cctvCollector,
 ];
 const BY_KIND = new Map(COLLECTORS.map((c) => [c.kind, c]));
 
@@ -121,6 +122,44 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-slickdeals", name: "Slickdeals（需过盾）", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
   { id: "rss-appinn", name: "小众软件 Appinn", kind: "rss", enabled: false, config: { feeds: [{ id: "appinn", url: "https://www.appinn.com/feed/", limit: 20 }] } },
   { id: "rss-sspai", name: "少数派", kind: "rss", enabled: false, config: { feeds: [{ id: "sspai", url: "https://sspai.com/feed", limit: 20 }] } },
+  // === 重要新闻（央视新闻 / 中新网等权威媒体，直入「重要新闻」频道，不污染白嫖视图）===
+  {
+    id: "cctv-news",
+    name: "央视新闻 · 重要新闻",
+    kind: "cctv",
+    enabled: true,
+    intervalSec: 1800,
+    config: {
+      channels: [
+        { channel: "news", cb: "news", categoryHint: "headline", limit: 20 },
+        { channel: "world", cb: "world", categoryHint: "world", limit: 15 },
+      ],
+    },
+  },
+  { id: "rss-chinanews-scroll", name: "中新网 · 滚动要闻", kind: "rss", enabled: false, intervalSec: 1800, config: { feeds: [{ id: "chinanews-scroll", url: "https://www.chinanews.com.cn/rss/scroll-news.xml", limit: 25 }] } },
+  { id: "rss-chinanews-world", name: "中新网 · 国际要闻", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "chinanews-world", url: "https://www.chinanews.com.cn/rss/world.xml", limit: 20 }] } },
+
+  // === 行业资讯（经济 / 股票 / 科技 / AI / 数码，直入「行业资讯」频道）===
+  {
+    id: "cctv-economy",
+    name: "央视新闻 · 财经经济",
+    kind: "cctv",
+    enabled: true,
+    intervalSec: 3600,
+    config: { channels: [{ channel: "economy_zixun", cb: "economy_zixun", categoryHint: "finance", limit: 15 }] },
+  },
+  {
+    id: "cctv-tech",
+    name: "央视新闻 · 科技前沿",
+    kind: "cctv",
+    enabled: true,
+    intervalSec: 3600,
+    config: { channels: [{ channel: "tech", cb: "tech", categoryHint: "tech", limit: 15 }] },
+  },
+  { id: "rss-wallstreetcn", name: "华尔街见闻 · 经济股票", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "wallstreetcn", url: "https://dedicated.wallstreetcn.com/rss.xml", limit: 25 }] } },
+  { id: "rss-chinanews-finance", name: "中新网 · 财经资讯", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "chinanews-finance", url: "https://www.chinanews.com.cn/rss/finance.xml", limit: 20 }] } },
+  { id: "rss-chinanews-it", name: "中新网 · IT 科技", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "chinanews-it", url: "https://www.chinanews.com.cn/rss/it.xml", limit: 20 }] } },
+  { id: "rss-solidot", name: "Solidot · 极客科技", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "solidot", url: "https://www.solidot.org/index.rss", limit: 20 }] } },
   { id: "rss-ithome", name: "IT之家", kind: "rss", enabled: false, config: { feeds: [{ id: "ithome", url: "https://www.ithome.com/rss/", limit: 25 }] } },
   { id: "rss-smzdm", name: "什么值得买", kind: "rss", enabled: false, config: { feeds: [{ id: "smzdm", url: "https://www.smzdm.com/rss/", limit: 20 }] } },
   { id: "rss-fuliba", name: "福利吧", kind: "rss", enabled: false, config: { feeds: [{ id: "fuliba", url: "https://fuliba.net/feed", limit: 30 }] } },
@@ -169,6 +208,7 @@ async function dispatchFresh(
   if (!shouldPassSourceToAi(sourceId, aiSettings)) {
     if (aiSettings.skipFreebieSources && FREEBIE_ONLY_SOURCES.has(sourceId)) {
       const autoReason = "纯白嫖专源免审直通";
+      const reviewedAt = new Date().toISOString();
       tx(() => {
         for (const f of nonNoise) {
           const verdict = {
@@ -184,8 +224,9 @@ async function dispatchFresh(
           f.kind = "freebie";
           f.aiReason = autoReason;
           run(
-            "UPDATE items SET ai = ?, ai_keep = 1, kind = 'freebie', ai_quality = 4, obtain = COALESCE(obtain, 'free') WHERE id = ? AND ai IS NULL",
+            "UPDATE items SET ai = ?, ai_keep = 1, kind = 'freebie', ai_quality = 4, obtain = COALESCE(obtain, 'free'), ai_reviewed_at = ? WHERE id = ? AND ai IS NULL",
             JSON.stringify(verdict),
+            reviewedAt,
             f.id,
           );
         }

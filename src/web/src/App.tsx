@@ -24,8 +24,10 @@ import {
   X,
   Zap,
   Code,
+  CheckCheck,
   Flame,
   Newspaper,
+  TrendingUp,
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
@@ -35,11 +37,13 @@ import { getToken } from "./lib/auth.ts";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
-import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, categoriesForPreset, categoryLabelForPreset, formatInterval, groupOfSource } from "./lib/sources.ts";
-import { KIND_LABEL, KIND_ORDER } from "./lib/sources.ts";
+import { HotPanel } from "./components/HotPanel.tsx";
+import { KIND_LABEL, KIND_ORDER, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, categoriesForPreset, categoryLabelForPreset, formatInterval, groupOfSource } from "./lib/sources.ts";
 import type {
   BlockPreset,
   BlockRule,
+  HotReport,
+  HotScope,
   Item,
   PushLogItem,
   AiPayload,
@@ -82,7 +86,7 @@ const SOURCE_LABEL: Record<string, string> = {
 let SOURCE_NAMES: Record<string, string> = { ...SOURCE_LABEL };
 const sourceName = (id: string) => SOURCE_NAMES[id] ?? SOURCE_LABEL[id] ?? id;
 
-type Tab = "feed" | "digest" | "rules" | "push" | "ai" | "ops";
+type Tab = "feed" | "hot" | "digest" | "rules" | "push" | "ai" | "ops";
 
 function useApi<T>(url: string | null): { data: T | null; loading: boolean; error: string | null; reload: () => void } {
   const [data, setData] = useState<T | null>(null);
@@ -121,7 +125,7 @@ function useApi<T>(url: string | null): { data: T | null; loading: boolean; erro
 function Toast({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-lg border border-ink-800 bg-ink-950 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-lg">
+    <div className="toast-enter fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-lg border border-ink-800 bg-ink-950 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-lg">
       <Check size={14} className="text-emerald-400" />
       {message}
     </div>
@@ -130,18 +134,24 @@ function Toast({ message }: { message: string | null }) {
 
 type Preset = { key: string; label: string; icon: typeof Sparkles };
 
-const PRESETS: Preset[] = [
+const PRIMARY_CHANNELS: Preset[] = [
   { key: "verified", label: "真福利精选", icon: Sparkles },
   { key: "free", label: "完全白嫖", icon: Tag },
   { key: "deal", label: "黑五/好价", icon: Flame },
   { key: "opensource", label: "开源项目", icon: Code },
-  { key: "news", label: "新闻资讯", icon: Newspaper },
+  { key: "news", label: "重要新闻", icon: Newspaper },
+  { key: "info", label: "行业资讯", icon: TrendingUp },
+];
+
+const SECONDARY_VIEWS: Preset[] = [
   { key: "codes", label: "含兑换码", icon: Zap },
   { key: "urgent", label: "今日截止", icon: Bell },
   { key: "starred", label: "我的收藏", icon: Check },
   { key: "all", label: "全部收录", icon: AlignJustify },
   { key: "hidden", label: "已关闭", icon: EyeOff },
 ];
+
+const PRESETS: Preset[] = [...PRIMARY_CHANNELS, ...SECONDARY_VIEWS];
 
 // 公开区：任何人不登录就能看。其余全部归管理区。
 const PUBLIC_TABS = new Set<Tab>(["feed", "digest"]);
@@ -151,7 +161,7 @@ export function App() {
   const initialTab = (): Tab => {
     if (typeof location === "undefined") return "feed";
     const h = location.hash.replace("#", "");
-    return h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed";
+    return h === "hot" || h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed";
   };
 
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -265,7 +275,7 @@ export function App() {
   useEffect(() => {
     const onHash = () => {
       const h = location.hash.replace("#", "");
-      setTab(h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed");
+      setTab(h === "hot" || h === "digest" || h === "rules" || h === "push" || h === "ai" || h === "ops" ? (h as Tab) : "feed");
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -338,6 +348,9 @@ export function App() {
       if (kindFilter === "auto") p.set("kind", "opensource");
       p.set("hideRejected", "1");
     } else if (preset === "news") {
+      if (kindFilter === "auto") p.set("kind", "news");
+      p.set("hideRejected", "1");
+    } else if (preset === "info") {
       if (kindFilter === "auto") p.set("kind", "info");
       p.set("hideRejected", "1");
     } else if (preset === "codes") {
@@ -425,7 +438,12 @@ export function App() {
   const blockRules = useApi<{ rules: BlockRule[]; totalBlocked: number; presets: BlockPreset[] }>(
     adminReady ? "/api/block-rules" : null,
   );
-  const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null }[] }>("/api/digests");
+  const digests = useApi<{ digests: { date: string; created_at: string; pushed_at: string | null; kind: string; count: number }[] }>(
+    "/api/digests",
+  );
+  const [hotHours, setHotHours] = useState(24);
+  const [hotScope, setHotScope] = useState<HotScope>("all");
+  const hot = useApi<HotReport>(tab === "hot" ? `/api/hot?hours=${hotHours}&scope=${hotScope}` : null);
   // 管理接口只在就绪后请求，避免公开区刷出一堆 401，也避免无密码模式卡住加载
   const push = useApi<PushPayload>(adminReady ? "/api/push" : null);
   const ai = useApi<AiPayload>(adminReady && tab === "ai" ? "/api/ai" : null);
@@ -522,6 +540,19 @@ export function App() {
     setRelatedMap({});
   }, [items, stats, sources, runs, blockRules]);
 
+  const markVisibleRead = useCallback(async () => {
+    const unreadIds = (items.data?.items ?? []).filter((i) => !i.read).map((i) => i.id);
+    if (!unreadIds.length) return;
+    await fetch("/api/items/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: unreadIds, action: "read" }),
+    });
+    notify(`已将本页 ${unreadIds.length} 条标为已读`);
+    items.reload();
+    stats.reload();
+  }, [items, stats, notify]);
+
   const visible = items.data?.items ?? [];
   const currentIndex = detail ? visible.findIndex((i) => i.id === detail.id) : -1;
 
@@ -531,9 +562,10 @@ export function App() {
     sources: enabledSources.filter((s) => groupOfSource(s) === g.key),
   })).filter((g) => g.sources.length > 0);
 
-  // 公开区只显示「资源流 / 每日精选」，其余 Tab 只有进管理区后才出现
+  // 公开区显示「资源流 / 今日热点 / 每日精选」，其余 Tab 只有进管理区后才出现
   const tabs: { key: Tab | "admin"; label: string; icon: typeof Activity; badge?: number }[] = [
     { key: "feed", label: "资源流", icon: Activity },
+    { key: "hot", label: "今日热点", icon: Flame },
     { key: "digest", label: "每日精选", icon: Radar },
     ...(adminReady
       ? [
@@ -629,7 +661,7 @@ export function App() {
 
         {/* 导航：手机横向可滚，桌面纵列无边框 */}
         <nav className="-mx-3.5 mt-2.5 flex gap-1 overflow-x-auto px-3.5 pb-0.5 lg:mx-0 lg:mt-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
-          {tabs.slice(0, 2).map((t) => (
+          {tabs.slice(0, 3).map((t) => (
             <button
               key={t.key}
               type="button"
@@ -661,7 +693,7 @@ export function App() {
           <div className="hidden px-2.5 pt-3 pb-1 text-[11px] font-medium text-ink-400 lg:block">
             管理
           </div>
-          {tabs.slice(2).map((t) => (
+          {tabs.slice(3).map((t) => (
             <button
               key={t.key}
               type="button"
@@ -711,10 +743,10 @@ export function App() {
             </button>
 
             <div className={mobileFilters ? "mt-2.5 space-y-4 lg:mt-0" : "hidden space-y-4 lg:block"}>
-              {/* 快速筛选 */}
+              {/* 快捷视图（主频道在顶部展示，侧栏聚焦快捷视图，移动端附带完整频道） */}
               <div className="border-t border-ink-200 pt-3">
                 <div className="mb-1.5 flex items-center justify-between px-2">
-                  <span className="text-[11px] font-medium text-ink-400">常用场景</span>
+                  <span className="text-[11px] font-medium text-ink-400">快捷视图</span>
                   {activeFilterCount > 0 && (
                     <button
                       type="button"
@@ -727,7 +759,7 @@ export function App() {
                   )}
                 </div>
                 <div className="space-y-0.5">
-                  {PRESETS.map((p) => (
+                  {SECONDARY_VIEWS.map((p) => (
                     <button
                       key={p.key}
                       type="button"
@@ -822,18 +854,19 @@ export function App() {
           <div className="flex min-w-0 items-center gap-2 text-[13px]">
             {tab === "feed" ? (
               <div className="flex items-center gap-1">
-                {PRESETS.slice(0, 6).map((p) => (
+                {PRIMARY_CHANNELS.map((p) => (
                   <button
                     key={p.key}
                     type="button"
-                    onClick={() => setPreset(p.key)}
+                    onClick={() => switchPreset(p.key)}
                     className={
-                      "rounded-full px-3 py-1 text-[12.5px] transition-colors " +
+                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] transition-all active:scale-[0.97] " +
                       (preset === p.key
-                        ? "bg-ink-950 font-medium text-white"
+                        ? "bg-ink-950 font-medium text-white shadow-xs"
                         : "text-ink-600 hover:bg-ink-100 hover:text-ink-950")
                     }
                   >
+                    <p.icon size={12} className={preset === p.key ? "text-white/85" : "text-ink-400"} />
                     {p.label}
                   </button>
                 ))}
@@ -905,6 +938,26 @@ export function App() {
 
           {tab === "feed" && (
             <>
+              {/* 移动端：横向可滚动主频道栏，单指即可在白嫖/好价/新闻/资讯间切换 */}
+              <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto border-b border-ink-100 bg-surface px-3.5 py-2 lg:hidden">
+                {PRIMARY_CHANNELS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => switchPreset(p.key)}
+                    className={
+                      "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[12px] whitespace-nowrap transition-colors active:scale-[0.97] " +
+                      (preset === p.key
+                        ? "bg-ink-950 font-medium text-white"
+                        : "bg-ink-100/80 text-ink-600 hover:text-ink-950")
+                    }
+                  >
+                    <p.icon size={11} />
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
               {/* 移动端：筛选条件折叠按钮 + 视图切换 */}
               <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 sm:hidden">
                 <button
@@ -958,15 +1011,69 @@ export function App() {
                 </div>
               </div>
 
-              {/* 40px 细线筛选条 */}
+              {/* 快捷子分类胶囊条：当前频道热门子类目一键直达，不用再进二级下拉找 */}
+              {(() => {
+                const countMap = new Map((stats.data?.byCategory ?? []).map((c) => [c.category ?? "other", c.n]));
+                const allowed = categoriesForPreset(preset);
+                const ordered = [...allowed].sort((a, b) => (countMap.get(b) ?? 0) - (countMap.get(a) ?? 0));
+                const quickCats = ordered.slice(0, 8);
+                return (
+                  <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto border-b border-ink-100 bg-surface px-3.5 py-1.5 sm:px-6">
+                    <button
+                      type="button"
+                      onClick={() => setCategories([])}
+                      className={
+                        "shrink-0 rounded-md px-2 py-0.5 text-[11.5px] font-medium transition-colors active:scale-[0.97] " +
+                        (categories.length === 0
+                          ? "bg-brand-subtle font-semibold text-accent"
+                          : "text-ink-500 hover:bg-ink-100 hover:text-ink-900")
+                      }
+                    >
+                      全部{preset === "news" ? "要闻" : preset === "info" ? "资讯" : "分类"}
+                    </button>
+                    {quickCats.map((key) => {
+                      const n = countMap.get(key) ?? 0;
+                      const active = categories.includes(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() =>
+                            setCategories((cur) =>
+                              cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key],
+                            )
+                          }
+                          className={
+                            "inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] transition-colors active:scale-[0.97] " +
+                            (active
+                              ? "bg-ink-950 font-medium text-white"
+                              : n > 0
+                                ? "text-ink-600 hover:bg-ink-100 hover:text-ink-950"
+                                : "text-ink-400 hover:bg-ink-100")
+                          }
+                        >
+                          <span>{categoryLabelForPreset(key, preset)}</span>
+                          {n > 0 && (
+                            <span className={"font-mono text-[10.5px] tabular-nums " + (active ? "text-white/75" : "text-ink-400")}>
+                              {n}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* 40px 细线筛选条（根据当前频道自适应隐藏无关的价格/方式筛选） */}
               <div
                 className={
                   "border-b border-ink-200 bg-[#FCFCFD] px-3.5 py-2.5 sm:px-6 sm:py-2 " +
                   (mobileFilterBar ? "block" : "hidden sm:block")
                 }
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* 分类多选浮层 */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {/* 分类多选浮层（展开查看全部分类） */}
                   <div className="relative" ref={catRef}>
                     <button
                       type="button"
@@ -980,7 +1087,7 @@ export function App() {
                     >
                       <span>
                         {categories.length === 0
-                          ? "全部分类"
+                          ? "分类"
                           : categories.length === 1
                             ? `分类：${categoryLabelForPreset(categories[0]!, preset)}`
                             : `分类：已选 ${categories.length} 项`}
@@ -988,9 +1095,9 @@ export function App() {
                       <ChevronDown size={12} />
                     </button>
                     {catOpen && (
-                      <div className="panel absolute top-full left-0 z-40 mt-1.5 w-[260px] p-2.5 shadow-lg">
+                      <div className="pop-enter panel absolute top-full left-0 z-40 mt-1.5 w-[260px] p-2.5 shadow-lg">
                         <div className="mb-2 flex items-center justify-between text-[11px] text-ink-500">
-                          <span>{preset === "news" ? "资讯栏目（支持多选）" : preset === "deal" ? "好价分类（支持多选）" : preset === "opensource" ? "开源方向（支持多选）" : "福利分类（支持多选）"}</span>
+                          <span>{preset === "news" ? "要闻栏目（支持多选）" : preset === "info" ? "行业资讯栏目（支持多选）" : preset === "deal" ? "好价分类（支持多选）" : preset === "opensource" ? "开源方向（支持多选）" : "福利分类（支持多选）"}</span>
                           {categories.length > 0 && (
                             <button
                               type="button"
@@ -1044,10 +1151,10 @@ export function App() {
                   <select
                     value={kindFilter}
                     onChange={(e) => setKindFilter(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
                     title="内容形态"
                   >
-                    <option value="auto">形态：{preset === "verified" ? "默认真福利" : preset === "free" ? "默认白嫖" : preset === "deal" ? "默认好价" : preset === "opensource" ? "默认开源" : preset === "news" ? "默认资讯" : "全部有效"}</option>
+                    <option value="auto">形态：{preset === "verified" ? "真福利" : preset === "free" ? "白嫖" : preset === "deal" ? "好价" : preset === "opensource" ? "开源" : preset === "news" ? "要闻" : preset === "info" ? "资讯" : "全部"}</option>
                     <option value="all">形态：全部（含其它）</option>
                     {KIND_ORDER.map((k) => (
                       <option key={k} value={k}>
@@ -1060,56 +1167,60 @@ export function App() {
                   <select
                     value={lang}
                     onChange={(e) => setLang(e.target.value as "all" | "zh" | "en")}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
                     title="按标题语言筛选"
                   >
-                    <option value="all">全部语言</option>
+                    <option value="all">语言：全部</option>
                     <option value="zh">仅看中文</option>
                     <option value="en">仅看英文</option>
                   </select>
 
-                  <select
-                    value={priceCap}
-                    onChange={(e) => setPriceCap(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
-                    title="价格上限"
-                  >
-                    <option value="auto">
-                      价格：{preset === "free" ? "默认只看白嫖" : "默认不限"}
-                    </option>
-                    <option value="all">价格：不限</option>
-                    <option value="free">仅白嫖 (0 元)</option>
-                    <option value="5">≤ 5 元</option>
-                    <option value="10">≤ 10 元</option>
-                    <option value="30">≤ 30 元</option>
-                    <option value="100">≤ 100 元</option>
-                  </select>
+                  {preset !== "news" && preset !== "info" && preset !== "opensource" && (
+                    <>
+                      <select
+                        value={priceCap}
+                        onChange={(e) => setPriceCap(e.target.value)}
+                        className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
+                        title="价格上限"
+                      >
+                        <option value="auto">
+                          价格：{preset === "free" ? "白嫖" : "不限"}
+                        </option>
+                        <option value="all">价格：不限</option>
+                        <option value="free">仅白嫖 (0 元)</option>
+                        <option value="5">≤ 5 元</option>
+                        <option value="10">≤ 10 元</option>
+                        <option value="30">≤ 30 元</option>
+                        <option value="100">≤ 100 元</option>
+                      </select>
 
-                  <select
-                    value={obtain}
-                    onChange={(e) => setObtain(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
-                    title={OBTAIN_HINT[obtain] ?? "获取方式"}
-                  >
-                    <option value="auto">
-                      方式：{preset === "verified" ? "默认白嫖+有条件" : preset === "free" ? "默认直接白嫖" : "默认不限"}
-                    </option>
-                    <option value="all">方式：全部（含抽奖/试用）</option>
-                    <option value="free">仅直接白嫖</option>
-                    <option value="conditional">有条件领取</option>
-                    <option value="lottery">抽奖/开奖</option>
-                    <option value="trial">免费试用</option>
-                    <option value="promo">推广/引流</option>
-                  </select>
+                      <select
+                        value={obtain}
+                        onChange={(e) => setObtain(e.target.value)}
+                        className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
+                        title={OBTAIN_HINT[obtain] ?? "获取方式"}
+                      >
+                        <option value="auto">
+                          方式：{preset === "verified" ? "白嫖+条件" : preset === "free" ? "直领" : "不限"}
+                        </option>
+                        <option value="all">方式：全部（含抽奖/试用）</option>
+                        <option value="free">仅直接白嫖</option>
+                        <option value="conditional">有条件领取</option>
+                        <option value="lottery">抽奖/开奖</option>
+                        <option value="trial">免费试用</option>
+                        <option value="promo">推广/引流</option>
+                      </select>
+                    </>
+                  )}
 
                   <select
                     value={range}
                     onChange={(e) => setRange(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
                     title="发布时间窗口"
                   >
                     <option value="auto">
-                      时间：{preset === "verified" ? "默认 7 天内" : preset === "free" ? "默认 14 天内" : "默认不限"}
+                      时间：{preset === "verified" ? "7天内" : preset === "free" ? "14天内" : "不限"}
                     </option>
                     <option value="all">时间：不限</option>
                     <option value="1d">24 小时内</option>
@@ -1121,7 +1232,7 @@ export function App() {
                   <select
                     value={minScore}
                     onChange={(e) => setMinScore(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
                     title="最低评分"
                   >
                     <option value="all">评分：不限</option>
@@ -1133,28 +1244,39 @@ export function App() {
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
-                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-1.5 text-[11.5px] text-ink-700 outline-none focus:border-accent"
                     title="排序方式"
                   >
-                    <option value="newest">最新发布</option>
-                    <option value="score">综合评分</option>
-                    <option value="oldest">最早发布</option>
-                    <option value="expiring">截止时间最近</option>
-                    <option value="price_asc">价格从低到高</option>
+                    <option value="newest">最新</option>
+                    <option value="score">高分</option>
+                    <option value="oldest">最早</option>
+                    <option value="expiring">快截止</option>
+                    {preset !== "news" && preset !== "info" && <option value="price_asc">低价</option>}
                   </select>
 
                   <button
                     type="button"
                     onClick={() => setUnreadOnly((v) => !v)}
                     className={
-                      "h-7 rounded-md border px-2.5 text-[12px] font-medium transition-colors " +
+                      "h-7 rounded-md border px-2.5 text-[12px] font-medium transition-colors active:scale-[0.97] " +
                       (unreadOnly
                         ? "border-ink-950 bg-ink-950 text-white"
                         : "border-ink-200 bg-surface text-ink-600 hover:border-ink-300")
                     }
                   >
-                    只看未读
+                    未读
                   </button>
+
+                  {visible.some((i) => !i.read) && (
+                    <button
+                      type="button"
+                      onClick={() => void markVisibleRead()}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 text-[12px] font-medium text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-950 active:scale-[0.97]"
+                      title="把当前列表里的未读条目一次性标为已读"
+                    >
+                      <CheckCheck size={12} /> 标已读
+                    </button>
+                  )}
 
                   {activeFilterCount > 0 && (
                     <button
@@ -1167,7 +1289,7 @@ export function App() {
                   )}
 
                   {/* 右端统计与视图切换 */}
-                  <div className="ml-auto hidden items-center gap-3 sm:flex">
+                  <div className="ml-auto hidden shrink-0 items-center gap-2 sm:flex">
                     <span className="text-[12px] text-ink-500">
                       {items.loading ? (
                         <span className="inline-flex items-center gap-1">
@@ -1313,7 +1435,7 @@ export function App() {
               )}
 
               {viewMode === "compact" ? (
-                <div>
+                <div key={`compact-${preset}`} className="list-enter">
                   {visible.map((item) => (
                     <Fragment key={item.id}>
                       <CompactRow
@@ -1328,9 +1450,9 @@ export function App() {
                         onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
                       />
                       {relatedOpen === item.id && relatedMap[item.id] ? (
-                        <div className="border-b border-ink-100 bg-surface-hover px-3.5 py-2 sm:px-6">
+                        <div className="pop-enter border-b border-ink-100 bg-surface-hover px-3.5 py-2 sm:px-6">
                           <div className="mb-1 text-[11px] font-medium text-ink-500">
-                            同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
+                            同一事件 / 福利的其他 {relatedMap[item.id]!.length} 条来源报道
                           </div>
                           <ul className="space-y-1">
                             {relatedMap[item.id]!.map((r) => (
@@ -1357,10 +1479,12 @@ export function App() {
                 </div>
               ) : (
                 <div
+                  key={`grid-${preset}-${viewMode}`}
                   className={
-                    viewMode === "grid3"
+                    "list-enter " +
+                    (viewMode === "grid3"
                       ? "grid grid-cols-1 gap-3.5 px-3.5 py-3 md:grid-cols-2 xl:grid-cols-3 sm:px-6 sm:py-4"
-                      : "grid grid-cols-1 gap-3.5 px-3.5 py-3 md:grid-cols-2 sm:px-6 sm:py-4"
+                      : "grid grid-cols-1 gap-3.5 px-3.5 py-3 md:grid-cols-2 sm:px-6 sm:py-4")
                   }
                 >
                   {visible.map((item) => (
@@ -1402,6 +1526,54 @@ export function App() {
             </>
           )}
 
+          {tab === "hot" && (
+            <HotPanel
+              report={hot.data}
+              loading={hot.loading}
+              error={hot.error}
+              hours={hotHours}
+              scope={hotScope}
+              onHours={setHotHours}
+              onScope={setHotScope}
+              onReload={hot.reload}
+              onSearchWord={(w) => {
+                setSearch(w);
+                switchPreset(hotScope === "news" ? "news" : hotScope === "info" ? "info" : hotScope === "deals" ? "verified" : "all");
+                setTab("feed");
+              }}
+              onJumpCategory={(cat) => {
+                const targetPreset =
+                  hotScope === "news" || cat === "headline" || cat === "world"
+                    ? "news"
+                    : hotScope === "info" || cat === "stock" || cat === "tech" || cat === "finance"
+                      ? "info"
+                      : "all";
+                switchPreset(targetPreset);
+                setCategories([cat]);
+                setTab("feed");
+              }}
+              onOpenItem={async (id) => {
+                const found = items.data?.items?.find((it) => it.id === id);
+                if (found) {
+                  setDetail(found);
+                  return;
+                }
+                try {
+                  const res = await fetch("/api/items/" + id);
+                  if (res.ok) {
+                    const item = (await res.json()) as Item;
+                    setDetail(item);
+                    return;
+                  }
+                } catch {
+                  /* 回退到资源流 */
+                }
+                setTab("feed");
+              }}
+              sourceName={sourceName}
+            />
+          )}
+
           {tab === "digest" && (
             <DigestPanel
               digests={digests.data?.digests ?? []}
@@ -1412,11 +1584,11 @@ export function App() {
               onRunDaily={async () => {
                 notify("正在生成今日精选…");
                 const res = await fetch("/api/digests/run", { method: "POST" });
-                const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string };
+                const data = (await res.json().catch(() => ({}))) as { date?: string; count?: number; error?: string };
                 if (!res.ok) notify(data.error ?? "生成失败");
                 else notify(`已生成 ${data.count ?? 0} 条精选`);
                 digests.reload();
-                setPickedDate(null);
+                setPickedDate(res.ok && data.date ? data.date : null);
                 digestDetail.reload();
               }}
               sourceName={sourceName}
@@ -1424,6 +1596,16 @@ export function App() {
               onOpen={setDetail}
               onQuickBlock={setQuickBlock}
               onCopyCode={copyCode}
+              onRunWeekly={async () => {
+                notify("正在汇总本周精选…");
+                const res = await fetch("/api/digests/weekly", { method: "POST" });
+                const data = (await res.json().catch(() => ({}))) as { date?: string; count?: number; error?: string; pushed?: boolean };
+                if (!res.ok) notify(data.error ?? "生成失败");
+                else notify(`周报已生成 ${data.count ?? 0} 条${data.pushed ? "，已发 Telegram" : ""}`);
+                digests.reload();
+                setPickedDate(res.ok && data.date ? data.date : null);
+                digestDetail.reload();
+              }}
             />
           )}
 
@@ -1527,6 +1709,23 @@ export function App() {
               sources={sources.data?.sources ?? []}
               reload={ai.reload}
               onNotify={notify}
+              sourceName={sourceName}
+              onOpenItem={async (id) => {
+                const found = items.data?.items?.find((it) => it.id === id);
+                if (found) {
+                  setDetail(found);
+                  return;
+                }
+                try {
+                  const res = await fetch("/api/items/" + id);
+                  if (res.ok) {
+                    const item = (await res.json()) as Item;
+                    setDetail(item);
+                  }
+                } catch {
+                  /* ignore */
+                }
+              }}
             />
           )}
 

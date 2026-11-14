@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Play, Sparkles } from "lucide-react";
+import { CalendarDays, Loader2, Play, Sparkles } from "lucide-react";
 import type { Item } from "../types.ts";
 import { CompactRow } from "./ItemView.tsx";
 
@@ -9,6 +9,7 @@ export function DigestPanel({
   pickedDate,
   onPickDate,
   onRunDaily,
+  onRunWeekly,
   canAdmin = true,
   sourceName,
   onPatch,
@@ -16,7 +17,7 @@ export function DigestPanel({
   onQuickBlock,
   onCopyCode,
 }: {
-  digests: { date: string; created_at: string; pushed_at: string | null }[];
+  digests: { date: string; created_at: string; pushed_at: string | null; kind: string; count: number }[];
   detail: {
     data: { date: string; text: string; count: number; created_at: string; pushed_at: string | null; items: Item[] } | null;
     loading: boolean;
@@ -25,6 +26,7 @@ export function DigestPanel({
   pickedDate: string | null;
   onPickDate: (d: string) => void;
   onRunDaily: () => Promise<void>;
+  onRunWeekly: () => Promise<void>;
   canAdmin?: boolean;
   sourceName: (id: string) => string;
   onPatch: (id: number, body: Record<string, unknown>) => void;
@@ -33,6 +35,7 @@ export function DigestPanel({
   onCopyCode: (code: string) => void;
 }) {
   const [running, setRunning] = useState(false);
+  const [weeklyRunning, setWeeklyRunning] = useState(false);
   const active = pickedDate ?? digests[0]?.date ?? null;
 
   return (
@@ -51,6 +54,7 @@ export function DigestPanel({
                   : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
               }
             >
+              {d.kind === "weekly" ? <span className="mr-1 text-[10.5px] opacity-80">周报</span> : null}
               {d.date}
               {d.pushed_at ? <span className="ml-1.5 text-[11px] opacity-80">· 已推</span> : null}
             </button>
@@ -59,22 +63,41 @@ export function DigestPanel({
         </div>
 
         {canAdmin && (
-          <button
-            type="button"
-            disabled={running}
-            onClick={async () => {
-              setRunning(true);
-              try {
-                await onRunDaily();
-              } finally {
-                setRunning(false);
-              }
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
-          >
-            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            立即生成今日精选
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={running}
+              onClick={async () => {
+                setRunning(true);
+                try {
+                  await onRunDaily();
+                } finally {
+                  setRunning(false);
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+            >
+              {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              立即生成今日精选
+            </button>
+            <button
+              type="button"
+              disabled={weeklyRunning}
+              onClick={async () => {
+                setWeeklyRunning(true);
+                try {
+                  await onRunWeekly();
+                } finally {
+                  setWeeklyRunning(false);
+                }
+              }}
+              title="汇总近 7 天 AI 判为真福利且未过期的条目，附本周热词与分类分布"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 transition-colors hover:bg-ink-100 disabled:opacity-50"
+            >
+              {weeklyRunning ? <Loader2 size={13} className="animate-spin" /> : <CalendarDays size={13} />}
+              生成本周周报
+            </button>
+          </div>
         )}
       </div>
 

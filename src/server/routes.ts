@@ -1,9 +1,11 @@
 import type { Hono } from "hono";
 import { all, get, run, type SqlValue } from "./db.ts";
+import { TitleDeduper } from "./enrich/dedup.ts";
 import { aiEnabled, config, pushEnabled } from "./config.ts";
 import { addCustomRssSource, ingestItems, markSourceFailure, runSource } from "./collectors/index.ts";
 import type { RawItem } from "./collectors/types.ts";
-import { runDaily } from "./digest.ts";
+import { lastDigests, runDaily, runWeekly } from "./digest.ts";
+import { buildHotReport, sourceQuality } from "./hot.ts";
 import { sendTelegram } from "./telegram.ts";
 import {
   DEFAULT_SETTINGS,
@@ -50,6 +52,7 @@ export type ItemRow = {
   external_id: string;
   url: string;
   url_key: string;
+  title_key?: string | null;
   title: string;
   summary: string | null;
   author: string | null;
@@ -287,6 +290,7 @@ const PUBLIC_GET = [
   "/api/digests",
   "/api/export",
   "/api/auth/check",
+  "/api/hot",
 ];
 
 let warnedNoAdminToken = false;
@@ -332,104 +336,166 @@ export function registerApi(app: Hono) {
     // 指定了单源或「我的收藏」时不做跨源合并，避免主记录落在别处导致本源条目被隐藏。
     const merge = q.merge === "1" || (q.merge !== "0" && !q.source && q.starred !== "1");
     if (merge) {
-      const subConds = ["x.title_key = items.title_key", "x.status = 'active'"];
-      if (q.unread === "1") subConds.push("x.read_at IS NULL");
-      if (q.aiOnly === "1") subConds.push("x.ai_keep = 1");
-      if (q.hideRejected === "1") subConds.push("x.ai_keep IS NOT 0");
-      if (q.freeOnly === "1") subConds.push("(x.is_free = 1 OR x.price = 0)");
-      if (q.hasCodes === "1") subConds.push("x.codes != '[]' AND x.codes != ''");
-      if (q.obtain) {
-        const modes = q.obtain.split(",").filter(Boolean);
-        if (modes.length) {
-          subConds.push(`x.obtain IN (${modes.map(() => "?").join(",")})`);
-          params.push(...modes);
-        }
-      }
-      if (q.lang === "zh") subConds.push("is_zh(x.title) = 1");
-      else if (q.lang === "en") subConds.push("is_zh(x.title) = 0");
-      if (q.category) {
-        const cats = q.category.split(",").map((s) => s.trim()).filter(Boolean);
-        if (cats.length === 1) {
-          subConds.push("x.category = ?");
-          params.push(cats[0]!);
-        } else if (cats.length > 1) {
-          subConds.push(`x.category IN (${cats.map(() => "?").join(",")})`);
-          params.push(...cats);
-        }
-      }
-      if (q.kind) {
-        const kinds = q.kind.split(",").map((s) => s.trim()).filter(Boolean);
-        if (kinds.length === 1) {
-          subConds.push("x.kind = ?");
-          params.push(kinds[0]!);
-        } else if (kinds.length > 1) {
-          subConds.push(`x.kind IN (${kinds.map(() => "?").join(",")})`);
-          params.push(...kinds);
-        }
-      }
-      if (q.unexpired === "1") {
-        const maxAgeDays = Math.min(Math.max(Number(q.maxAgeDays ?? 14), 1), 365);
-        const now = new Date();
-        subConds.push("COALESCE(x.published_at, x.first_seen_at) >= ?");
-        params.push(new Date(now.getTime() - maxAgeDays * 86_400_000).toISOString());
-        subConds.push("(x.expires_at IS NULL OR x.expires_at > ?)");
-        params.push(now.toISOString());
-      }
-      // 同一福利跨全部分类折叠合并：game 跨全期合并；cloud/ai/software 等日常/周期贴仅在 48 小时窗口内合并，避免遮蔽新一期
-      const sameWindow = "(items.category = 'game' OR ABS(julianday(COALESCE(x.published_at, x.first_seen_at)) - julianday(COALESCE(items.published_at, items.first_seen_at))) <= 2)";
+      // 代表条目只算一次：旧写法是逐行相关子查询（每行都要重跑一遍全表过滤 + 排序），5000 行时单次请求要 2-13 秒。
+      // 现在改成一次窗口函数：按 title_key + 48 小时时间桶分组，每组取 score 最高的一条当代表。
+      const groupKey = "CASE WHEN category = 'game' THEN 'game' ELSE CAST(julianday(COALESCE(published_at, first_seen_at)) / 2 AS INTEGER) END";
+      const keyOk = "LENGTH(CAST(title_key AS BLOB)) >= 6";
+      const innerClause = where.length ? `${where.join(" AND ")} AND ` : "";
       where.push(
-        `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR id = (SELECT x.id FROM items x WHERE ${subConds.join(" AND ")} AND ${sameWindow} ORDER BY x.score DESC, x.id ASC LIMIT 1))`,
+        `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR id IN (
+           SELECT rid FROM (
+             SELECT id AS rid, ROW_NUMBER() OVER (PARTITION BY title_key, ${groupKey} ORDER BY score DESC, id ASC) AS rn
+               FROM items WHERE ${innerClause}${keyOk}
+           ) WHERE rn = 1))`,
       );
+      // 子查询复用上面同一批过滤条件，参数按 SQL 文本顺序再排一遍
+      params.push(...params.slice());
     }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const order = SORTS[q.sort ?? "newest"] ?? SORTS.newest;
-    const rows = all<ItemRow & { dup_count?: number }>(
-      merge
-        ? `SELECT items.*, (SELECT COUNT(*) FROM items d
-              WHERE d.title_key = items.title_key AND d.status = 'active'
-                AND LENGTH(CAST(items.title_key AS BLOB)) >= 6
-                AND (items.category = 'game' OR ABS(julianday(COALESCE(d.published_at, d.first_seen_at)) - julianday(COALESCE(items.published_at, items.first_seen_at))) <= 2)) AS dup_count
-           FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`
-        : `SELECT items.*, 1 AS dup_count FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    const rawTotal = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items ${clause}`, ...params)?.n ?? 0;
+
+    if (!merge) {
+      const rows = all<ItemRow>(
+        `SELECT items.* FROM items ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+        ...params,
+        limit,
+        offset,
+      );
+      return c.json({
+        total: rawTotal,
+        limit,
+        offset,
+        items: rows.map((r) => {
+          const hit = includeBlocked ? matchBlockRules(r, rules) : null;
+          return { ...shape(r, subKeywords, hit ? hit.pattern : null), dupCount: 1 };
+        }),
+      });
+    }
+
+    // 跨源二次事件聚类：SQL 已经用 title_key 折叠了精确/双语别名，再对窗口内条目用 TitleDeduper
+    // 收拢不同措辞的同一事件（如多家媒体报道同一条新闻/优惠），并累加同组来源数。
+    const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
+    const candidates = all<ItemRow & { dup_count?: number }>(
+      `SELECT items.*, (SELECT COUNT(*) FROM items d INDEXED BY idx_items_title_key
+            WHERE d.title_key = items.title_key AND d.status = 'active'
+              AND LENGTH(CAST(items.title_key AS BLOB)) >= 6
+              AND (items.category = 'game' OR ABS(julianday(COALESCE(d.published_at, d.first_seen_at)) - julianday(COALESCE(items.published_at, items.first_seen_at))) <= 2)) AS dup_count
+         FROM items ${clause} ORDER BY ${order} LIMIT ?`,
       ...params,
-      limit,
-      offset,
+      fetchLimit,
     );
-    const total = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items ${clause}`, ...params)?.n ?? 0;
+
+    const dedupeInput = candidates.map((r) => ({
+      row: r,
+      title: r.title,
+      urlKey: r.url_key,
+      category: r.category,
+      kind: r.kind,
+      publishedAt: r.published_at ?? r.first_seen_at,
+    }));
+    const deduper = new TitleDeduper(dedupeInput, [], { maxGapHours: 48 });
+    const clusterCounts = new Map<number, number>();
+    const representatives: Array<{ row: ItemRow; root: number }> = [];
+
+    for (const entry of dedupeInput) {
+      const root = deduper.rootOf(entry);
+      const baseDup = Math.max(1, Number(entry.row.dup_count ?? 1));
+      const prevCount = clusterCounts.get(root);
+      if (prevCount === undefined) {
+        clusterCounts.set(root, baseDup);
+        representatives.push({ row: entry.row, root });
+      } else {
+        clusterCounts.set(root, prevCount + baseDup);
+      }
+    }
+
+    const extraMerged = candidates.length - representatives.length;
+    const total = Math.max(representatives.length, rawTotal - extraMerged);
+    const page = representatives.slice(offset, offset + limit);
 
     return c.json({
       total,
       limit,
       offset,
-      items: rows.map((r) => {
+      items: page.map(({ row: r, root }) => {
         const hit = includeBlocked ? matchBlockRules(r, rules) : null;
-        return { ...shape(r, subKeywords, hit ? hit.pattern : null), dupCount: Math.max(1, Number(r.dup_count ?? 1)) };
+        return {
+          ...shape(r, subKeywords, hit ? hit.pattern : null),
+          dupCount: clusterCounts.get(root) ?? 1,
+        };
       }),
     });
   });
 
-  /** 展开「同一福利的其他来源报道」 */
+  /** 展开「同一福利/事件的其它来源报道」（精确 title_key + 同事件实体聚类双路召回） */
   app.get("/api/items/:id/related", (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
-    const self = get<{ title_key: string | null; published_at: string | null; first_seen_at: string }>(
-      "SELECT title_key, published_at, first_seen_at FROM items WHERE id = ?",
+    const self = get<ItemRow & { source_name?: string }>(
+      `SELECT items.*, s.name AS source_name
+         FROM items LEFT JOIN sources s ON s.id = items.source_id
+        WHERE items.id = ?`,
       id,
     );
     if (!self) return c.json({ items: [] });
-    if (!self.title_key) return c.json({ items: [] });
+
     const anchorTime = self.published_at ?? self.first_seen_at;
-    const rows = all<ItemRow & { source_name?: string }>(
+    const exactRows = self.title_key
+      ? all<ItemRow & { source_name?: string }>(
+          `SELECT items.*, s.name AS source_name
+             FROM items LEFT JOIN sources s ON s.id = items.source_id
+            WHERE items.title_key = ? AND items.status = 'active' AND items.id != ?
+              AND (items.category = 'game' OR ABS(julianday(COALESCE(items.published_at, items.first_seen_at)) - julianday(?)) <= 2)
+            ORDER BY items.score DESC, items.id ASC LIMIT 40`,
+          self.title_key,
+          id,
+          anchorTime,
+        )
+      : [];
+
+    // 再从同一 72h 时间窗口内捞出候选，通过 TitleDeduper 召回近重复/同事件报道
+    const windowRows = all<ItemRow & { source_name?: string }>(
       `SELECT items.*, s.name AS source_name
          FROM items LEFT JOIN sources s ON s.id = items.source_id
-        WHERE items.title_key = ? AND items.status = 'active' AND items.id != ?
-          AND (items.category = 'game' OR ABS(julianday(COALESCE(items.published_at, items.first_seen_at)) - julianday(?)) <= 2)
-        ORDER BY items.score DESC, items.id ASC LIMIT 40`,
-      self.title_key,
+        WHERE items.status = 'active' AND items.id != ?
+          AND ABS(julianday(COALESCE(items.published_at, items.first_seen_at)) - julianday(?)) <= 3
+        ORDER BY items.score DESC, items.id ASC LIMIT 300`,
       id,
       anchorTime,
     );
-    return c.json({ items: rows.map((r) => ({ ...shape(r, [], null), sourceName: r.source_name ?? r.source_id })) });
+
+    const byId = new Map<number, ItemRow & { source_name?: string }>();
+    for (const r of exactRows) byId.set(r.id, r);
+
+    if (windowRows.length) {
+      const selfEntry = {
+        row: self,
+        title: self.title,
+        urlKey: self.url_key,
+        category: self.category,
+        kind: self.kind,
+        publishedAt: anchorTime,
+      };
+      const winEntries = windowRows.map((r) => ({
+        row: r,
+        title: r.title,
+        urlKey: r.url_key,
+        category: r.category,
+        kind: r.kind,
+        publishedAt: r.published_at ?? r.first_seen_at,
+      }));
+      const deduper = new TitleDeduper([selfEntry, ...winEntries], [], { maxGapHours: 48 });
+      const selfRoot = deduper.rootOf(selfEntry);
+      for (const e of winEntries) {
+        if (deduper.rootOf(e) === selfRoot && !byId.has(e.row.id)) {
+          byId.set(e.row.id, e.row);
+        }
+      }
+    }
+
+    const merged = [...byId.values()].slice(0, 40);
+    return c.json({ items: merged.map((r) => ({ ...shape(r, [], null), sourceName: r.source_name ?? r.source_id })) });
   });
 
   app.get("/api/export", (c) => {
@@ -817,12 +883,19 @@ export function registerApi(app: Hono) {
     const aiS = getAiSettings();
     const pushS = getPushSettings();
     return c.json({
-      settings: { ...publicAiSettings(aiS), reviewBeforePush: pushS.pushTiming === "wait_ai" },
+      settings: {
+        ...publicAiSettings(aiS),
+        reviewBeforePush: pushS.pushTiming === "wait_ai",
+        syncPrePushLimit: pushS.syncPrePushLimit,
+      },
       stats: aiStats(),
       feedback: feedbackStats(aiS.feedbackLimit),
     });
   });
 
+  app.get("/api/ai/live", (c) => {
+    return c.json({ stats: aiStats() });
+  });
   app.patch("/api/ai", async (c) => {
     const body = (await c.req.json().catch(() => null)) as (Partial<AiSettings> & { reviewBeforePush?: boolean }) | null;
     if (!body) return c.json({ error: "无效的请求体" }, 400);
@@ -832,7 +905,7 @@ export function registerApi(app: Hono) {
     const saved = saveAiSettings(body);
     const pushS = getPushSettings();
     return c.json({
-      settings: { ...publicAiSettings(saved), reviewBeforePush: pushS.pushTiming === "wait_ai" },
+      settings: { ...publicAiSettings(saved), reviewBeforePush: pushS.pushTiming === "wait_ai", syncPrePushLimit: pushS.syncPrePushLimit },
       stats: aiStats(),
       feedback: feedbackStats(saved.feedbackLimit),
     });
@@ -936,8 +1009,27 @@ export function registerApi(app: Hono) {
     return c.json({ keywords: rows.map((r) => r.keyword) });
   });
 
+  app.get("/api/hot", (c) => {
+    return c.json(buildHotReport(Number(c.req.query("hours") ?? 24), c.req.query("scope")));
+  });
+
+  app.get("/api/source-quality", (c) => {
+    const days = Number(c.req.query("days") ?? 7);
+    const safeDays = Math.min(Math.max(Math.round(days) || 7, 1), 90);
+    return c.json({ days: safeDays, sources: sourceQuality(safeDays) });
+  });
+
   app.get("/api/digests", (c) => {
-    return c.json({ digests: all("SELECT date, item_ids, created_at, pushed_at FROM digests ORDER BY date DESC LIMIT 30") });
+    return c.json({ digests: lastDigests(30) });
+  });
+
+  app.post("/api/digests/weekly", async (c) => {
+    try {
+      const result = await runWeekly({ dryRun: false });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
   });
 
   app.post("/api/digests/run", async (c) => {

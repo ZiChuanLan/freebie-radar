@@ -25,11 +25,12 @@ export const KIND_LABEL: Record<string, string> = {
   freebie: "白嫖福利",
   deal: "特价好价",
   opensource: "开源项目",
-  info: "资讯/指南",
+  news: "重要新闻",
+  info: "行业资讯",
   noise: "噪音水帖",
 };
 
-export const KIND_ORDER = ["freebie", "deal", "opensource", "info"] as const;
+export const KIND_ORDER = ["freebie", "deal", "opensource", "news", "info"] as const;
 
 export const CATEGORY_LABEL: Record<string, string> = {
   ai: "AI 额度",
@@ -46,17 +47,25 @@ export const CATEGORY_LABEL: Record<string, string> = {
   game: "游戏",
   carpool: "拼车/合租",
   trade: "二手/交易",
-  headline: "时政/要闻",
-  finance: "财经/商业",
-  news: "综合快讯",
+  headline: "时政要闻",
+  world: "国际要闻",
+  finance: "经济/商业",
+  stock: "股票/市场",
+  tech: "科技动态",
+  news: "综合资讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",
   other: "其它",
 };
 
-/** 资讯频道专属栏目名称（让同属 ai/dev/security/hardware 等领域的内容在资讯频道展示更自然） */
+/** 新闻与行业资讯场景下的专属栏目名称（避免科技新闻显示成「AI 额度」） */
 export const NEWS_CATEGORY_LABEL: Record<string, string> = {
+  headline: "时政要闻",
+  world: "国际要闻",
+  finance: "经济/商业",
+  stock: "股票/市场",
+  tech: "科技前沿",
   ai: "AI 前沿",
   dev: "开发工程",
   opensource: "开源生态",
@@ -68,9 +77,7 @@ export const NEWS_CATEGORY_LABEL: Record<string, string> = {
   game: "游戏动态",
   design: "设计体验",
   edu: "深度/教程",
-  headline: "时政/要闻",
-  finance: "财经/商业",
-  news: "综合快讯",
+  news: "综合资讯",
   other: "其它资讯",
 };
 
@@ -80,8 +87,9 @@ const PRESET_CATEGORIES: Record<string, string[]> = {
   verified: ["ai", "software", "game", "cloud", "vps", "domain", "media", "design", "dev", "edu", "goods", "invite", "opensource", "security", "hardware", "other"],
   free: ["ai", "software", "game", "cloud", "vps", "domain", "media", "design", "dev", "edu", "goods", "invite", "opensource", "security", "hardware", "other"],
   deal: ["vps", "carpool", "trade", "game", "software", "cloud", "domain", "ai", "media", "hardware", "goods", "design", "dev", "security", "edu", "other"],
-  opensource: ["ai", "dev", "opensource", "security", "cloud", "vps", "software", "design", "media", "hardware", "edu", "other"],
-  news: ["headline", "finance", "ai", "dev", "opensource", "security", "cloud", "vps", "hardware", "software", "game", "design", "edu", "news", "other"],
+  opensource: ["ai", "dev", "opensource", "security", "cloud", "vps", "software", "tech", "design", "hardware", "edu", "other"],
+  news: ["headline", "world", "finance", "tech", "stock", "news", "security", "other"],
+  info: ["finance", "stock", "tech", "ai", "dev", "hardware", "security", "cloud", "software", "game", "opensource", "design", "edu", "news", "other"],
 };
 
 export function categoriesForPreset(preset: string): string[] {
@@ -89,16 +97,25 @@ export function categoriesForPreset(preset: string): string[] {
 }
 
 export function categoryLabelForPreset(category: string, preset: string): string {
-  if (preset === "news") {
+  if (preset === "news" || preset === "info") {
     return NEWS_CATEGORY_LABEL[category] ?? CATEGORY_LABEL[category] ?? category;
   }
   return CATEGORY_LABEL[category] ?? category;
 }
 
-export type SourceGroupKey = "community" | "game" | "software" | "deals";
+export function categoryLabelForKind(category: string | null | undefined, kind: string | null | undefined): string {
+  const key = category || "other";
+  if (kind === "news" || kind === "info") {
+    return NEWS_CATEGORY_LABEL[key] ?? CATEGORY_LABEL[key] ?? key;
+  }
+  return CATEGORY_LABEL[key] ?? key;
+}
+
+export type SourceGroupKey = "news" | "community" | "game" | "software" | "deals";
 
 export const SOURCE_GROUPS: { key: SourceGroupKey; label: string }[] = [
   { key: "community", label: "国内社区与线报" },
+  { key: "news", label: "重要新闻与行业资讯" },
   { key: "game", label: "游戏喜加一与史低" },
   { key: "software", label: "软件 · AI · 开源" },
   { key: "deals", label: "综合羊毛与优惠" },
@@ -106,6 +123,19 @@ export const SOURCE_GROUPS: { key: SourceGroupKey; label: string }[] = [
 
 export function groupOfSource(s: Source): SourceGroupKey {
   const id = s.id;
+  if (
+    id.startsWith("cctv-") ||
+    id.startsWith("rss-chinanews-") ||
+    id === "rss-wallstreetcn" ||
+    id === "rss-ithome" ||
+    id === "rss-sspai" ||
+    id === "rss-ruanyifeng" ||
+    id === "rss-hnrss" ||
+    id === "rss-solidot" ||
+    id === "rss-producthunt"
+  ) {
+    return "news";
+  }
   if (
     id.startsWith("linuxdo-") ||
     id.startsWith("v2ex-") ||
@@ -131,7 +161,7 @@ export function groupOfSource(s: Source): SourceGroupKey {
     id.startsWith("github-") ||
     id === "openrouter-free" ||
     id === "bsky-plugins" ||
-    /shareware|tickcoupon|giveawayoftheday|ghxi|appinn|iplaysoft|iapps|sspai|producthunt|hnrss|ruanyifeng|apphookup|googleplay|freeebooks/i.test(
+    /shareware|tickcoupon|giveawayoftheday|ghxi|appinn|iplaysoft|iapps|apphookup|googleplay|freeebooks/i.test(
       id,
     )
   ) {

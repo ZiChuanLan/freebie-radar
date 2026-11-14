@@ -154,9 +154,9 @@ export const DEFAULT_SETTINGS: PushSettings = {
 };
 
 const SETTINGS_KEY = "push";
-const VALID_CATEGORIES = new Set(["ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware", "media", "game", "carpool", "trade", "headline", "finance", "news", "goods", "invite", "edu", "other"]);
+const VALID_CATEGORIES = new Set(["ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware", "media", "game", "carpool", "trade", "headline", "world", "finance", "stock", "tech", "news", "goods", "invite", "edu", "other"]);
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
-const VALID_KINDS = new Set(["freebie", "deal", "opensource", "info"]);
+const VALID_KINDS = new Set(["freebie", "deal", "opensource", "news", "info"]);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
   const n = Number(v);
@@ -660,11 +660,21 @@ function pushedLastHour(): number {
   );
 }
 
+/**
+ * 即时通道这一轮到底能发几条、几条要顺延进攒批。
+ * 预览和真实推送共用这一个函数，保证「界面说会发 5 条」和实际发出去的一致。
+ */
+export function planInstant(instantCount: number, s: PushSettings, usedThisHour: number): { send: number; defer: number; budget: number } {
+  const budget = Math.max(0, s.maxPerHour - usedThisHour);
+  const send = Math.min(instantCount, s.maxPerInstant, budget);
+  return { send, defer: instantCount - send, budget };
+}
+
 /* ------------------------------------------------------------------ *
  * 攒批队列
  * ------------------------------------------------------------------ */
 
-type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[]; route?: PushRoute | null };
+type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[]; route?: PushRoute | null; reason?: string };
 let queue: QueueItem[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
 let schedulerStarted = false;
@@ -677,6 +687,8 @@ function enqueue(entries: QueueItem[]): void {
   const seen = new Set(queue.map((q) => q.id));
   for (const e of entries) if (!seen.has(e.id)) queue.push(e);
   if (queue.length > 200) queue = queue.slice(-200);
+  // 入队即确保有定时器在跑：否则攒批关闭后再打开、或调度器晚于入队启动时，队列会一直躺着
+  scheduleFlush();
 }
 
 function scheduleFlush(): void {
@@ -787,7 +799,14 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
     }
     if (quiet && s.quietAction === "drop") continue;
     if (canEnterBatch(it, s, d)) {
-      batched.push({ id: it.id, sourceId, item: it, subHits, route });
+      batched.push({
+        id: it.id,
+        sourceId,
+        item: it,
+        subHits,
+        route,
+        reason: d.reason || (route ? `[${route.name}] ` : "") + "达到攒批高分",
+      });
       deduper?.markSeen(it);
     }
   }
@@ -799,8 +818,18 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
     );
   }
 
-  const budget = Math.max(0, s.maxPerHour - pushedLastHour());
-  const picked = instant.slice(0, Math.min(s.maxPerInstant, budget));
+// 即时通道被上限截掉的条目不能丢：降级进攒批队列，按小时额度慢慢发。
+  // 攒批关闭时它们仍留在队列里（界面显示「队列中 N 条」），可手动「立即发送攒批」。
+  const usedThisHour = pushedLastHour();
+  const plan = planInstant(instant.length, s, usedThisHour);
+  const picked = instant.slice(0, plan.send);
+  const overflow = instant.slice(plan.send);
+  if (overflow.length) {
+    enqueue(overflow.map(({ it, reason, subHits, route }) => ({ id: it.id, sourceId, item: it, subHits, route, reason })));
+    console.log(
+      `[push] ${sourceId} 即时超限 ${overflow.length} 条转攒批（每轮即时上限 ${s.maxPerInstant} 条，本小时剩余额度 ${plan.budget} 条）`,
+    );
+  }
   if (!picked.length) return 0;
 
   let sent = 0;
@@ -812,12 +841,12 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
       await sendTelegram(text);
       const now = new Date().toISOString();
       run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(it.title), it.id);
-      logPush("instant", [it.id], text, 1, true, null);
+      logPush("instant", [it.id], text, 1, true, null, reason);
       sent += 1;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[push] 即时推送失败:", msg);
-      logPush("instant", [it.id], text, 0, false, msg);
+      logPush("instant", [it.id], text, 0, false, msg, reason);
       break;
     }
   }
@@ -967,7 +996,7 @@ export async function flushBatch(force = false): Promise<number> {
     const route = hasRoutes ? matchPushRoute(fresh, s.routes) : null;
     const d = decide(fresh, s, subHits, route);
     if (!canEnterBatch(fresh, s, d)) continue;
-    refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits, route });
+    refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits, route, reason: q.reason });
   }
 
   let take = refreshed;
@@ -1002,13 +1031,13 @@ export async function flushBatch(force = false): Promise<number> {
     for (const q of take) {
       run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(q.item.title), q.id);
     }
-    logPush("batch", take.map((q) => q.id), text, take.length, true, null);
+    logPush("batch", take.map((q) => q.id), text, take.length, true, null, summarizeReasons(take.map((q) => q.reason)));
     console.log("[push] 攒批推送 " + take.length + " 条");
     return take.length;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[push] 攒批推送失败:", msg);
-    logPush("batch", take.map((q) => q.id), text, 0, false, msg);
+    logPush("batch", take.map((q) => q.id), text, 0, false, msg, summarizeReasons(take.map((q) => q.reason)));
     queue.unshift(...take);
     return 0;
   }
@@ -1018,15 +1047,37 @@ export async function flushBatch(force = false): Promise<number> {
  * 推送记录与状态
  * ------------------------------------------------------------------ */
 
-function logPush(kind: string, ids: number[], text: string, count: number, ok: boolean, error: string | null): void {
+/** 把一批条目的命中原因压成一行摘要：去掉路由前缀、把「高分 78」归一成「高分」，再按条数排序。 */
+function summarizeReasons(reasons: (string | undefined)[]): string {
+  const counts = new Map<string, number>();
+  for (const r of reasons) {
+    const key = (r?.trim() || "达到攒批高分").replace(/^\[[^\]]+\]\s*/, "").replace(/高分\s*\d+/, "高分");
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => k + " " + n)
+    .join(" · ");
+}
+
+function logPush(
+  kind: string,
+  ids: number[],
+  text: string,
+  count: number,
+  ok: boolean,
+  error: string | null,
+  reason: string | null = null,
+): void {
   run(
-    "INSERT INTO push_log (kind, item_ids, text, count, ok, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO push_log (kind, item_ids, text, count, ok, error, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     kind,
     JSON.stringify(ids),
     text.slice(0, 4000),
     count,
     ok ? 1 : 0,
     error?.slice(0, 400) ?? null,
+    reason?.slice(0, 300) ?? null,
     new Date().toISOString(),
   );
 }
@@ -1040,6 +1091,7 @@ export function recentPushLog(limit = 30) {
     count: number;
     ok: number;
     error: string | null;
+    reason: string | null;
     created_at: string;
   }>("SELECT * FROM push_log ORDER BY id DESC LIMIT ?", limit);
 }
@@ -1068,6 +1120,17 @@ export function previewPush(limit = 6): {
   queued: number;
   scanned: number;
   matched: number;
+  /** 够格「即时」的总条数（不受展示条数限制） */
+  instantTotal: number;
+  /** 按每轮即时上限与小时额度，这一批实际能即时发出的条数 */
+  sendableInstant: number;
+  /** 够格「攒批」的总条数（已含被即时上限挤过来的部分） */
+  batchTotal: number;
+  /** 被即时上限挤进攒批队列的条数 */
+  deferred: number;
+  /** 本小时已推条数 */
+  usedThisHour: number;
+  caps: { maxPerInstant: number; maxPerHour: number; maxPerBatch: number; batchIntervalMin: number; budget: number };
   rejectedBy: {
     blocked: number;
     duplicate: number;
@@ -1114,6 +1177,10 @@ export function previewPush(limit = 6): {
   const instant: string[] = [];
   const batch: string[] = [];
   let matched = 0;
+  /** 去重后真正够格「即时」的条数（不受展示条数限制） */
+  let instantTotal = 0;
+  /** 去重后够格「攒批」的条数（含被即时上限挤过来的部分，末尾再补） */
+  let batchTotal = 0;
   const rejectedBy = {
     blocked: 0,
     duplicate: 0,
@@ -1174,18 +1241,46 @@ export function previewPush(limit = 6): {
     const subHits = matchSubscriptions(fresh, subKeywords);
     const route = hasRoutes ? matchPushRoute(fresh, s.routes) : null;
     const d = decide(fresh, s, subHits, route);
+    const batchable = canEnterBatch(fresh, s, d);
+    if (d.push) instantTotal += 1;
+    else if (batchable) batchTotal += 1;
+    else {
+      rejectedBy.lowScore += 1;
+      continue;
+    }
     const block = itemBlock(r.source_id, fresh, s, undefined, subHits).join("\n");
+    deduper?.markSeen(r);
     if (d.push && instant.length < limit) {
       const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ ";
       instant.push(prefix + d.reason + "\n" + block);
-      deduper?.markSeen(r);
-    } else if (canEnterBatch(fresh, s, d) && batch.length < limit) {
+    } else if (!d.push && batchable && batch.length < limit) {
       const routeNote = hasRoutes && route ? `[路由: ${route.name}]\n` : "";
       batch.push(routeNote + block);
-      deduper?.markSeen(r);
-    } else if (!d.push && !canEnterBatch(fresh, s, d)) {
-      rejectedBy.lowScore += 1;
     }
   }
-  return { instant, batch, queued: queue.length, scanned: rows.length, matched, rejectedBy };
+  const usedThisHour = pushedLastHour();
+  // 复用真实推送那套算法：预览说「能发 N 条」，实际就发 N 条
+  const plan = planInstant(instantTotal, s, usedThisHour);
+  const sendableInstant = plan.send;
+  const deferred = plan.defer;
+  return {
+    instant,
+    batch,
+    queued: queue.length,
+    scanned: rows.length,
+    matched,
+    instantTotal,
+    sendableInstant,
+    batchTotal: batchTotal + deferred,
+    deferred,
+    usedThisHour,
+    caps: {
+      maxPerInstant: s.maxPerInstant,
+      maxPerHour: s.maxPerHour,
+      maxPerBatch: s.maxPerBatch,
+      batchIntervalMin: s.batchIntervalMin,
+      budget: plan.budget,
+    },
+    rejectedBy,
+  };
 }

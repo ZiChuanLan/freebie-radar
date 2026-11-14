@@ -176,3 +176,52 @@ test("mergeKey：Bluesky / TG / Reddit / IndieGameBundles 长尾推文全部收�
     assert.equal(mergeKey(t), "knightica", `failed on: ${t}`);
   }
 });
+
+
+test("TitleDeduper：同事件跨媒体不同措辞（CAR-T 进医保）自动聚类，不同品牌/主题不误并", () => {
+  const now = new Date().toISOString();
+  const newsCluster = [
+    {
+      id: 101,
+      title: "2026 商保创新药目录扩容至 28 种，百万元 CAR-T 抗癌药与中国首个血友病基因治疗药入选，患者自付价格大幅下降",
+      category: "headline",
+      kind: "news",
+      publishedAt: now,
+    },
+    {
+      id: 102,
+      title: "129万一针的CAR-T首次进医保：“降至30万”的说法，有几分成色？",
+      category: "headline",
+      kind: "news",
+      publishedAt: now,
+    },
+    {
+      id: 103,
+      title: "首款CAR-T进医保，用其他CAR-T产品的患者怎么办",
+      category: "headline",
+      kind: "news",
+      publishedAt: now,
+    },
+    {
+      id: 104,
+      title: "Google 发布 Gemini 4 Carbon 模型细节",
+      category: "ai",
+      kind: "info",
+      publishedAt: now,
+    },
+    {
+      id: 105,
+      title: "Google Pixel 10 降价促销评测",
+      category: "hardware",
+      kind: "info",
+      publishedAt: now,
+    },
+  ];
+  const deduper = new TitleDeduper(newsCluster, [], { maxGapHours: 48 });
+  const r1 = deduper.rootOf(newsCluster[0]!);
+  const r2 = deduper.rootOf(newsCluster[1]!);
+  const r3 = deduper.rootOf(newsCluster[2]!);
+  assert.equal(r1, r2, "CAR-T 报道 #1 与 #2 应聚为同一事件");
+  assert.equal(r2, r3, "CAR-T 报道 #2 与 #3 应聚为同一事件");
+  assert.notEqual(deduper.rootOf(newsCluster[3]!), deduper.rootOf(newsCluster[4]!), "同品牌不同事件不得误并");
+});

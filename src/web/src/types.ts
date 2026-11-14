@@ -171,6 +171,16 @@ export type PushPreview = {
   scanned: number;
   matched: number;
   rejectedBy?: Record<string, number>;
+  /** 够格「即时」的总条数（不受展示条数限制） */
+  instantTotal: number;
+  /** 按每轮即时上限与小时额度，这一批实际能即时发出的条数 */
+  sendableInstant: number;
+  /** 够格「攒批」的总条数（已含被即时上限挤过来的部分） */
+  batchTotal: number;
+  /** 被即时上限挤进攒批队列的条数 */
+  deferred: number;
+  usedThisHour: number;
+  caps: { maxPerInstant: number; maxPerHour: number; maxPerBatch: number; batchIntervalMin: number; budget: number };
 };
 
 export type PushPayload = {
@@ -218,6 +228,8 @@ export type AiSettings = {
   ready: boolean;
   promptIsDefault: boolean;
   defaultPrompt: string;
+  reviewBeforePush?: boolean;
+  syncPrePushLimit?: number;
 };
 
 export type AiStats = {
@@ -238,7 +250,62 @@ export type AiStats = {
     category: string;
     obtain?: string;
     quality?: number | null;
+    reviewedAt?: string;
   }[];
+  blockedSkipped?: number;
+  telemetry?: AiTelemetry;
+};
+
+export type AiStage = "sync" | "queue" | "backfill" | "test";
+
+export type AiLiveEvent = {
+  title: string;
+  keep: boolean;
+  kind: string;
+  category: string;
+  quality: number | null;
+  reason: string;
+  at: string;
+};
+
+export type AiActiveJob = {
+  id: string;
+  stage: AiStage;
+  label: string;
+  sourceId?: string;
+  model: string;
+  total: number;
+  done: number;
+  kept: number;
+  rejected: number;
+  failed: number;
+  totalBatches: number;
+  completedBatches: number;
+  startedAt: string;
+  recentEvents: AiLiveEvent[];
+};
+
+export type AiRunRecord = {
+  id: string;
+  stage: AiStage;
+  label: string;
+  sourceId?: string;
+  model: string;
+  total: number;
+  reviewed: number;
+  kept: number;
+  rejected: number;
+  skippedBlocked?: number;
+  failed: number;
+  durationMs: number;
+  ttfbAvgMs: number | null;
+  finishedAt: string;
+  error?: string;
+};
+
+export type AiTelemetry = {
+  active: AiActiveJob[];
+  history: AiRunRecord[];
 };
 
 export type AiPayload = {
@@ -272,4 +339,57 @@ export type PushLogItem = {
   ok: number;
   error: string | null;
   created_at: string;
+  /** 为什么推它：命中哪条规则、分数多少 */
+  reason: string | null;
+};
+
+/* --- 今日热点 --- */
+
+export type HotScope = "all" | "deals" | "news" | "info";
+export type HotWord = { w: string; n: number; prev: number; delta: number };
+export type HotBucket = { key: string; n: number; prev: number; delta: number };
+
+export type HotTopItem = {
+  id: number;
+  title: string;
+  url: string;
+  source_id: string;
+  category: string | null;
+  kind: string | null;
+  obtain?: string | null;
+  score: number;
+  quality: number | null;
+  dupCount?: number;
+};
+
+export type HotReport = {
+  windowHours: number;
+  scope: HotScope;
+  from: string;
+  to: string;
+  scanned: number;
+  prevScanned: number;
+  rawScanned?: number;
+  words: HotWord[];
+  categories: HotBucket[];
+  kinds: HotBucket[];
+  top: HotTopItem[];
+  topNews?: HotTopItem[];
+};
+
+/* --- 来源质量榜 --- */
+
+export type SourceQuality = {
+  id: string;
+  name: string;
+  total: number;
+  reviewed: number;
+  kept: number;
+  rejected: number;
+  keepRate: number | null;
+  avgQuality: number | null;
+  pushed: number;
+  lastRun: string | null;
+  enabled: number;
+  lastError: string | null;
 };

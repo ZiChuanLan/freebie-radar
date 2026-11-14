@@ -3,6 +3,7 @@ import { FREEBIE_ONLY_SOURCES, isCategory, resolveKind, type ContentKind } from 
 import { calibrateScoreByObtain } from "./alias.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { get, run } from "../db.ts";
+import { finishAiJob, recordAiBatch, startAiJob } from "./ai-telemetry.ts";
 
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 
@@ -111,7 +112,8 @@ function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict 
               ai_quality = COALESCE(?, ai_quality),
               obtain = COALESCE(?, obtain),
               category = COALESCE(?, category),
-              score = ?
+              score = ?,
+              ai_reviewed_at = ?
         WHERE id = ?`,
       JSON.stringify({ ...verdict, keep: effectiveKeep, kind: effectiveKind }),
       keep,
@@ -120,6 +122,7 @@ function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict 
       nextObtain,
       nextCategory,
       nextScore,
+      new Date().toISOString(),
       itemId,
     );
     return {
@@ -146,9 +149,52 @@ export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, A
     title: j.title,
     summary: j.summary,
   })) as RawItem[];
+  const srcId = items[0]?.sourceId;
+  const jobId = startAiJob({
+    stage: "sync",
+    label: srcId ? `${srcId} · 推送前同步审核` : "推送前同步审核",
+    sourceId: srcId,
+    model: s.model,
+    total: items.length,
+    totalBatches: Math.ceil(items.length / s.batchSize),
+  });
+  let batchErr: string | undefined;
   try {
-    const map = await reviewItems(raws, { ...s, maxItems: Math.max(s.maxItems, items.length) });
-    if (!map) return out;
+    const map = await reviewItems(raws, { ...s, maxItems: Math.max(s.maxItems, items.length) }, {
+      onBatch: (ev) => {
+        if (ev.error) batchErr = ev.error;
+        let kept = 0;
+        let rejected = 0;
+        const events = [];
+        for (let i = 0; i < ev.items.length; i += 1) {
+          const v = ev.verdicts?.get(ev.start + i);
+          if (!v) continue;
+          const keep = Boolean(v.keep);
+          if (keep) kept += 1;
+          else rejected += 1;
+          events.push({
+            title: ev.items[i]!.title,
+            keep,
+            kind: v.kind ?? (keep ? "freebie" : "noise"),
+            category: v.category ?? "-",
+            quality: typeof v.quality === "number" ? v.quality : null,
+            reason: v.reason ?? "",
+            at: new Date().toISOString(),
+          });
+        }
+        recordAiBatch(jobId, {
+          events,
+          kept,
+          rejected,
+          failed: ev.verdicts ? 0 : ev.count,
+          ttfbMs: ev.ttfbMs,
+        });
+      },
+    });
+    if (!map) {
+      finishAiJob(jobId, { error: batchErr ?? "模型未返回有效结论" });
+      return out;
+    }
     for (const [idx, verdict] of map) {
       const job = items[idx];
       if (!job) continue;
@@ -160,8 +206,9 @@ export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, A
         dropped += 1;
       }
     }
-  } catch {
-    /* 同步审核失败时不抛错，留给后续推送兜底策略处理 */
+    finishAiJob(jobId);
+  } catch (err) {
+    finishAiJob(jobId, { error: err instanceof Error ? err.message : String(err) });
   }
   return out;
 }
@@ -181,17 +228,59 @@ async function drain(): Promise<void> {
         summary: j.summary,
       })) as RawItem[];
 
+      const jobId = startAiJob({
+        stage: "queue",
+        label: "异步队列波次",
+        sourceId: batch[0]?.sourceId,
+        model: s.model,
+        total: batch.length,
+        totalBatches: Math.ceil(batch.length / s.batchSize),
+      });
       let map;
+      let batchErr: string | undefined;
       try {
-        map = await reviewItems(raws, { ...s, maxItems: batch.length });
-      } catch {
+        map = await reviewItems(raws, { ...s, maxItems: batch.length }, {
+          onBatch: (ev) => {
+            if (ev.error) batchErr = ev.error;
+            let kept = 0;
+            let rejected = 0;
+            const events = [];
+            for (let i = 0; i < ev.items.length; i += 1) {
+              const v = ev.verdicts?.get(ev.start + i);
+              if (!v) continue;
+              const keep = Boolean(v.keep);
+              if (keep) kept += 1;
+              else rejected += 1;
+              events.push({
+                title: ev.items[i]!.title,
+                keep,
+                kind: v.kind ?? (keep ? "freebie" : "noise"),
+                category: v.category ?? "-",
+                quality: typeof v.quality === "number" ? v.quality : null,
+                reason: v.reason ?? "",
+                at: new Date().toISOString(),
+              });
+            }
+            recordAiBatch(jobId, {
+              events,
+              kept,
+              rejected,
+              failed: ev.verdicts ? 0 : ev.count,
+              ttfbMs: ev.ttfbMs,
+            });
+          },
+        });
+      } catch (err) {
         dropped += batch.length;
+        finishAiJob(jobId, { error: err instanceof Error ? err.message : String(err) });
         continue;
       }
       if (!map) {
         dropped += batch.length;
+        finishAiJob(jobId, { error: batchErr ?? "模型未返回有效结论" });
         continue;
       }
+      finishAiJob(jobId);
 
       const approvedBySource = new Map<string, number[]>();
       for (const [idx, verdict] of map) {

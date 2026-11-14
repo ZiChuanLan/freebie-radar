@@ -31,7 +31,7 @@ export const WIDE_AI_TRIGGER =
 export function hasValueSignal(title: string, kind?: string | null): boolean {
   if (kind === "deal") return PROMO_HINT.test(title) || DEAL_HINT.test(title);
   if (kind === "opensource") return OPENSOURCE_HINT.test(title) || DEAL_HINT.test(title);
-  if (kind === "info") return !NOISE_TITLE.test(title);
+  if (kind === "news" || kind === "info") return !NOISE_TITLE.test(title);
   return DEAL_HINT.test(title) || PROMO_HINT.test(title) || OPENSOURCE_HINT.test(title);
 }
 

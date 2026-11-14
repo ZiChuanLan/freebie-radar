@@ -246,6 +246,24 @@ const MIGRATIONS: string[] = [
      AND json_valid(value)
      AND json_type(value, '$.customNoiseKeywords') = 'array';
   `,
+  /* v18：推送记录保存「为什么推它」；日报表区分日报与周报 */
+  `
+  ALTER TABLE push_log ADD COLUMN reason TEXT;
+  ALTER TABLE digests ADD COLUMN kind TEXT NOT NULL DEFAULT 'daily';
+  `,
+  /* v19：记录 AI 实际判定时间，让「最近判定样本」按真实审核时间倒序展示 */
+  `
+  ALTER TABLE items ADD COLUMN ai_reviewed_at TEXT;
+  UPDATE items SET ai_reviewed_at = COALESCE(last_seen_at, first_seen_at) WHERE ai IS NOT NULL AND ai_reviewed_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_items_ai_reviewed ON items(ai_reviewed_at DESC);
+  `,
+  /* v20：把旧版统一归进 info 的时政/国际要闻拆分到 kind='news'（重要新闻），避免与行业资讯混杂 */
+  `
+  UPDATE items
+     SET kind = 'news'
+   WHERE kind = 'info'
+     AND category IN ('headline', 'world');
+  `,
 ];
 
 export function dbPath(): string {

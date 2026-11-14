@@ -88,3 +88,160 @@
 @utility drawer-shadow {
   box-shadow: var(--shadow-drawer);
 }
+
+@keyframes ai-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes ai-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ai-pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.75;
+  }
+  70% {
+    transform: scale(1.95);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.95);
+    opacity: 0;
+  }
+}
+
+.ai-shimmer {
+  animation: ai-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.ai-enter {
+  animation: ai-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ai-pulse-ring {
+  animation: ai-pulse-ring 1.9s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes drawer-in {
+  0% {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes backdrop-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sheet-up {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-up {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes list-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.drawer-enter {
+  animation: drawer-in 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.backdrop-enter {
+  animation: backdrop-in 180ms ease-out both;
+}
+
+.pop-enter {
+  animation: pop-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet-enter {
+  animation: sheet-up 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-enter {
+  animation: toast-up 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.list-enter {
+  animation: list-fade 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-enter,
+  .backdrop-enter,
+  .pop-enter,
+  .sheet-enter,
+  .toast-enter,
+  .list-enter,
+  .ai-enter,
+  .ai-shimmer,
+  .ai-pulse-ring {
+    animation: none !important;
+  }
+}

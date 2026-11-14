@@ -63,7 +63,7 @@ export function calibrateScoreByObtain(
     const q = Math.min(5, Math.max(1, Math.round(quality)));
     out += QUALITY_BONUS[q] ?? 0;
   }
-  if (kind === "deal" || kind === "opensource" || kind === "info") {
+  if (kind === "deal" || kind === "opensource" || kind === "news" || kind === "info") {
     // 付费好价（如黑五 VPS / 史低）与开源项目不再被「paid <= 25」一刀切压死
     if (obtain === "promo") out = Math.round(out * 0.85);
     else if (obtain === "trial") out = Math.round(out * 0.85);

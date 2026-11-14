@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Activity, Copy, Database, ExternalLink, Loader2, Play, Plus, Rss, Search, ShieldCheck, Trash2 } from "lucide-react";
+import { Activity, Copy, Database, ExternalLink, Gauge, Loader2, Play, Plus, Rss, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { formatInterval, timeAgo } from "../lib/sources.ts";
-import type { RetentionSettings, Run, Source } from "../types.ts";
+import type { RetentionSettings, Run, Source, SourceQuality } from "../types.ts";
 
 const INTERVAL_OPTIONS = [
   { label: "60 秒", sec: 60 },
@@ -14,7 +14,7 @@ const INTERVAL_OPTIONS = [
   { label: "6 小时", sec: 21600 },
 ];
 
-type OpsTab = "sources" | "runs" | "retention";
+type OpsTab = "sources" | "runs" | "quality" | "retention";
 
 export function OpsPanel({
   sources,
@@ -142,6 +142,19 @@ export function OpsPanel({
   const [cleaning, setCleaning] = useState(false);
   const [cleanPreview, setCleanPreview] = useState<Record<string, number> | null>(null);
 
+
+  // 来源质量榜：按源的 AI 留存率看谁在浪费采集与 AI 额度
+  const [qualityDays, setQualityDays] = useState(7);
+  const [quality, setQuality] = useState<SourceQuality[] | null>(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  useEffect(() => {
+    setQualityLoading(true);
+    fetch("/api/source-quality?days=" + qualityDays)
+      .then((r) => r.json())
+      .then((j: { sources: SourceQuality[] }) => setQuality(j.sources))
+      .catch(() => setQuality(null))
+      .finally(() => setQualityLoading(false));
+  }, [qualityDays, sources]);
   useEffect(() => {
     fetch("/api/retention")
       .then((r) => r.json())
@@ -198,6 +211,7 @@ export function OpsPanel({
           {[
             { key: "sources" as OpsTab, label: `数据源 (${enabledCount}/${sources.length})`, icon: Rss },
             { key: "runs" as OpsTab, label: `采集记录 (${runs.length})`, icon: Activity },
+            { key: "quality" as OpsTab, label: "来源质量榜", icon: Gauge },
             { key: "retention" as OpsTab, label: "数据保留与清理", icon: Database },
           ].map((t) => (
             <button
@@ -603,6 +617,104 @@ export function OpsPanel({
         </div>
       )}
 
+
+      {subTab === "quality" && (
+        <div className="space-y-4">
+          <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+            <div>
+              <div className="flex items-center gap-2 text-[14px] font-semibold text-ink-950">
+                <Gauge size={15} className="text-brand" /> 来源质量榜
+              </div>
+              <p className="mt-0.5 text-[12px] text-ink-500">
+                留存率 = AI 判为有效 ÷ 已审条数。留存率低、条数又多的源，基本是在白烧采集与 AI 额度。
+              </p>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5">
+              {[
+                { d: 1, label: "今天" },
+                { d: 7, label: "7 天" },
+                { d: 30, label: "30 天" },
+              ].map((w) => (
+                <button
+                  key={w.d}
+                  type="button"
+                  onClick={() => setQualityDays(w.d)}
+                  className={
+                    "rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors " +
+                    (qualityDays === w.d ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
+                  }
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel overflow-hidden">
+            {qualityLoading && !quality && (
+              <div className="flex items-center gap-2 px-4 py-8 text-[13px] text-ink-500">
+                <Loader2 size={13} className="animate-spin" /> 统计中…
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-[13px]">
+                <thead className="bg-surface-hover text-[11px] tracking-wide text-ink-500 uppercase">
+                  <tr className="border-b border-ink-200">
+                    <th className="px-4 py-2 font-medium">源</th>
+                    <th className="px-2 py-2 text-right font-medium">入库</th>
+                    <th className="px-2 py-2 text-right font-medium">已审</th>
+                    <th className="px-2 py-2 text-right font-medium">留存</th>
+                    <th className="px-2 py-2 font-medium">留存率</th>
+                    <th className="px-2 py-2 text-right font-medium">平均质量</th>
+                    <th className="px-2 py-2 text-right font-medium">已推</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(quality ?? [])
+                    .filter((q) => q.total > 0)
+                    .sort((a, b) => (a.keepRate ?? 2) - (b.keepRate ?? 2) || b.total - a.total)
+                    .map((q) => {
+                      const rate = q.keepRate;
+                      const pct = rate === null ? null : Math.round(rate * 100);
+                      const tone = pct === null ? "text-ink-400" : pct >= 60 ? "text-deal" : pct >= 30 ? "text-ink-700" : "text-alert";
+                      return (
+                        <tr key={q.id} className="border-b border-ink-100 last:border-0 hover:bg-surface-hover">
+                          <td className="px-4 py-2">
+                            <div className="text-[12.5px] font-medium text-ink-900">{q.name}</div>
+                            <div className="font-mono text-[11px] text-ink-400">{q.id}</div>
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-ink-700">{q.total}</td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-ink-500">{q.reviewed}</td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-ink-700">{q.kept}</td>
+                          <td className="px-2 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-ink-100">
+                                <div
+                                  className={"h-full rounded-full " + (pct !== null && pct >= 60 ? "bg-deal" : pct !== null && pct >= 30 ? "bg-brand" : "bg-alert")}
+                                  style={{ width: (pct ?? 0) + "%" }}
+                                />
+                              </div>
+                              <span className={"font-mono text-[11.5px] tabular-nums " + tone}>
+                                {pct === null ? "未审" : pct + "%"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-ink-700">
+                            {q.avgQuality === null ? "—" : q.avgQuality}
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-ink-500">{q.pushed}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+            {quality && quality.filter((q) => q.total > 0).length === 0 && (
+              <div className="px-4 py-10 text-center text-[12.5px] text-ink-500">这个时间范围内没有采集到条目</div>
+            )}
+          </div>
+        </div>
+      )}
       {subTab === "runs" && (
         <div className="panel overflow-hidden">
           <div className="border-b border-ink-100 px-4 py-3 text-[13.5px] font-semibold text-ink-950">

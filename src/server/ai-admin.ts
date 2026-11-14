@@ -4,6 +4,7 @@ import { enrichItem, FREEBIE_ONLY_SOURCES, isCategory, resolveKind } from "./enr
 import { guessObtain } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { aiQueueStats } from "./enrich/ai-queue.ts";
+import { finishAiJob, getAiTelemetry, recordAiBatch, startAiJob } from "./enrich/ai-telemetry.ts";
 import {
   aiReady,
   DEFAULT_PROMPT,
@@ -27,7 +28,7 @@ function updateAi(
   quality: number | null,
 ): void {
   run(
-    "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ?, obtain = ?, kind = ?, ai_quality = COALESCE(?, ai_quality) WHERE id = ?",
+    "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ?, obtain = ?, kind = ?, ai_quality = COALESCE(?, ai_quality), ai_reviewed_at = ? WHERE id = ?",
     ai,
     keep,
     score,
@@ -35,19 +36,30 @@ function updateAi(
     obtain,
     kind,
     quality,
+    new Date().toISOString(),
     id,
   );
 }
 
-/** AI 判定统计：总体分布 + 分类分布 + 队列状态 + 最近样本。 */
+/** AI 判定统计：总体分布 + 分类分布 + 队列状态 + 执行遥测 + 最近样本。 */
 export function aiStats() {
-  const totals = get<{ kept: number; rejected: number; pending: number }>(
+  const totals = get<{ kept: number; rejected: number }>(
     `SELECT
        SUM(CASE WHEN ai_keep = 1 THEN 1 ELSE 0 END) AS kept,
-       SUM(CASE WHEN ai_keep = 0 THEN 1 ELSE 0 END) AS rejected,
-       SUM(CASE WHEN ai IS NULL THEN 1 ELSE 0 END) AS pending
+       SUM(CASE WHEN ai_keep = 0 THEN 1 ELSE 0 END) AS rejected
      FROM items WHERE status = 'active'`,
   );
+  // 未送审计数要把全局屏蔽词跳过省额度的条目剥离出来，避免界面显示「N 条待审」但点补审却 0 条可执行
+  const pendingRows = all<{ source_id: string; title: string; summary: string | null }>(
+    "SELECT source_id, title, summary FROM items WHERE status = 'active' AND ai IS NULL",
+  );
+  const rules = loadActiveBlockRules();
+  let pending = 0;
+  let blockedSkipped = 0;
+  for (const r of pendingRows) {
+    if (isBlocked(r, rules)) blockedSkipped += 1;
+    else pending += 1;
+  }
   const byCategory = all<{ category: string; n: number }>(
     `SELECT COALESCE(category,'other') AS category, COUNT(*) AS n
      FROM items WHERE status = 'active' AND ai_keep = 1
@@ -66,15 +78,19 @@ export function aiStats() {
     obtain: string | null;
     kind: string | null;
     ai: string;
+    ai_reviewed_at: string | null;
+    last_seen_at: string;
   }>(
-    `SELECT id, source_id, title, score, obtain, kind, ai FROM items
-     WHERE ai IS NOT NULL ORDER BY last_seen_at DESC LIMIT 15`,
+    `SELECT id, source_id, title, score, obtain, kind, ai, ai_reviewed_at, last_seen_at FROM items
+     WHERE ai IS NOT NULL ORDER BY COALESCE(ai_reviewed_at, last_seen_at) DESC, id DESC LIMIT 40`,
   );
   return {
     kept: totals?.kept ?? 0,
     rejected: totals?.rejected ?? 0,
-    pending: totals?.pending ?? 0,
+    pending,
+    blockedSkipped,
     queue: aiQueueStats(),
+    telemetry: getAiTelemetry(),
     byCategory,
     byKind,
     recent: recent.map((r) => {
@@ -95,6 +111,7 @@ export function aiStats() {
         category: v.category ?? "",
         obtain: v.obtain ?? r.obtain ?? "free",
         quality: typeof v.quality === "number" ? v.quality : null,
+        reviewedAt: r.ai_reviewed_at ?? r.last_seen_at,
       };
     }),
   };
@@ -111,11 +128,12 @@ export type BackfillMode = "pending" | "recent" | "rejected";
 export async function backfillAi(
   limit = 200,
   mode: BackfillMode = "pending",
-): Promise<{ reviewed: number; rejected: number; scanned: number; mode: BackfillMode; error?: string }> {
+): Promise<{ reviewed: number; rejected: number; skippedBlocked: number; scanned: number; mode: BackfillMode; error?: string }> {
   const s = getAiSettings();
-  if (!aiReady(s)) return { reviewed: 0, rejected: 0, scanned: 0, mode, error: "AI 未启用或未配置" };
+  if (!aiReady(s)) return { reviewed: 0, rejected: 0, skippedBlocked: 0, scanned: 0, mode, error: "AI 未启用或未配置" };
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 2000);
+  const scanLimit = Math.min(safeLimit * 4, 4000);
   const whereExtra =
     mode === "rejected"
       ? "AND ai_keep = 0"
@@ -138,76 +156,135 @@ export async function backfillAi(
     `SELECT id, source_id, external_id, title, summary, url, score, category, published_at, expires_at
      FROM items WHERE status = 'active' ${whereExtra}
      ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?`,
-    safeLimit,
+    scanLimit,
   );
   const blockRules = loadActiveBlockRules();
-  const activeRows = rows.filter((r) => !isBlocked(r, blockRules));
-  if (!activeRows.length) return { reviewed: 0, rejected: 0, scanned: rows.length, mode };
+  const unblocked: typeof rows = [];
+  let skippedBlocked = 0;
+  for (const r of rows) {
+    if (isBlocked(r, blockRules)) skippedBlocked += 1;
+    else unblocked.push(r);
+  }
+  const activeRows = unblocked.slice(0, safeLimit);
+  if (!activeRows.length) return { reviewed: 0, rejected: 0, skippedBlocked, scanned: rows.length, mode };
+
+  const modeLabel = mode === "rejected" ? "复核已拦截" : mode === "recent" ? "重审近期" : "未审补审";
+  const jobId = startAiJob({
+    stage: "backfill",
+    label: `历史库补审（${modeLabel}）`,
+    model: s.model,
+    total: activeRows.length,
+    totalBatches: Math.ceil(activeRows.length / s.batchSize),
+  });
 
   let reviewed = 0;
   let rejected = 0;
+  let lastError: string | undefined;
   const CHUNK = Math.max(s.batchSize * s.concurrency, 24);
 
-  for (let start = 0; start < activeRows.length; start += CHUNK) {
-    const chunk = activeRows.slice(start, start + CHUNK);
+  try {
+    for (let start = 0; start < activeRows.length; start += CHUNK) {
+      const chunk = activeRows.slice(start, start + CHUNK);
 
-    const raws = chunk.map((r) => ({
-      externalId: r.external_id,
-      url: r.url,
-      title: r.title,
-      summary: r.summary ?? "",
-    }));
-    let map;
-    try {
-      map = await reviewItems(raws as never, { ...s, maxItems: chunk.length });
-    } catch {
-      continue;
-    }
-    if (!map) continue;
-    for (let i = 0; i < chunk.length; i += 1) {
-      const row = chunk[i]!;
-      const v = map.get(i);
-      if (!v) continue;
-      reviewed += 1;
-      if (!v.keep) rejected += 1;
-      const obtain = v.obtain ?? guessObtain(row.title, row.summary ?? "");
-      // 重审时重算一次基础分再校准，避免多次叠加乘除失真
-      const baseEnriched = enrichItem(
-        {
-          externalId: row.external_id,
-          url: row.url,
+      const raws = chunk.map((r) => ({
+        externalId: r.external_id,
+        url: r.url,
+        title: r.title,
+        summary: r.summary ?? "",
+      }));
+      let map;
+      try {
+        map = await reviewItems(raws as never, { ...s, maxItems: chunk.length }, {
+          onBatch: (ev) => {
+            if (ev.error) lastError = ev.error;
+            let bKept = 0;
+            let bRejected = 0;
+            const events = [];
+            for (let i = 0; i < ev.items.length; i += 1) {
+              const v = ev.verdicts?.get(ev.start + i);
+              if (!v) continue;
+              const keep = Boolean(v.keep);
+              if (keep) bKept += 1;
+              else bRejected += 1;
+              events.push({
+                title: ev.items[i]!.title,
+                keep,
+                kind: v.kind ?? (keep ? "freebie" : "noise"),
+                category: v.category ?? "-",
+                quality: typeof v.quality === "number" ? v.quality : null,
+                reason: v.reason ?? "",
+                at: new Date().toISOString(),
+              });
+            }
+            recordAiBatch(jobId, {
+              events,
+              kept: bKept,
+              rejected: bRejected,
+              failed: ev.verdicts ? 0 : ev.count,
+              ttfbMs: ev.ttfbMs,
+            });
+          },
+        });
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        continue;
+      }
+      if (!map) continue;
+      for (let i = 0; i < chunk.length; i += 1) {
+        const row = chunk[i]!;
+        const v = map.get(i);
+        if (!v) continue;
+        reviewed += 1;
+        if (!v.keep) rejected += 1;
+        const obtain = v.obtain ?? guessObtain(row.title, row.summary ?? "");
+        // 重审时重算一次基础分再校准，避免多次叠加乘除失真
+        const baseEnriched = enrichItem(
+          {
+            externalId: row.external_id,
+            url: row.url,
+            title: row.title,
+            summary: row.summary ?? "",
+            publishedAt: row.published_at,
+            expiresAt: row.expires_at,
+          },
+          row.source_id,
+        );
+        const baseScore = baseEnriched ? baseEnriched.score : row.score;
+        const category = isCategory(v.category) ? v.category : row.category;
+        const quality =
+          typeof v.quality === "number" && Number.isFinite(v.quality)
+            ? Math.min(5, Math.max(1, Math.round(v.quality)))
+            : null;
+        const kind = resolveKind(v.kind, v.keep, {
           title: row.title,
           summary: row.summary ?? "",
-          publishedAt: row.published_at,
-          expiresAt: row.expires_at,
-        },
-        row.source_id,
-      );
-      const baseScore = baseEnriched ? baseEnriched.score : row.score;
-      const category = isCategory(v.category) ? v.category : row.category;
-      const quality =
-        typeof v.quality === "number" && Number.isFinite(v.quality)
-          ? Math.min(5, Math.max(1, Math.round(v.quality)))
-          : null;
-      const kind = resolveKind(v.kind, v.keep, {
-        title: row.title,
-        summary: row.summary ?? "",
-        sourceId: row.source_id,
-        category,
-        obtain,
-        isFree: baseEnriched?.isFree ?? false,
-        price: baseEnriched?.price ?? null,
-        freebieOnlySource: FREEBIE_ONLY_SOURCES.has(row.source_id),
-      });
-      const effectiveKeep = kind === "noise" ? false : v.keep;
-      const keep = effectiveKeep ? 1 : 0;
-      const ai = JSON.stringify({ ...v, keep: effectiveKeep, kind });
-      const score = calibrateScoreByObtain(baseScore, obtain, effectiveKeep, quality, kind);
-      updateAi(row.id, ai, keep, score, category, obtain, kind, quality);
+          sourceId: row.source_id,
+          category,
+          obtain,
+          isFree: baseEnriched?.isFree ?? false,
+          price: baseEnriched?.price ?? null,
+          freebieOnlySource: FREEBIE_ONLY_SOURCES.has(row.source_id),
+        });
+        const effectiveKeep = kind === "noise" ? false : v.keep;
+        const keep = effectiveKeep ? 1 : 0;
+        const ai = JSON.stringify({ ...v, keep: effectiveKeep, kind });
+        const score = calibrateScoreByObtain(baseScore, obtain, effectiveKeep, quality, kind);
+        updateAi(row.id, ai, keep, score, category, obtain, kind, quality);
+      }
     }
+    finishAiJob(jobId, {
+      skippedBlocked,
+      error: reviewed === 0 ? lastError : undefined,
+    });
+  } catch (err) {
+    finishAiJob(jobId, {
+      skippedBlocked,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   }
 
-  return { reviewed, rejected, scanned: rows.length, mode };
+  return { reviewed, rejected, skippedBlocked, scanned: rows.length, mode };
 }
 
 /**

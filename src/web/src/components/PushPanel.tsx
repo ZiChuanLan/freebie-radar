@@ -264,7 +264,7 @@ export function PushPanel({
               <span className="block font-mono text-[15px] font-semibold tabular-nums text-ink-950">
                 {stats?.pushedLastHour ?? 0}/{s.maxPerHour}
               </span>
-              <span className="text-ink-500">1小时已推</span>
+              <span className="text-ink-500">本小时额度</span>
             </div>
             <div>
               <span className="block font-mono text-[15px] font-semibold tabular-nums text-ink-950">
@@ -359,6 +359,49 @@ export function PushPanel({
               <span className="text-[11.5px] text-ink-500">
                 模型连接、规则初筛与提示词请在「AI 引擎」页配置
               </span>
+            </div>
+
+            {/* 当前这套设置下，一条新条目会怎么走：把「阈值 / 上限 / 时间窗 / 兜底」四件事讲清楚 */}
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
+              <div className="mb-2 text-[12px] font-medium text-ink-900">按当前设置，一条新条目会这样走</div>
+              <ol className="space-y-1.5 text-[11.5px] leading-relaxed text-ink-600">
+                <li>
+                  <span className="font-mono text-ink-400">1</span> 采集入库后先过规则初筛（求助/更新公告/自定义噪音词直接丢掉，不送 AI）。
+                </li>
+                <li>
+                  <span className="font-mono text-ink-400">2</span>{" "}
+                  {s.pushTiming === "wait_ai"
+                    ? `每轮最多 ${s.syncPrePushLimit} 条当场等 AI 结论，其余进后台队列${s.pushAfterBackfill ? "，审完通过再补推" : "，审完不补推"}。`
+                    : "先按规则立刻判定推送，需要审的进后台队列，AI 结论稍后补齐。"}
+                </li>
+                <li>
+                  <span className="font-mono text-ink-400">3</span>{" "}
+                  <span className="font-medium text-ink-900">质量门槛</span>：分数 ≥ {s.instantScore} 走即时；≥ {s.batchScore} 走攒批。
+                  {s.instantOnCodes ? "含兑换码、" : ""}
+                  {s.instantOnUrgent ? "标题带限量/限时、" : ""}
+                  {s.prioritizeSubscribed ? "命中订阅词" : "无额外直推条件"}可直接即时。
+                </li>
+                <li>
+                  <span className="font-mono text-ink-400">4</span>{" "}
+                  <span className="font-medium text-ink-900">数量上限</span>：每小时最多 {s.maxPerHour} 条（即时+攒批共用），
+                  每轮即时最多 {s.maxPerInstant} 条；超出的自动转进攒批队列，不会丢。
+                </li>
+                <li>
+                  <span className="font-mono text-ink-400">5</span>{" "}
+                  <span className="font-medium text-ink-900">时间窗</span>：
+                  {s.batchIntervalMin === 0 ? "攒批已关闭，队列只在手动「立即发攒批」时发出。" : `攒批每 ${s.batchIntervalMin} 分钟发一次，每批最多 ${s.maxPerBatch} 条。`}
+                  {s.quietEnabled ? ` ${s.quietHours} 免打扰，${s.quietAction === "drop" ? "期间不推也不攒" : "期间只攒不发"}。` : " 未开启免打扰。"}
+                </li>
+                <li>
+                  <span className="font-mono text-ink-400">6</span>{" "}
+                  <span className="font-medium text-ink-900">兜底</span>：
+                  {s.aiFallbackMode === "strict"
+                    ? "必须 AI 明确判真福利才推，AI 没结论就不推。"
+                    : s.aiFallbackMode === "rule_fallback"
+                      ? "AI 明确拒绝的拦掉；AI 还没结论时，含兑换码或高分信号才放行。"
+                      : "完全忽略 AI 结论，只按屏蔽词/分数/价格/获取方式过滤。"}
+                </li>
+              </ol>
             </div>
 
             <div className="grid gap-2.5 sm:grid-cols-2">
@@ -1513,9 +1556,9 @@ export function PushPanel({
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div className="rounded-lg border border-ink-200 bg-surface-hover p-3">
                     <div className="mb-1.5 flex items-center justify-between text-[12px] font-medium text-deal">
-                      <span>⚡ 立即推送（命中 {preview.instant.length}）</span>
+                      <span>⚡ 立即推送（够格 {preview.instantTotal ?? preview.instant.length}）</span>
                       <span className="font-mono text-[11px] text-ink-500">
-                        符合条件 {preview.matched}/{preview.scanned}
+                        本轮实发 {preview.sendableInstant ?? preview.instant.length} 条
                       </span>
                     </div>
                     <pre className="max-h-[220px] overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-700">
@@ -1524,7 +1567,7 @@ export function PushPanel({
                   </div>
                   <div className="rounded-lg border border-ink-200 bg-surface-hover p-3">
                     <div className="mb-1.5 text-[12px] font-medium text-brand">
-                      📦 攒批队列（本批 {preview.batch.length}，内存中已排队 {preview.queued}）
+                      📦 攒批队列（够格 {preview.batchTotal ?? preview.batch.length}，内存中已排队 {preview.queued}）
                     </div>
                     <pre className="max-h-[220px] overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-700">
                       {preview.batch.length ? preview.batch.join("\n\n") : "（当前条件下没有达到攒批阈值的条目）"}
@@ -1562,6 +1605,7 @@ export function PushPanel({
                     <span className="font-mono text-ink-500">{l.created_at.replace("T", " ").slice(5, 19)}</span>
                     <span className="text-ink-600">{l.count} 条</span>
                     {l.ok === 0 && <span className="rounded bg-alert-subtle px-1.5 py-0.5 text-alert">发送失败</span>}
+                    {l.reason && <span className="truncate text-ink-500">· 因为 {l.reason}</span>}
                   </div>
                   <pre className="max-h-[72px] overflow-hidden font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-600">
                     {(l.text ?? "").slice(0, 240)}

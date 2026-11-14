@@ -14,8 +14,7 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, expiresLabel, extractBlockCandidates, timeAgo } from "../lib/sources.ts";
-import { KIND_LABEL } from "../lib/sources.ts";
+import { KIND_LABEL, OBTAIN_HINT, OBTAIN_LABEL, categoryLabelForKind, expiresLabel, extractBlockCandidates, timeAgo } from "../lib/sources.ts";
 import type { Item } from "../types.ts";
 
 export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string) => void }) {
@@ -87,6 +86,7 @@ const OBTAIN_TEXT: Record<string, string> = {
 const KIND_STYLE: Record<string, string> = {
   deal: "bg-amber-50 text-amber-700",
   opensource: "bg-emerald-50 text-emerald-700",
+  news: "bg-rose-50 text-rose-700",
   info: "bg-sky-50 text-sky-700",
 };
 
@@ -158,14 +158,17 @@ export function CompactRow({
   const codes = Array.isArray(item.codes) ? item.codes : [];
   const matched = Array.isArray(item.matched) ? item.matched : [];
   const aiRejected = item.ai?.keep === false;
+  const showPrice = item.kind !== "news" && item.kind !== "info";
+  const topPick = !item.read && !aiRejected && ((item.ai?.quality ?? item.ai_quality ?? 0) >= 5 || item.score >= 88);
 
   return (
     <div
       onClick={() => onOpen(item)}
       className={
         "group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1.5 border-b border-ink-100 px-3.5 py-3 transition-colors last:border-b-0 sm:flex sm:items-center sm:gap-x-3 sm:gap-y-0 sm:px-6 sm:py-3 " +
-        (selected ? "bg-surface-hover" : "hover:bg-surface-hover") +
-        (item.read ? " opacity-60 hover:opacity-100" : "")
+        (selected ? "bg-surface-hover " : "hover:bg-surface-hover ") +
+        (topPick ? "border-l-2 border-l-deal " : "") +
+        (item.read ? "opacity-60 hover:opacity-100" : "")
       }
     >
       {/* 未读圆点 + 纯数字评分 */}
@@ -204,8 +207,8 @@ export function CompactRow({
             {item.title}
           </span>
           <KindBadge kind={item.kind} inline />
-          <PriceBadge item={item} inline />
-          <ObtainBadge obtain={item.obtain} inline />
+          {showPrice && <PriceBadge item={item} inline />}
+          {showPrice && <ObtainBadge obtain={item.obtain} inline />}
           {matched.length > 0 && (
             <span className="rounded bg-code-subtle px-1.5 py-0.5 text-[11px] font-medium text-code">
               命中：{matched.join("/")}
@@ -235,7 +238,7 @@ export function CompactRow({
         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-ink-500">
           <span className="font-medium text-ink-700">{sourceName(item.source_id)}</span>
           <span aria-hidden="true">·</span>
-          <span>{CATEGORY_LABEL[item.category ?? "other"] ?? item.category}</span>
+          <span>{categoryLabelForKind(item.category, item.kind)}</span>
           {item.ai?.reason && (
             <>
               <span aria-hidden="true">·</span>
@@ -423,12 +426,12 @@ export function ItemCard({
             {item.category && (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{CATEGORY_LABEL[item.category] ?? item.category}</span>
+                <span>{categoryLabelForKind(item.category, item.kind)}</span>
               </>
             )}
             <KindBadge kind={item.kind} />
-            <PriceBadge item={item} />
-            <ObtainBadge obtain={item.obtain} />
+            {item.kind !== "news" && item.kind !== "info" && <PriceBadge item={item} />}
+            {item.kind !== "news" && item.kind !== "info" && <ObtainBadge obtain={item.obtain} />}
           </div>
           {!hasImage && (
             <span
@@ -544,7 +547,7 @@ export function ItemCard({
 
         {expanded && relatedItems && relatedItems.length > 0 && (
           <div
-            className="mt-2.5 rounded-lg border border-ink-100 bg-surface-hover p-2.5"
+            className="pop-enter mt-2.5 rounded-lg border border-ink-100 bg-surface-hover p-2.5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 text-[11px] font-medium text-ink-500">
@@ -616,9 +619,9 @@ export function ItemDetailDrawer({
   }, [onClose, hasPrev, hasNext, onPrev, onNext]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-ink-950/25 backdrop-blur-[1px]" onClick={onClose}>
+    <div className="backdrop-enter fixed inset-0 z-50 flex justify-end bg-ink-950/25 backdrop-blur-[1px]" onClick={onClose}>
       <aside
-        className="drawer-shadow flex h-full w-full flex-col border-ink-200 bg-surface sm:max-w-[500px] sm:border-l"
+        className="drawer-enter drawer-shadow flex h-full w-full flex-col border-ink-200 bg-surface sm:max-w-[500px] sm:border-l"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶栏 */}
@@ -658,13 +661,14 @@ export function ItemDetailDrawer({
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
           <CoverImage src={item.image_url} className="aspect-[16/9] w-full rounded-lg border border-ink-100" />
           <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+            <KindBadge kind={item.kind} />
             {item.category && (
               <span className="rounded bg-brand-subtle px-2 py-0.5 font-medium text-accent">
-                {CATEGORY_LABEL[item.category] ?? item.category}
+                {categoryLabelForKind(item.category, item.kind)}
               </span>
             )}
-            <PriceBadge item={item} />
-            <ObtainBadge obtain={item.obtain} />
+            {item.kind !== "news" && item.kind !== "info" && <PriceBadge item={item} />}
+            {item.kind !== "news" && item.kind !== "info" && <ObtainBadge obtain={item.obtain} />}
             <span className="rounded bg-ink-100 px-2 py-0.5 font-mono text-ink-700">
               评分 {Math.round(item.score)}
             </span>
@@ -689,7 +693,17 @@ export function ItemDetailDrawer({
               <Sparkles size={14} className={item.ai.keep === false ? "text-ink-500" : "text-deal"} />
               <span>
                 <strong>AI 判定：</strong>
-                {item.ai.keep === false ? "非福利内容 · " : "可领取福利 · "}
+                {item.ai.keep === false
+                  ? "低价值/水帖 · "
+                  : item.kind === "news"
+                    ? "重要新闻 · "
+                    : item.kind === "info"
+                      ? "行业资讯 · "
+                      : item.kind === "opensource"
+                        ? "开源项目 · "
+                        : item.kind === "deal"
+                          ? "特价好价 · "
+                          : "可领取福利 · "}
                 {item.ai.reason}
               </span>
             </div>
@@ -767,7 +781,7 @@ export function ItemDetailDrawer({
             }}
             className="inline-flex min-w-full flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover sm:min-w-0 sm:py-2"
           >
-            打开原帖领取 <ArrowUpRight size={14} />
+            {item.kind === "news" || item.kind === "info" ? "查看原文详情" : "打开原帖领取"} <ArrowUpRight size={14} />
           </a>
           <button
             type="button"
@@ -836,11 +850,11 @@ export function QuickBlockModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/30 backdrop-blur-[1px] sm:items-center sm:p-4"
+      className="backdrop-enter fixed inset-0 z-50 flex items-end justify-center bg-ink-950/30 backdrop-blur-[1px] sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="panel max-h-[90vh] w-full max-w-md overflow-y-auto rounded-b-none rounded-t-xl p-4 sm:rounded-xl sm:p-5"
+        className="sheet-enter sm:pop-enter panel max-h-[90vh] w-full max-w-md overflow-y-auto rounded-b-none rounded-t-xl p-4 sm:rounded-xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">

@@ -1,14 +1,15 @@
 import { DEAL_HINT, NOISE_TITLE, OPENSOURCE_HINT, PROMO_HINT } from "./noise.ts";
 
-export type ContentKind = "freebie" | "deal" | "opensource" | "info" | "noise";
+export type ContentKind = "freebie" | "deal" | "opensource" | "news" | "info" | "noise";
 
-export const VALID_KINDS = new Set<ContentKind>(["freebie", "deal", "opensource", "info", "noise"]);
+export const VALID_KINDS = new Set<ContentKind>(["freebie", "deal", "opensource", "news", "info", "noise"]);
 
 export const KIND_LABEL: Record<ContentKind, string> = {
   freebie: "白嫖福利",
   deal: "特价好价",
   opensource: "开源项目",
-  info: "资讯/指南",
+  news: "重要新闻",
+  info: "行业资讯",
   noise: "噪音水帖",
 };
 
@@ -34,7 +35,18 @@ const DEAL_SOURCES = new Set([
   "rss-smzdm",
 ]);
 
+const NEWS_SOURCES = new Set([
+  "cctv-news",
+  "rss-chinanews-scroll",
+  "rss-chinanews-world",
+]);
+
 const INFO_SOURCES = new Set([
+  "cctv-economy",
+  "cctv-tech",
+  "rss-wallstreetcn",
+  "rss-chinanews-finance",
+  "rss-chinanews-it",
   "rss-ruanyifeng",
   "rss-sspai",
   "rss-appinn",
@@ -42,11 +54,13 @@ const INFO_SOURCES = new Set([
   "rss-hnrss",
   "rss-ithome",
   "rss-v2ex-tech",
+  "rss-solidot",
 ]);
 
 /**
  * 规则兜底推断内容形态（AI 未审或未返回 kind 时使用）。
- * 原则：硬噪音判 noise；明确开源且无纯白嫖词判 opensource；付费/黑五/特价促销判 deal；其余按源特征与免费信号落位。
+ * 原则：硬噪音判 noise；明确开源且无纯白嫖词判 opensource；付费/黑五/特价促销判 deal；
+ * 权威时政/国际要闻判 news；经济/股票/科技/深度指南判 info；其余按免费信号落位。
  */
 export function guessKind(input: {
   title: string;
@@ -88,10 +102,12 @@ export function guessKind(input: {
     return "deal";
   }
 
+  if (input.sourceId && NEWS_SOURCES.has(input.sourceId)) return "news";
   if (input.isFree || hasDealWord) return "freebie";
+  if (input.category === "headline" || input.category === "world") return "news";
   if (input.sourceId && INFO_SOURCES.has(input.sourceId)) return "info";
   if (input.category === "opensource") return "opensource";
-  if (input.category === "news" || input.category === "headline" || input.category === "finance") return "info";
+  if (input.category === "stock" || input.category === "finance" || input.category === "tech" || input.category === "news") return "info";
   if (input.category === "edu") return "info";
   return "freebie";
 }
@@ -105,6 +121,9 @@ export function resolveKind(
   if (aiKeep === false) return "noise";
   if (isContentKind(aiKind)) {
     if (aiKind === "noise" && aiKeep === true) return guessKind(fallbackInput);
+    if (aiKind === "opensource" && (fallbackInput.category === "headline" || fallbackInput.category === "world" || fallbackInput.category === "stock")) {
+      return guessKind(fallbackInput);
+    }
     return aiKind;
   }
   if (aiKeep === true) {

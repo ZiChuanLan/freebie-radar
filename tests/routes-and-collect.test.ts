@@ -848,7 +848,7 @@ test("新闻资讯扩展（时政要闻/财经商业放行）与全局屏蔽词�
   )!;
   assert.equal(NOISE_TITLE.test(headline.title), false);
   assert.equal(headline.category, "headline");
-  assert.equal(headline.kind, "info");
+  assert.equal(headline.kind, "news");
 
   const finance = enrichItem(
     { externalId: "fn1", url: "https://ex.com/fn1", title: "美联储宣布降息 25 个基点，美股财报季营收超预期", publishedAt: now },
@@ -876,4 +876,60 @@ test("新闻资讯扩展（时政要闻/财经商业放行）与全局屏蔽词�
   assert.equal(bf.reviewed, 0);
   saveAiSettings({ enabled: false, baseUrl: "", model: "" });
   run("DELETE FROM block_rules");
+});
+
+
+test("cctvCollector 与新闻/资讯/黑五VPS分类分离", async () => {
+  const { cctvCollector } = await import("../src/server/collectors/cctv.ts");
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+
+  const payload = {
+    data: {
+      list: [
+        {
+          id: "ARTI001",
+          title: "国务院发布稳外贸促消费若干政策措施",
+          brief: "加快推进高水平对外开放。",
+          url: "https://news.cctv.com/2026/11/14/ARTI001.shtml",
+          image: "https://p1.img.cctvpic.com/demo.jpg",
+          keywords: "国务院 稳外贸 政策",
+          focus_date: "2026-11-14 21:00:00",
+        },
+      ],
+    },
+  };
+  const fakeHttp = {
+    async text() {
+      return { status: 200, body: `news(${JSON.stringify(payload)})`, headers: new Headers() };
+    },
+    async json() {
+      throw new Error("not used");
+    },
+  };
+  const collected = await cctvCollector.collect({
+    sourceId: "cctv-news",
+    config: { channels: [{ channel: "news", cb: "news", categoryHint: "headline", limit: 10 }] },
+    cursor: null,
+    maxItems: 10,
+    http: fakeHttp as never,
+    log: () => {},
+  });
+  assert.equal(collected.items.length, 1);
+  const enrichedNews = enrichItem(collected.items[0]!, "cctv-news")!;
+  assert.equal(enrichedNews.kind, "news");
+  assert.equal(enrichedNews.category, "headline");
+
+  const stockInfo = enrichItem(
+    { externalId: "stk1", url: "https://ex.com/stk1", title: "A股半导体板块午后拉升，ETF 成交额破百亿", publishedAt: new Date().toISOString() },
+    "rss-wallstreetcn",
+  )!;
+  assert.equal(stockInfo.kind, "info");
+  assert.equal(stockInfo.category, "stock");
+
+  const vpsDeal = enrichItem(
+    { externalId: "vps1", url: "https://ex.com/vps1", title: "【黑五】11.14 现车更新：DediRock / InMotion / DeluxHost（纯直链无 aff）", publishedAt: new Date().toISOString() },
+    "rss-nodeseek",
+  )!;
+  assert.equal(vpsDeal.category, "vps");
+  assert.equal(vpsDeal.kind, "deal");
 });
