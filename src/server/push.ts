@@ -146,7 +146,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
   dedupeByTitle: true,
   maxPrice: null,
   obtainModes: ["free"],
-  kinds: [],
+  kinds: ["freebie"],
   routes: [],
   categories: [],
   prioritizeSubscribed: true,
@@ -154,7 +154,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
 };
 
 const SETTINGS_KEY = "push";
-const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
+const VALID_CATEGORIES = new Set(["ai", "cloud", "vps", "domain", "opensource", "software", "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other"]);
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 const VALID_KINDS = new Set(["freebie", "deal", "opensource", "info"]);
 

@@ -443,7 +443,7 @@ export function registerApi(app: Hono) {
     if (format === "json") {
       return c.json({ count: rows.length, items: rows.map((r) => shape(r, subKeywords)) });
     }
-    const lines = [`# 白嫖雷达导出 (${new Date().toISOString().slice(0, 10)}) · ${rows.length} 条`, ""];
+    const lines = [`# 资源雷达导出 (${new Date().toISOString().slice(0, 10)}) · ${rows.length} 条`, ""];
     for (const r of rows) {
       const s = shape(r, subKeywords);
       const tags = [s.source_id, s.category, s.is_free === 1 ? "白嫖" : s.price ? `≤${Math.round(s.price)}元` : null]
@@ -873,7 +873,7 @@ export function registerApi(app: Hono) {
     if (!pushEnabled || config.pushChannel !== "telegram" || !config.telegramBotToken || !config.telegramChatId) {
       return c.json({ error: "Telegram 推送未启用或缺少凭据" }, 400);
     }
-    await sendTelegram("🛰 白嫖雷达测试消息 · " + new Date().toLocaleString("zh-CN"));
+    await sendTelegram("🛰 资源雷达测试消息 · " + new Date().toLocaleString("zh-CN"));
     return c.json({ ok: true });
   });
 

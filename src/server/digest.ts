@@ -124,8 +124,8 @@ function daysLeft(iso: string | null): string | null {
 
 export function formatDigest(items: DigestItem[], date = new Date()): string {
   const label = date.getMonth() + 1 + "月" + date.getDate() + "日";
-  if (!items.length) return "🛰 白嫖雷达 · " + label + "\n\n今天没有新的可领资源，明天见。";
-  const lines = ["🛰 白嫖雷达 · " + label + " 精选 " + items.length + " 条", ""];
+  if (!items.length) return "🛰 资源雷达 · " + label + "\n\n今天没有新的可领资源，明天见。";
+  const lines = ["🛰 资源雷达 · " + label + " 精选 " + items.length + " 条", ""];
   items.forEach((it, i) => {
     const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
@@ -136,7 +136,7 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
     lines.push("   " + it.url);
     lines.push("");
   });
-  lines.push("来源：白嫖雷达多源聚合");
+  lines.push("来源：资源雷达多源聚合");
   return lines.join("\n");
 }
 

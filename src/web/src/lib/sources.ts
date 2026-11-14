@@ -25,7 +25,7 @@ export const KIND_LABEL: Record<string, string> = {
   freebie: "白嫖福利",
   deal: "特价好价",
   opensource: "开源项目",
-  info: "实用指南",
+  info: "资讯/指南",
   noise: "噪音水帖",
 };
 
@@ -34,11 +34,15 @@ export const KIND_ORDER = ["freebie", "deal", "opensource", "info"] as const;
 export const CATEGORY_LABEL: Record<string, string> = {
   ai: "AI 额度",
   cloud: "云服务",
-  domain: "域名/主机",
+  vps: "VPS/主机",
+  domain: "域名/建站",
   opensource: "开源软件",
   software: "软件授权",
   media: "影音会员",
   game: "游戏",
+  carpool: "拼车/合租",
+  trade: "二手/交易",
+  news: "科技资讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",

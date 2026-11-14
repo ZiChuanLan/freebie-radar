@@ -9,9 +9,9 @@ import { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind } f
 
 export { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind };
 export type Category =
-  | "ai" | "cloud" | "domain" | "opensource" | "software" | "media" | "game" | "goods" | "invite" | "edu" | "other";
+  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "media" | "game" | "carpool" | "trade" | "news" | "goods" | "invite" | "edu" | "other";
 
-const CATEGORIES = new Set<string>(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
+const CATEGORIES = new Set<string>(["ai", "cloud", "vps", "domain", "opensource", "software", "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other"]);
 
 export function isCategory(value: unknown): value is Category {
   return typeof value === "string" && CATEGORIES.has(value);
@@ -20,11 +20,15 @@ export function isCategory(value: unknown): value is Category {
 export const CATEGORY_LABEL: Record<Category, string> = {
   ai: "AI 额度",
   cloud: "云服务",
-  domain: "域名/主机",
+  vps: "VPS/主机",
+  domain: "域名/建站",
   opensource: "开源软件",
   software: "软件授权",
   media: "影音会员",
   game: "游戏",
+  carpool: "拼车/合租",
+  trade: "二手/交易",
+  news: "科技资讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",
@@ -40,9 +44,14 @@ const RULES: Rule[] = [
     keywords: ["gpt", "chatgpt", "openai", "claude", "gemini", "grok", "llm", "大模型", "api", "token", "额度", "算力", "算力券", "代金券", "qwen", "deepseek", "kimi", "glm", "cursor", "copilot", "midjourney", "sora", "colab", "notebook", "gpu", "体验金", "中转", "codex", "积分", "多模型", "智能体", "ai 模型", "credits", "tokens", "codearts", "mcp", "skill", "agent"],
   },
   {
+    category: "vps",
+    weight: 1.15,
+    keywords: ["vps", "云服务器", "云主机", "独立服务器", "独服", "小鸡", "kvm", "nat", "cn2", "gia", "9929", "cmin2", "racknerd", "dmit", "bandwagon", "搬瓦工", "claw", "ovh", "hetzner", "netcup", "动态ip", "公网ip", "vps 测试", "年付", "月付"],
+  },
+  {
     category: "cloud",
     weight: 1.1,
-    keywords: ["云服务器", "vps", "云主机", "对象存储", "oss", "s3", "r2", "cdn", "带宽", "数据库", "容器", "k8s", "serverless", "免费层", "free tier", "试用金", "额度", "cloud", "azure", "aws", "虚拟机", "存储", "egress", "requests", "动态ip", "公网ip", "vps 测试", "cdn", "对象存储"],
+    keywords: ["对象存储", "oss", "s3", "r2", "cdn", "带宽", "数据库", "容器", "k8s", "serverless", "免费层", "free tier", "试用金", "额度", "cloud", "azure", "aws", "虚拟机", "存储", "egress", "requests", "代理流量"],
   },
   {
     category: "domain",
@@ -69,6 +78,21 @@ const RULES: Rule[] = [
     category: "game",
     weight: 1.05,
     keywords: ["游戏", "epic", "steam", "喜加一", "激活", "游戏本体", "礼包", "cdkey", "xbox", "psn", "switch", "手游", "内测资格", "gog", "itch.io", "indiegala", "giveaway", "key 赠送", "白给", "免费入库", "humble", "皮肤", "dlc", "bundle", "game", "free game", "steam key", "金钥匙", "shift code", "free weekend", "免费周末"],
+  },
+  {
+    category: "carpool",
+    weight: 1.25,
+    keywords: ["拼车", "合租", "车位", "发车", "家庭组", "family plan", "team 车", "3缺1", "4缺1", "5缺1", "季付车", "月付车", "年付车", "车主", "开车", "上车"],
+  },
+  {
+    category: "trade",
+    weight: 1.1,
+    keywords: ["出鸡", "收鸡", "转让", "过户", "出号", "成品号", "带原油", "带原邮", "原邮", "剩余价值", "明盘", "闲置出", "折价出", "转手", "出个", "出一台", "出闲置"],
+  },
+  {
+    category: "news",
+    weight: 0.9,
+    keywords: ["新闻", "快讯", "发布", "更新", "上线", "预告", "公告", "周刊", "日报", "新版本", "changelog", "release notes", "announcing", "launch"],
   },
   {
     category: "goods",

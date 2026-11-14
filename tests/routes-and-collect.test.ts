@@ -609,7 +609,7 @@ test("多兴趣频道重构：kind 分流、取消 paid 25分封顶、放行好�
     "rss-lowendbox",
   )!;
   assert.equal(vpsDeal.kind, "deal");
-  assert.equal(vpsDeal.category, "cloud");
+  assert.equal(vpsDeal.category, "vps");
   assert.equal(hasValueSignal(vpsDeal.title, vpsDeal.kind), true);
   assert.ok(calibrateScoreByObtain(vpsDeal.score, "paid", true, 5, "deal") >= 75);
 
@@ -627,6 +627,49 @@ test("多兴趣频道重构：kind 分流、取消 paid 25分封顶、放行好�
   assert.equal(osItem.category, "opensource");
   assert.equal(hasValueSignal(osItem.title, osItem.kind), true);
   assert.ok(calibrateScoreByObtain(osItem.score, "free", true, 5, "opensource") >= 75);
+
+  const carpoolItem = enrichItem(
+    {
+      externalId: "carpool-1",
+      url: "https://nodeseek.com/post-100",
+      title: "ChatGPT Team 拼车发车 3缺1 ¥35/月 稳车",
+      summary: "合租车位",
+      publishedAt: now,
+    },
+    "rss-nodeseek",
+  )!;
+  assert.equal(carpoolItem.category, "carpool");
+  assert.equal(carpoolItem.kind, "deal");
+  assert.equal(hasValueSignal(carpoolItem.title, carpoolItem.kind), true);
+
+  const tradeItem = enrichItem(
+    {
+      externalId: "trade-1",
+      url: "https://nodeseek.com/post-101",
+      title: "[出鸡] 明盘 80 出 RackNerd 2核2G 带原邮",
+      summary: "转让闲置小鸡",
+      publishedAt: now,
+    },
+    "rss-nodeseek",
+  )!;
+  assert.equal(tradeItem.category, "trade");
+  assert.equal(tradeItem.kind, "deal");
+  assert.equal(hasValueSignal(tradeItem.title, tradeItem.kind), true);
+
+  const newsItem = enrichItem(
+    {
+      externalId: "news-1",
+      url: "https://ruanyifeng.com/blog/2026/11/weekly.html",
+      title: "科技爱好者周刊（第 380 期）：AI 编程工具新趋势发布",
+      summary: "每周技术动态与新闻周刊",
+      publishedAt: now,
+    },
+    "rss-ruanyifeng",
+  )!;
+  assert.equal(newsItem.kind, "info");
+  assert.equal(hasValueSignal(newsItem.title, newsItem.kind), true);
+  // 默认推送策略保持只推 freebie，科技资讯不会污染默认白嫖推送
+  assert.deepEqual(DEFAULT_SETTINGS.kinds, ["freebie"]);
 
   // 3) priceAllowed：maxPrice=100 允许 <=100 元的 paid 好价；maxPrice=0 拦截 paid
   assert.equal(priceAllowed({ price: 78, isFree: false, obtain: "paid" }, 100), true);

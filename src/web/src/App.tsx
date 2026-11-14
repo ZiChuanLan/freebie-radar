@@ -25,6 +25,7 @@ import {
   Zap,
   Code,
   Flame,
+  Newspaper,
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
@@ -130,10 +131,11 @@ function Toast({ message }: { message: string | null }) {
 type Preset = { key: string; label: string; icon: typeof Sparkles };
 
 const PRESETS: Preset[] = [
-  { key: "verified", label: "精选聚合", icon: Sparkles },
+  { key: "verified", label: "真福利精选", icon: Sparkles },
   { key: "free", label: "完全白嫖", icon: Tag },
   { key: "deal", label: "黑五/好价", icon: Flame },
   { key: "opensource", label: "开源项目", icon: Code },
+  { key: "news", label: "科技资讯", icon: Newspaper },
   { key: "codes", label: "含兑换码", icon: Zap },
   { key: "urgent", label: "今日截止", icon: Bell },
   { key: "starred", label: "我的收藏", icon: Check },
@@ -319,6 +321,8 @@ export function App() {
     if (preset === "verified") {
       p.set("unexpired", "1");
       p.set("aiOnly", "1");
+      if (kindFilter === "auto") p.set("kind", "freebie");
+      if (obtain === "auto") p.set("obtain", "free,conditional");
       if (range === "auto") p.set("maxAgeDays", "7");
     } else if (preset === "free") {
       p.set("unexpired", "1");
@@ -332,6 +336,9 @@ export function App() {
       p.set("hideRejected", "1");
     } else if (preset === "opensource") {
       if (kindFilter === "auto") p.set("kind", "opensource");
+      p.set("hideRejected", "1");
+    } else if (preset === "news") {
+      if (kindFilter === "auto") p.set("kind", "info");
       p.set("hideRejected", "1");
     } else if (preset === "codes") {
       p.set("unexpired", "1");
@@ -538,7 +545,7 @@ export function App() {
         <div className="flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
-            <h1 className="text-[14.5px] font-semibold tracking-tight text-ink-950">白嫖雷达</h1>
+            <h1 className="text-[14.5px] font-semibold tracking-tight text-ink-950">资源雷达</h1>
           </div>
           <span className="hidden font-mono text-[11px] tabular-nums text-ink-400 lg:inline">
             {stats.data?.totals.aiKept ?? "—"} 精选
@@ -1553,7 +1560,7 @@ export function App() {
         </main>
 
         <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-ink-200 px-3.5 py-3 text-[11.5px] text-ink-400 sm:px-6">
-          <span>白嫖雷达 · 自动多源聚合 · AI 语义验真 · 所筛即所推</span>
+          <span>资源雷达 · 多源聚合 · AI 语义分流 · 所筛即所推</span>
           <span className="font-mono tabular-nums">
             {stats.data?.totals.active ?? 0} 条在库 · {stats.data?.totals.unread ?? 0} 条未读
           </span>

@@ -729,7 +729,7 @@ export function PushPanel({
                             name: "黑五/VPS 好价",
                             enabled: true,
                             kinds: ["deal", "freebie"],
-                            categories: ["cloud", "domain"],
+                            categories: ["vps", "cloud", "domain"],
                             obtainModes: ["free", "conditional", "paid"],
                             keywords: ["黑五", "vps", "kvm", "年付"],
                             maxPrice: null,
@@ -964,7 +964,7 @@ export function PushPanel({
                     void save({ customHeader: customHeaderDraft.trim() });
                   }
                 }}
-                placeholder="例如：🛰 白嫖雷达 · 精选"
+                placeholder="例如：🛰 资源雷达 · 精选"
                 maxLength={60}
                 className="mt-1.5 w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-900 outline-none focus:border-brand"
               />

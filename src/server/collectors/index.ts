@@ -54,8 +54,8 @@ export const SEEDS: SourceSeed[] = [
         {
           id: "nodeseek",
           url: "https://rss.nodeseek.com/",
-          limit: 30,
-          includeCategories: ["info", "promotion"],
+          limit: 40,
+          includeCategories: ["info", "promotion", "trade"],
         },
       ],
     },
@@ -331,6 +331,11 @@ export function ensureSources(seeds: SourceSeed[] = SEEDS): void {
           titleKeywords: ["免费", "白嫖", "cdk", "兑换", "限免", "福利", "赠", "领", "送", "free", "0元"],
         }],
       }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-nodeseek")?.config ?? {}),
+    ],
+    [
+      "rss-nodeseek",
+      JSON.stringify({ feeds: [{ id: "nodeseek", url: "https://rss.nodeseek.com/", limit: 30, includeCategories: ["info", "promotion"] }] }),
       JSON.stringify(SEEDS.find((s) => s.id === "rss-nodeseek")?.config ?? {}),
     ],
     [

@@ -8,7 +8,7 @@ export const KIND_LABEL: Record<ContentKind, string> = {
   freebie: "白嫖福利",
   deal: "特价好价",
   opensource: "开源项目",
-  info: "实用指南",
+  info: "资讯/指南",
   noise: "噪音水帖",
 };
 
@@ -21,7 +21,6 @@ const OPENSOURCE_SOURCES = new Set([
   "github-public-apis",
   "github-awesome-ai",
   "github-selfhosted",
-  "rss-hnrss",
 ]);
 
 const DEAL_SOURCES = new Set([
@@ -40,6 +39,9 @@ const INFO_SOURCES = new Set([
   "rss-sspai",
   "rss-appinn",
   "rss-producthunt",
+  "rss-hnrss",
+  "rss-ithome",
+  "rss-v2ex-tech",
 ]);
 
 /**
@@ -79,6 +81,9 @@ export function guessKind(input: {
   if (hasPromoWord && !hasDealWord && !input.isFree) {
     return "deal";
   }
+  if ((input.category === "carpool" || input.category === "trade") && !input.isFree && !hasDealWord) {
+    return "deal";
+  }
   if (input.sourceId && DEAL_SOURCES.has(input.sourceId) && !input.isFree && !hasDealWord) {
     return "deal";
   }
@@ -86,6 +91,7 @@ export function guessKind(input: {
   if (input.isFree || hasDealWord) return "freebie";
   if (input.sourceId && INFO_SOURCES.has(input.sourceId)) return "info";
   if (input.category === "opensource") return "opensource";
+  if (input.category === "news") return "info";
   if (input.category === "edu") return "info";
   return "freebie";
 }

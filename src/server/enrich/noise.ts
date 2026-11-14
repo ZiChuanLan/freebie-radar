@@ -17,7 +17,7 @@ export const DEAL_HINT =
 
 /** 特价/黑五/史低/VPS 优惠信号。 */
 export const PROMO_HINT =
-  /黑五|black\s*friday|cyber\s*monday|双十一|双11|618|周年庆|特价|特惠|促销|折扣|史低|最低价|优惠码|promo\s*code|年付|月付|折上折|\d+\s*折|%\s*off|clearance|flash\s*sale|\$\d+(?:\.\d+)?\/(?:yr|year|mo|month)|[¥￥]\d+|\b(?:vps|kvm|nat)\b.*(?:优惠|特价|折扣|促销|年付|\$\d)/i;
+  /黑五|black\s*friday|cyber\s*monday|双十一|双11|618|周年庆|特价|特惠|促销|折扣|史低|最低价|优惠码|promo\s*code|年付|月付|折上折|\d+\s*折|%\s*off|clearance|flash\s*sale|\$\d+(?:\.\d+)?\/(?:yr|year|mo|month)|[¥￥]\d+|拼车|合租|车位|发车|明盘|出鸡|转让|\b(?:vps|kvm|nat)\b.*(?:优惠|特价|折扣|促销|年付|\$\d)/i;
 
 /** 开源项目/自托管工具信号。 */
 export const OPENSOURCE_HINT =
@@ -31,7 +31,7 @@ export const WIDE_AI_TRIGGER =
 export function hasValueSignal(title: string, kind?: string | null): boolean {
   if (kind === "deal") return PROMO_HINT.test(title) || DEAL_HINT.test(title);
   if (kind === "opensource") return OPENSOURCE_HINT.test(title) || DEAL_HINT.test(title);
-  if (kind === "info") return OPENSOURCE_HINT.test(title) || PROMO_HINT.test(title) || DEAL_HINT.test(title);
+  if (kind === "info") return !NOISE_TITLE.test(title);
   return DEAL_HINT.test(title) || PROMO_HINT.test(title) || OPENSOURCE_HINT.test(title);
 }
 
