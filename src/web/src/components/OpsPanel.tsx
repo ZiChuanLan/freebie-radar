@@ -381,7 +381,106 @@ export function OpsPanel({
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            {/* 移动端：卡片式源列表（表格仅 ≥sm 显示，避免横向挤压） */}
+            <div className="divide-y divide-ink-100 sm:hidden">
+              {visibleSources.map((s) => {
+                const isCustomInterval = !INTERVAL_OPTIONS.some((o) => o.sec === s.interval_sec);
+                return (
+                  <div key={s.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium text-ink-950">{s.name}</div>
+                        <div className="truncate font-mono text-[11px] text-ink-400">
+                          {s.id} · {s.kind}
+                        </div>
+                      </div>
+                      <span
+                        className={
+                          "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium " +
+                          (s.last_status === "ok"
+                            ? "bg-deal-subtle text-deal"
+                            : s.last_status === "failed"
+                              ? "bg-alert-subtle text-alert"
+                              : s.last_status === "degraded"
+                                ? "bg-code-subtle text-amber-800"
+                                : "bg-ink-100 text-ink-600")
+                        }
+                      >
+                        {s.last_status ?? "未运行"}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-ink-500">
+                      <span className="font-mono tabular-nums text-ink-700">{s.items} 条在库</span>
+                      <span>{timeAgo(s.last_run_at)}采集</span>
+                      <button
+                        type="button"
+                        onClick={() => onToggleSource(s.id, !s.enabled)}
+                        className={"h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors " + (s.enabled ? "bg-brand" : "bg-ink-300")}
+                        title={s.enabled ? "点击禁用" : "点击启用"}
+                      >
+                        <span
+                          className={
+                            "block h-4 w-4 rounded-full bg-white shadow-sm transition-transform " + (s.enabled ? "translate-x-4" : "")
+                          }
+                        />
+                      </button>
+                      {s.kind === "ingest" ? (
+                        <span className="text-[12px] text-ink-500">本机定时</span>
+                      ) : (
+                        <select
+                          value={s.interval_sec}
+                          onChange={(e) => onChangeInterval(s.id, Number(e.target.value))}
+                          className="rounded-lg border border-ink-200 bg-surface px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-brand"
+                        >
+                          {isCustomInterval && <option value={s.interval_sec}>{formatInterval(s.interval_sec)}</option>}
+                          {INTERVAL_OPTIONS.map((o) => (
+                            <option key={o.sec} value={o.sec}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {s.last_error && <div className="mt-1.5 font-mono text-[11px] text-alert">{s.last_error}</div>}
+
+                    <div className="mt-2">
+                      {s.kind === "ingest" ? (
+                        <button
+                          type="button"
+                          onClick={() => void startLoopbackLogin(s.id)}
+                          className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-brand-border bg-brand-subtle px-2.5 py-2 text-[12px] font-medium text-brand hover:bg-blue-100/70"
+                          title="通过本机回环助手扫码登录并采集，Cookie 仅留在本机"
+                        >
+                          <ExternalLink size={11} />
+                          扫码登录
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={runningId === s.id}
+                          onClick={async () => {
+                            setRunningId(s.id);
+                            try {
+                              await onCollectSource(s.id);
+                            } finally {
+                              setRunningId(null);
+                            }
+                          }}
+                          className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-2 text-[12px] font-medium text-ink-700 hover:border-brand-border hover:bg-brand-subtle hover:text-brand disabled:opacity-50"
+                        >
+                          {runningId === s.id ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+                          立即采集
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-left text-[13px]">
                 <thead className="bg-surface-hover text-[11px] tracking-wide text-ink-500 uppercase">
                   <tr className="border-b border-ink-200">
@@ -508,7 +607,7 @@ export function OpsPanel({
             最近采集记录（{runs.length}）
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px]">
+            <table className="w-full min-w-[560px] text-left text-[13px]">
               <thead className="bg-surface-hover text-[11px] tracking-wide text-ink-500 uppercase">
                 <tr className="border-b border-ink-200">
                   <th className="px-4 py-2 font-medium">时间</th>

@@ -30,7 +30,7 @@ export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string
         window.setTimeout(() => setCopied(false), 1400);
       }}
       className={
-        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold transition-colors " +
+        "inline-flex max-w-[46vw] items-center gap-1 truncate rounded-md border px-2 py-1 font-mono text-[11px] font-semibold transition-colors sm:max-w-none sm:py-0.5 " +
         (copied
           ? "border-deal-border bg-deal-subtle text-deal"
           : "border-code-border bg-code-subtle text-amber-800 hover:bg-amber-100/80")
@@ -120,13 +120,13 @@ export function CompactRow({
     <div
       onClick={() => onOpen(item)}
       className={
-        "group flex cursor-pointer items-start gap-3 border-b border-ink-100 px-4 py-3 transition-colors last:border-b-0 " +
+        "group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-2 border-b border-ink-100 px-3 py-3 transition-colors last:border-b-0 sm:flex sm:gap-x-3 sm:gap-y-0 sm:px-4 " +
         (selected ? "bg-brand-subtle/50" : "hover:bg-surface-hover") +
         (item.read ? " opacity-60 hover:opacity-100" : "")
       }
     >
       {/* 评分 + 未读小点 */}
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+      <div className="flex shrink-0 items-center gap-1.5 pt-0.5 sm:gap-2">
         <span
           className={
             "h-2 w-2 rounded-full " + (item.read ? "bg-transparent" : "bg-brand")
@@ -212,49 +212,56 @@ export function CompactRow({
       </div>
 
       {/* 右端：兑换码 & 快捷操作 */}
-      <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-        {codes.slice(0, 2).map((code) => (
-          <CodeChip key={code} code={code} onCopy={onCopyCode} />
-        ))}
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          onClick={() => {
-            if (!item.read) onPatch(item.id, { read: true });
-          }}
-          className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-brand"
-          title="新标签打开原帖"
-        >
-          <ArrowUpRight size={15} />
-        </a>
-        <button
-          type="button"
-          onClick={() => onPatch(item.id, { starred: !item.starred })}
-          className={
-            "rounded-lg p-1.5 transition-colors hover:bg-ink-100 " +
-            (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-700")
-          }
-          title={item.starred ? "取消收藏" : "收藏"}
-        >
-          <Star size={14} fill={item.starred ? "currentColor" : "none"} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onQuickBlock(item)}
-          className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-alert-subtle hover:text-alert"
-          title="加入屏蔽词 / 屏蔽"
-        >
-          <Ban size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
-          className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
-          title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
-        >
-          <EyeOff size={14} />
-        </button>
+      <div
+        className="col-span-2 flex w-full items-center justify-between gap-1.5 sm:col-span-1 sm:w-auto sm:shrink-0 sm:justify-end"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5">
+          {codes.slice(0, 2).map((code) => (
+            <CodeChip key={code} code={code} onCopy={onCopyCode} />
+          ))}
+        </div>
+        <div className="flex items-center gap-0.5 sm:gap-1.5">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={() => {
+              if (!item.read) onPatch(item.id, { read: true });
+            }}
+            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-brand sm:p-1.5"
+            title="新标签打开原帖"
+          >
+            <ArrowUpRight size={15} />
+          </a>
+          <button
+            type="button"
+            onClick={() => onPatch(item.id, { starred: !item.starred })}
+            className={
+              "rounded-lg p-2 transition-colors hover:bg-ink-100 sm:p-1.5 " +
+              (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-700")
+            }
+            title={item.starred ? "取消收藏" : "收藏"}
+          >
+            <Star size={14} fill={item.starred ? "currentColor" : "none"} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onQuickBlock(item)}
+            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-alert-subtle hover:text-alert sm:p-1.5"
+            title="加入屏蔽词 / 屏蔽"
+          >
+            <Ban size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
+            className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 sm:p-1.5"
+            title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
+          >
+            <EyeOff size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -288,11 +295,11 @@ export function ItemCard({
     <article
       onClick={() => onOpen(item)}
       className={
-        "panel group cursor-pointer p-4 transition-all hover:border-ink-300 " +
+        "panel group cursor-pointer p-3 transition-all hover:border-ink-300 sm:p-4 " +
         (item.read ? "opacity-65 hover:opacity-100" : "")
       }
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
             <span className="rounded-md bg-ink-100 px-2 py-0.5 font-medium text-ink-700">
@@ -459,11 +466,11 @@ export function ItemDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-ink-950/25 backdrop-blur-[1px]" onClick={onClose}>
       <aside
-        className="drawer-shadow flex h-full w-full max-w-[500px] flex-col border-l border-ink-200 bg-surface"
+        className="drawer-shadow flex h-full w-full flex-col border-ink-200 bg-surface sm:max-w-[500px] sm:border-l"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶栏 */}
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -496,7 +503,7 @@ export function ItemDetailDrawer({
         </div>
 
         {/* 内容区 */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
           <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
             {item.category && (
               <span className="rounded-md bg-brand-subtle px-2 py-0.5 font-medium text-brand">
@@ -597,7 +604,7 @@ export function ItemDetailDrawer({
         </div>
 
         {/* 底部动作栏 */}
-        <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 bg-surface-hover px-5 py-3.5">
+        <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 bg-surface-hover px-4 py-3 sm:px-5 sm:py-3.5">
           <a
             href={item.url}
             target="_blank"
@@ -605,7 +612,7 @@ export function ItemDetailDrawer({
             onClick={() => {
               if (!item.read) onPatch(item.id, { read: true });
             }}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover"
+            className="inline-flex min-w-full flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover sm:min-w-0 sm:py-2"
           >
             打开原帖领取 <ArrowUpRight size={14} />
           </a>
@@ -613,7 +620,7 @@ export function ItemDetailDrawer({
             type="button"
             onClick={() => onPatch(item.id, { starred: !item.starred })}
             className={
-              "inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-[13px] transition-colors " +
+              "inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border px-3 py-2.5 text-[13px] transition-colors sm:grow-0 sm:basis-auto sm:py-2 " +
               (item.starred
                 ? "border-amber-300 bg-code-subtle text-amber-800"
                 : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
@@ -624,7 +631,7 @@ export function ItemDetailDrawer({
           <button
             type="button"
             onClick={() => onPatch(item.id, { read: !item.read })}
-            className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-700 hover:bg-ink-100"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
           >
             <Eye size={14} /> {item.read ? "标未读" : "标已读"}
           </button>
@@ -634,7 +641,7 @@ export function ItemDetailDrawer({
               onClose();
               onQuickBlock(item);
             }}
-            className="inline-flex items-center gap-1 rounded-xl border border-alert-border bg-alert-subtle px-3 py-2 text-[13px] text-alert hover:bg-red-100/80"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-alert-border bg-alert-subtle px-3 py-2.5 text-[13px] text-alert hover:bg-red-100/80 sm:grow-0 sm:basis-auto sm:py-2"
           >
             <ShieldAlert size={14} /> 屏蔽
           </button>
@@ -644,7 +651,7 @@ export function ItemDetailDrawer({
               onPatch(item.id, { status: "ignored" });
               onClose();
             }}
-            className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-700 hover:bg-ink-100"
+            className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
             title="单纯不想看，不进屏蔽词"
           >
             <EyeOff size={14} /> 关闭
@@ -676,10 +683,13 @@ export function QuickBlockModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/30 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/30 backdrop-blur-[1px] sm:items-center sm:p-4"
       onClick={onClose}
     >
-      <div className="panel w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="panel max-h-[90vh] w-full max-w-md overflow-y-auto rounded-b-none p-4 sm:rounded-b-[14px] sm:p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[14.5px] font-semibold text-ink-950">
             <ShieldAlert size={16} className="text-alert" /> 屏蔽处理
@@ -727,7 +737,7 @@ export function QuickBlockModal({
             />
           </div>
 
-          <div className="flex gap-2 text-[12px]">
+          <div className="flex flex-col gap-2 text-[12px] sm:flex-row">
             {[
               { key: "all", label: "全部来源屏蔽" },
               { key: item.source_id, label: "仅对「" + sourceName(item.source_id) + "」生效" },
@@ -737,7 +747,7 @@ export function QuickBlockModal({
                 type="button"
                 onClick={() => setScope(o.key)}
                 className={
-                  "flex-1 truncate rounded-xl border px-2.5 py-2 transition-colors " +
+                  "flex-1 truncate rounded-xl border px-2.5 py-2.5 text-left transition-colors sm:py-2 " +
                   (scope === o.key
                     ? "border-alert-border bg-alert-subtle font-medium text-alert"
                     : "border-ink-200 text-ink-600 hover:bg-ink-100")
@@ -748,7 +758,7 @@ export function QuickBlockModal({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 pb-[env(safe-area-inset-bottom)]">
             <button
               type="button"
               onClick={() => {

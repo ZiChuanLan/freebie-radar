@@ -53,11 +53,11 @@ function SwitchRow({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
+      className="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-left transition-colors hover:border-ink-300"
     >
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink-900">{label}</div>
-        {hint && <div className="mt-0.5 text-[11px] leading-snug text-ink-500">{hint}</div>}
+        {hint && <div className="mt-0.5 text-[11px] leading-snug break-words text-ink-500">{hint}</div>}
       </div>
       <span
         className={

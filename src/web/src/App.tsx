@@ -205,6 +205,9 @@ export function App() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [showAllSources, setShowAllSources] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
+  /** 移动端：侧栏「筛选与数据源」展开态与顶部筛选栏展开态 */
+  const [mobileFilters, setMobileFilters] = useState(false);
+  const [mobileFilterBar, setMobileFilterBar] = useState(false);
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -489,7 +492,7 @@ export function App() {
     <div className="flex min-h-screen flex-col">
       {/* 顶部固定命令栏 */}
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-surface/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1560px] flex-wrap items-center gap-4 px-6 py-3">
+        <div className="mx-auto flex max-w-[1560px] flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
           <div className="flex shrink-0 items-center gap-2.5">
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-white shadow-sm">
               <Radar size={19} />
@@ -500,7 +503,7 @@ export function App() {
             </div>
           </div>
 
-          <div className="relative min-w-[280px] flex-1">
+          <div className="relative order-last w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[280px] sm:flex-1">
             <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-ink-400" />
             <input
               value={search}
@@ -510,7 +513,7 @@ export function App() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <div className="mr-1 hidden items-center gap-3 border-r border-ink-200 pr-3 text-[12px] lg:flex">
               <div className="text-center">
                 <span className="block font-mono text-[14px] leading-tight font-semibold tabular-nums text-ink-950">
@@ -534,15 +537,15 @@ export function App() {
 
             <a
               href={exportUrl}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-3 py-2 text-[12.5px] font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-surface px-2.5 py-2.5 text-[12.5px] font-medium text-ink-700 transition-colors hover:bg-ink-100 sm:px-3 sm:py-2"
               title="按当前筛选导出 Markdown"
             >
-              <Download size={13} /> 导出
+              <Download size={13} /> <span className="hidden sm:inline">导出</span>
             </a>
             <button
               type="button"
               onClick={refreshAll}
-              className="rounded-xl border border-ink-200 bg-surface p-2 text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900"
+              className="rounded-xl border border-ink-200 bg-surface p-2.5 text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 sm:p-2"
               title="刷新数据"
             >
               <RefreshCw size={15} className={items.loading ? "animate-spin" : ""} />
@@ -551,17 +554,17 @@ export function App() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1560px] flex-1 flex-col gap-5 px-6 py-5 lg:flex-row">
+      <div className="mx-auto flex w-full max-w-[1560px] flex-1 flex-col gap-3 px-3 py-3 sm:gap-5 sm:px-6 sm:py-5 lg:flex-row">
         {/* 左侧导航与筛选坞 */}
-        <aside className="w-full shrink-0 space-y-4 lg:w-[232px]">
-          <nav className="space-y-0.5">
+        <aside className="w-full shrink-0 space-y-2 sm:space-y-4 lg:w-[232px]">
+          <nav className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:pb-0">
             {tabs.slice(0, 2).map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => handleTab(t.key)}
                 className={
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-colors " +
+                  "flex shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
                   (tab === t.key
                     ? "bg-brand text-white shadow-sm"
                     : "text-ink-600 hover:bg-surface hover:text-ink-950")
@@ -573,7 +576,8 @@ export function App() {
                 </span>
               </button>
             ))}
-            <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-ink-400 uppercase">
+            <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-ink-200 lg:hidden" />
+            <div className="hidden px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-ink-400 uppercase lg:block">
               系统管理
             </div>
             {tabs.slice(2).map((t) => (
@@ -582,7 +586,7 @@ export function App() {
                 type="button"
                 onClick={() => handleTab(t.key)}
                 className={
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-colors " +
+                  "flex shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full " +
                   (tab === t.key
                     ? "bg-brand text-white shadow-sm"
                     : "text-ink-600 hover:bg-surface hover:text-ink-950")
@@ -608,6 +612,20 @@ export function App() {
 
           {tab === "feed" && (
             <>
+              <button
+                type="button"
+                onClick={() => setMobileFilters((v) => !v)}
+                className="panel flex w-full items-center justify-between px-3 py-2.5 text-[12.5px] font-medium text-ink-700 transition-colors hover:border-ink-300 lg:hidden"
+              >
+                <span className="flex items-center gap-1.5">
+                  <SlidersHorizontal size={13} /> 场景与数据源
+                </span>
+                <ChevronDown
+                  size={14}
+                  className={"text-ink-400 transition-transform " + (mobileFilters ? "rotate-180" : "")}
+                />
+              </button>
+              <div className={mobileFilters ? "space-y-4" : "hidden space-y-4 lg:block"}>
               <div className="panel p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-semibold tracking-wide text-ink-500 uppercase">快速筛选</span>
@@ -704,6 +722,7 @@ export function App() {
                   );
                 })}
               </div>
+              </div>
             </>
           )}
         </aside>
@@ -737,8 +756,31 @@ export function App() {
           {tab === "feed" && (
             <>
               {/* 顶部紧凑多维筛选栏：与左侧视图零冲突 */}
-              <div className="panel mb-3 space-y-2.5 p-3">
-                <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMobileFilterBar((v) => !v)}
+                className={
+                  "mb-2 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-[12.5px] font-medium transition-colors sm:hidden " +
+                  (mobileFilterBar
+                    ? "border-brand bg-brand-subtle text-brand"
+                    : "border-ink-200 bg-surface text-ink-700")
+                }
+              >
+                <span className="flex items-center gap-1.5">
+                  <SlidersHorizontal size={13} /> 筛选条件
+                  {activeFilterCount > 0 && (
+                    <span className="rounded-md bg-brand px-1.5 py-0.5 font-mono text-[10.5px] text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </span>
+                <ChevronDown
+                  size={14}
+                  className={"transition-transform " + (mobileFilterBar ? "rotate-180" : "")}
+                />
+              </button>
+              <div className={"panel mb-3 p-2.5 sm:space-y-2.5 sm:p-3 " + (mobileFilterBar ? "" : "hidden sm:block")}>
+                <div className={"flex flex-wrap items-center gap-2 " + (mobileFilterBar ? "" : "hidden sm:flex")}>
                   {/* 分类多选浮层 */}
                   <div className="relative" ref={catRef}>
                     <button
@@ -916,7 +958,7 @@ export function App() {
                 </div>
 
                 {activeFilterCount > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2 text-[11.5px]">
+                  <div className={"flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2 text-[11.5px] " + (mobileFilterBar ? "" : "hidden sm:flex")}>
                     <span className="text-ink-400">当前条件：</span>
                     {debounced && (
                       <button
@@ -1006,7 +1048,7 @@ export function App() {
                   </div>
                 )}
               </div>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 sm:mb-3">
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-500">
                   {items.loading ? (
                     <span className="inline-flex items-center gap-1.5">
@@ -1073,14 +1115,14 @@ export function App() {
                       onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
                     />
                     {relatedOpen === item.id && relatedMap[item.id] ? (
-                      <div className="border-b border-ink-100 bg-surface-subtle px-6 py-2">
+                      <div className="border-b border-ink-100 bg-surface-subtle px-3 py-2 sm:px-6">
                         <div className="mb-1 text-[11px] font-medium text-ink-500">
                           同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
                         </div>
                         <ul className="space-y-1">
                           {relatedMap[item.id]!.map((r) => (
                             <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                              <span className="w-28 shrink-0 truncate text-ink-500">{r.sourceName ?? r.source_id}</span>
+                              <span className="w-20 shrink-0 truncate text-ink-500 sm:w-28">{r.sourceName ?? r.source_id}</span>
                               <a
                                 href={r.url}
                                 target="_blank"
@@ -1120,7 +1162,7 @@ export function App() {
                         <ul className="space-y-1.5">
                           {relatedMap[item.id]!.map((r) => (
                             <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                              <span className="w-32 shrink-0 truncate text-ink-500">{r.sourceName ?? r.source_id}</span>
+                              <span className="w-24 shrink-0 truncate text-ink-500 sm:w-32">{r.sourceName ?? r.source_id}</span>
                               <a
                                 href={r.url}
                                 target="_blank"
@@ -1344,7 +1386,7 @@ export function App() {
         </main>
       </div>
 
-      <footer className="mx-auto flex w-full max-w-[1560px] flex-wrap items-center justify-between gap-2 border-t border-ink-200 px-6 py-4 text-[12px] text-ink-500">
+      <footer className="mx-auto flex w-full max-w-[1560px] flex-wrap items-center justify-between gap-2 border-t border-ink-200 px-3 py-4 text-[12px] text-ink-500 sm:px-6">
         <span>白嫖雷达 · 自动多源聚合 · AI 语义验真 · 所筛即所推</span>
         <span className="font-mono">
           {stats.data?.totals.active ?? 0} 条在库 · {stats.data?.totals.unread ?? 0} 条未读
