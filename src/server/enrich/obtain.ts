@@ -41,7 +41,7 @@ export function guessObtain(title: string, summary = ""): ObtainMode {
     return "promo";
   }
   // 试用：到期收费
-  if (/试用|免费体验\s*\d+\s*天|首月免费|首月\s*\d|体验期|试用期|免费体验卡|7\s*天免费|30\s*天免费/.test(t)) {
+  if (/试用|免费体验\s*\d+\s*天|首月免费|首月\s*\d|体验期|试用期|免费体验卡|7\s*天免费|30\s*天免费|\b(?:free\s+trial|demo\s+(?:is\s+)?(?:now\s+)?available)\b|(?:\bfree\b.*\bdemo\b|\bdemo\b.*\bfree\b)/i.test(t)) {
     return "trial";
   }
   // 有条件：要付出行动才能拿

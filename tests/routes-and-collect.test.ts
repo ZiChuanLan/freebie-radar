@@ -793,3 +793,42 @@ test("封面图提取与持久化：sanitizeImageUrl 过滤杂图、RSS 抽图�
   assert.equal(gameA?.image_url, "https://cdn.example.com/game-a.jpg");
   assert.equal(toolB?.image_url, "https://example.com/assets/tool-b.png");
 });
+
+
+test("细粒度分类扩展、分频道统计 /api/stats 与零Token重分类 /api/ai/reclassify", async () => {
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+  const { guessObtain } = await import("../src/server/enrich/obtain.ts");
+  const now = new Date().toISOString();
+
+  assert.equal(enrichItem({ externalId: "d1", url: "https://ex.com/1", title: "Free Figma UI Kit & Icons 免费字体素材包", publishedAt: now }, "v2ex-free")?.category, "design");
+  assert.equal(enrichItem({ externalId: "d2", url: "https://ex.com/2", title: "Linux 内核 CVE-2026-1234 高危漏洞安全公告", publishedAt: now }, "rss-hnrss")?.category, "security");
+  assert.equal(enrichItem({ externalId: "d3", url: "https://ex.com/3", title: "软路由（旁路由）NAS 硬件选型评测", publishedAt: now }, "tg-cn-deals")?.category, "hardware");
+  assert.equal(enrichItem({ externalId: "d4", url: "https://ex.com/4", title: "Audiobooks & eBooks for the week", publishedAt: now }, "rss-reddit-efreebies")?.category, "edu");
+  assert.equal(enrichItem({ externalId: "d5", url: "https://ex.com/5", title: "20261110 移动领 1-9 元话费", publishedAt: now }, "v2ex-deals")?.category, "goods");
+  assert.equal(guessObtain("The FREE Hellraiser: Revival demo is now available on consoles!"), "trial");
+
+  // 分频道 /api/stats（排除 noise，仅统计当前频道有效分布）+ 零Token重分类
+  run("DELETE FROM items");
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, kind, score, is_free, obtain, ai_keep, published_at, status, first_seen_at, last_seen_at)
+     VALUES ('v2ex-deals', 'rc1', 'https://ex.com/rc1', 'ex/rc1', '移动领 1-9 元话费福利', 'rc1', 'other', 'freebie', 70, 1, 'conditional', 1, ?, 'active', ?, ?),
+            ('rss-hnrss', 'rc2', 'https://ex.com/rc2', 'ex/rc2', 'CVE-2026-9999 防火墙漏洞修复公告', 'rc2', 'other', 'info', 68, 1, 'free', 1, ?, 'active', ?, ?),
+            ('tg-cn-deals', 'rc3', 'https://ex.com/rc3', 'ex/rc3', '请问哪里买便宜', 'rc3', 'other', 'noise', 10, 0, 'free', 0, ?, 'active', ?, ?)`,
+    now, now, now, now, now, now, now, now, now,
+  );
+
+  const reRes = await app.request("/api/ai/reclassify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scope: "other" }),
+  });
+  const reJson = (await reRes.json()) as { scanned: number; movedFromOther: number };
+  assert.equal(reJson.scanned, 3);
+  assert.ok(reJson.movedFromOther >= 2);
+
+  // 真福利频道统计不应包含 info 或 noise
+  const freeStatsRes = await app.request("/api/stats?kind=freebie&aiOnly=1");
+  const freeStats = (await freeStatsRes.json()) as { byCategory: { category: string; n: number }[] };
+  assert.ok(freeStats.byCategory.some((c) => c.category === "goods" && c.n === 1));
+  assert.ok(!freeStats.byCategory.some((c) => c.category === "security"));
+});

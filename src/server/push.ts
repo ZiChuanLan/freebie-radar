@@ -154,7 +154,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
 };
 
 const SETTINGS_KEY = "push";
-const VALID_CATEGORIES = new Set(["ai", "cloud", "vps", "domain", "opensource", "software", "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other"]);
+const VALID_CATEGORIES = new Set(["ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware", "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other"]);
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
 const VALID_KINDS = new Set(["freebie", "deal", "opensource", "info"]);
 
@@ -664,7 +664,7 @@ function pushedLastHour(): number {
  * 攒批队列
  * ------------------------------------------------------------------ */
 
-type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[] };
+type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[]; route?: PushRoute | null };
 let queue: QueueItem[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
 let schedulerStarted = false;
@@ -787,7 +787,7 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
     }
     if (quiet && s.quietAction === "drop") continue;
     if (canEnterBatch(it, s, d)) {
-      batched.push({ id: it.id, sourceId, item: it, subHits });
+      batched.push({ id: it.id, sourceId, item: it, subHits, route });
       deduper?.markSeen(it);
     }
   }
@@ -967,7 +967,7 @@ export async function flushBatch(force = false): Promise<number> {
     const route = hasRoutes ? matchPushRoute(fresh, s.routes) : null;
     const d = decide(fresh, s, subHits, route);
     if (!canEnterBatch(fresh, s, d)) continue;
-    refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits });
+    refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits, route });
   }
 
   let take = refreshed;
@@ -985,6 +985,9 @@ export async function flushBatch(force = false): Promise<number> {
 
   const blocks: string[] = [];
   take.forEach((q, i) => {
+    if (hasRoutes && q.route) {
+      blocks.push(`[${q.route.header || q.route.name}]`);
+    }
     blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1, q.subHits ?? []));
     blocks.push("");
   });
@@ -1177,7 +1180,8 @@ export function previewPush(limit = 6): {
       instant.push(prefix + d.reason + "\n" + block);
       deduper?.markSeen(r);
     } else if (canEnterBatch(fresh, s, d) && batch.length < limit) {
-      batch.push(block);
+      const routeNote = hasRoutes && route ? `[路由: ${route.name}]\n` : "";
+      batch.push(routeNote + block);
       deduper?.markSeen(r);
     } else if (!d.push && !canEnterBatch(fresh, s, d)) {
       rejectedBy.lowScore += 1;

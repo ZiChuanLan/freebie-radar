@@ -144,22 +144,24 @@ export type PushSettings = {
   maxPrice: number | null;
   obtainModes: string[];
   kinds: string[];
-  routes: {
-    id: string;
-    name: string;
-    enabled: boolean;
-    kinds: string[];
-    categories: string[];
-    obtainModes: string[];
-    keywords: string[];
-    maxPrice: number | null;
-    minScore: number;
-    instant: boolean;
-    header?: string;
-  }[];
+  routes: PushRoute[];
   categories: string[];
   prioritizeSubscribed: boolean;
   applyToDigest: boolean;
+};
+
+export type PushRoute = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kinds: string[];
+  categories: string[];
+  obtainModes: string[];
+  keywords: string[];
+  maxPrice: number | null;
+  minScore: number;
+  instant: boolean;
+  header?: string;
 };
 
 export type PushPreview = {

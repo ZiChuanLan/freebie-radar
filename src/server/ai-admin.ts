@@ -206,5 +206,72 @@ export async function backfillAi(
   return { reviewed, rejected, scanned: rows.length, mode };
 }
 
+/**
+ * 零 Token 存量分类重整：用最新关键词规则重算 active 条目的 category（以及未 AI 审核条目的 kind / obtain）。
+ * scope = "other"：仅挽救落入 other/null 的条目；scope = "all"：全量 active 按新规则刷新（已 AI 审核的只刷新 category=other 的漏网条目）。
+ */
+export function reclassifyStoredItems(scope: "other" | "all" = "other"): {
+  scanned: number;
+  updated: number;
+  movedFromOther: number;
+  scope: "other" | "all";
+} {
+  const cond = scope === "other" ? "status = 'active' AND (category = 'other' OR category IS NULL)" : "status = 'active'";
+  const rows = all<{
+    id: number;
+    source_id: string;
+    external_id: string | null;
+    url: string;
+    title: string;
+    summary: string | null;
+    category: string | null;
+    kind: string | null;
+    obtain: string | null;
+    ai_keep: number | null;
+    published_at: string | null;
+    expires_at: string | null;
+  }>(
+    `SELECT id, source_id, external_id, url, title, summary, category, kind, obtain, ai_keep, published_at, expires_at
+       FROM items WHERE ${cond} ORDER BY id DESC LIMIT 6000`,
+  );
+
+  let updated = 0;
+  let movedFromOther = 0;
+  for (const r of rows) {
+    const e = enrichItem(
+      {
+        externalId: r.external_id ?? String(r.id),
+        url: r.url,
+        title: r.title,
+        summary: r.summary ?? "",
+        publishedAt: r.published_at,
+        expiresAt: r.expires_at,
+      },
+      r.source_id,
+    );
+    if (!e) continue;
+    // 已人工/AI 审核过的非 other 条目不随意覆盖其 AI 分类，只修复 other 或未审条目
+    const nextCat = r.ai_keep !== null && r.category && r.category !== "other" ? r.category : e.category;
+    const nextKind = r.ai_keep === null ? e.kind : (r.kind ?? e.kind);
+    const fallbackObtain = guessObtain(r.title, r.summary ?? "");
+    const nextObtain = r.ai_keep === null ? fallbackObtain : (r.obtain ?? fallbackObtain);
+
+    if (nextCat !== r.category || nextKind !== r.kind || nextObtain !== r.obtain) {
+      run(
+        "UPDATE items SET category = ?, kind = ?, obtain = ? WHERE id = ?",
+        nextCat,
+        nextKind,
+        nextObtain,
+        r.id,
+      );
+      updated += 1;
+      if ((r.category === "other" || !r.category) && nextCat !== "other") {
+        movedFromOther += 1;
+      }
+    }
+  }
+  return { scanned: rows.length, updated, movedFromOther, scope };
+}
+
 export { publicAiSettings, saveAiSettings, testAiConnection, DEFAULT_PROMPT, aiReady, getAiSettings, feedbackStats };
 export type { AiSettings };

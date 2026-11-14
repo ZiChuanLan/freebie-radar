@@ -17,14 +17,14 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
-import { KIND_LABEL, KIND_ORDER } from "../lib/sources.ts";
+import { CATEGORY_LABEL, KIND_LABEL, KIND_ORDER, OBTAIN_LABEL, OBTAIN_ORDER } from "../lib/sources.ts";
 import type {
   AiFallbackMode,
   PushLogItem,
   PushPayload,
   PushPreview,
   PushSettings,
+  PushRoute,
   PushSourceMode,
   Source,
 } from "../types.ts";
@@ -197,6 +197,10 @@ export function PushPanel({
   const [quietTo, setQuietTo] = useState("08:00");
   const [customHeaderDraft, setCustomHeaderDraft] = useState("");
   const [customPriceDraft, setCustomPriceDraft] = useState("");
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
+  const [routeDraft, setRouteDraft] = useState<PushRoute | null>(null);
+  const [routeKeywordsInput, setRouteKeywordsInput] = useState("");
+  const [routePriceInput, setRoutePriceInput] = useState("");
 
   useEffect(() => {
     if (!s) return;
@@ -720,6 +724,28 @@ export function PushPanel({
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
+                    onClick={() => {
+                      const next: PushRoute = {
+                        id: `free-${Date.now()}`,
+                        name: "真福利直推",
+                        enabled: true,
+                        kinds: ["freebie"],
+                        categories: [],
+                        obtainModes: ["free", "conditional"],
+                        keywords: [],
+                        maxPrice: 0,
+                        minScore: 65,
+                        instant: true,
+                        header: "🎁 真福利精选",
+                      };
+                      void save({ routes: [...(s.routes ?? []), next] });
+                    }}
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  >
+                    + 真福利路由
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       save({
                         routes: [
@@ -770,62 +796,354 @@ export function PushPanel({
                   >
                     + 开源项目路由
                   </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      save({
+                        routes: [
+                          ...(s.routes ?? []),
+                          {
+                            id: `news-${Date.now()}`,
+                            name: "科技资讯早报",
+                            enabled: true,
+                            kinds: ["info"],
+                            categories: ["ai", "dev", "opensource", "security", "hardware", "news"],
+                            obtainModes: [],
+                            keywords: [],
+                            maxPrice: null,
+                            minScore: 55,
+                            instant: false,
+                            header: "📰 科技资讯",
+                          },
+                        ],
+                      })
+                    }
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  >
+                    + 科技资讯路由
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next: PushRoute = {
+                        id: `custom-${Date.now()}`,
+                        name: "自定义专题路由",
+                        enabled: true,
+                        kinds: [],
+                        categories: [],
+                        obtainModes: [],
+                        keywords: [],
+                        maxPrice: null,
+                        minScore: 60,
+                        instant: false,
+                        header: "",
+                      };
+                      void save({ routes: [...(s.routes ?? []), next] }).then(() => {
+                        setEditingRouteId(next.id);
+                        setRouteDraft(next);
+                        setRouteKeywordsInput("");
+                        setRoutePriceInput("");
+                      });
+                    }}
+                    className="rounded-lg border border-brand bg-brand-subtle px-2.5 py-1 text-[11.5px] font-medium text-brand hover:bg-brand/10"
+                  >
+                    + 新建自定义路由
+                  </button>
                 </div>
               </div>
               {(s.routes?.length ?? 0) > 0 && (
                 <div className="mt-2 space-y-2">
-                  {(s.routes ?? []).map((rt, idx) => (
-                    <div
-                      key={rt.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12px]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 font-medium text-ink-900">
-                          <span>{rt.name}</span>
-                          <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10.5px] text-ink-600">
-                            {rt.instant ? "可即时" : "仅攒批"}
-                          </span>
-                          <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[10.5px] text-ink-600">
-                            ≥{rt.minScore}分
-                          </span>
-                          {rt.keywords.length > 0 && (
-                            <span className="text-[11px] font-normal text-ink-500">
-                              关键词：{rt.keywords.join("/")}
-                            </span>
-                          )}
+                  {(s.routes ?? []).map((rt, idx) => {
+                    const isEditing = editingRouteId === rt.id && routeDraft;
+                    return (
+                      <div
+                        key={rt.id}
+                        className="rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12px]"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5 font-medium text-ink-900">
+                              <span>{rt.name}</span>
+                              <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10.5px] text-ink-600">
+                                {rt.instant ? "可即时" : "仅攒批"}
+                              </span>
+                              <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[10.5px] text-ink-600">
+                                ≥{rt.minScore}分
+                              </span>
+                              {rt.kinds.length > 0 && (
+                                <span className="text-[11px] font-normal text-ink-500">
+                                  形态：{rt.kinds.map((k) => KIND_LABEL[k] ?? k).join("/")}
+                                </span>
+                              )}
+                              {rt.categories.length > 0 && (
+                                <span className="text-[11px] font-normal text-ink-500">
+                                  分类：{rt.categories.map((c) => CATEGORY_LABEL[c] ?? c).join("/")}
+                                </span>
+                              )}
+                              {rt.keywords.length > 0 && (
+                                <span className="text-[11px] font-normal text-ink-500">
+                                  词：{rt.keywords.join("/")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isEditing) {
+                                  setEditingRouteId(null);
+                                  setRouteDraft(null);
+                                } else {
+                                  setEditingRouteId(rt.id);
+                                  setRouteDraft({ ...rt });
+                                  setRouteKeywordsInput(rt.keywords.join(", "));
+                                  setRoutePriceInput(rt.maxPrice === null ? "" : String(rt.maxPrice));
+                                }
+                              }}
+                              className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-700 hover:bg-ink-100"
+                            >
+                              {isEditing ? "收起" : "编辑"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                save({
+                                  routes: (s.routes ?? []).map((x, i) => (i === idx ? { ...x, enabled: !x.enabled } : x)),
+                                })
+                              }
+                              className={
+                                "rounded border px-2 py-0.5 text-[11px] font-medium " +
+                                (rt.enabled
+                                  ? "border-deal-border bg-deal-subtle text-deal"
+                                  : "border-ink-200 bg-ink-100 text-ink-500")
+                              }
+                            >
+                              {rt.enabled ? "已启用" : "已停用"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isEditing) {
+                                  setEditingRouteId(null);
+                                  setRouteDraft(null);
+                                }
+                                void save({
+                                  routes: (s.routes ?? []).filter((_, i) => i !== idx),
+                                });
+                              }}
+                              className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-500 hover:text-alert"
+                            >
+                              删除
+                            </button>
+                          </div>
                         </div>
+
+                        {isEditing && routeDraft && (
+                          <div className="mt-3 space-y-2.5 border-t border-ink-100 pt-3">
+                            <div className="grid gap-2.5 sm:grid-cols-4">
+                              <label className="block">
+                                <span className="text-[11px] text-ink-500">路由名称</span>
+                                <input
+                                  value={routeDraft.name}
+                                  onChange={(e) => setRouteDraft({ ...routeDraft, name: e.target.value })}
+                                  className="mt-1 w-full rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] outline-none focus:border-brand"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="text-[11px] text-ink-500">消息前缀头（可选）</span>
+                                <input
+                                  value={routeDraft.header ?? ""}
+                                  onChange={(e) => setRouteDraft({ ...routeDraft, header: e.target.value })}
+                                  placeholder="如：🖥 VPS 好价"
+                                  className="mt-1 w-full rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] outline-none focus:border-brand"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="text-[11px] text-ink-500">最低评分 (0-100)</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={routeDraft.minScore}
+                                  onChange={(e) =>
+                                    setRouteDraft({ ...routeDraft, minScore: Number(e.target.value) || 0 })
+                                  }
+                                  className="mt-1 w-full rounded border border-ink-200 bg-surface px-2 py-1 font-mono text-[12px] outline-none focus:border-brand"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="text-[11px] text-ink-500">最高价（元，空=不限，0=仅免费）</span>
+                                <input
+                                  value={routePriceInput}
+                                  onChange={(e) => setRoutePriceInput(e.target.value)}
+                                  placeholder="留空不限"
+                                  className="mt-1 w-full rounded border border-ink-200 bg-surface px-2 py-1 font-mono text-[12px] outline-none focus:border-brand"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="grid gap-2.5 sm:grid-cols-2">
+                              <label className="block">
+                                <span className="text-[11px] text-ink-500">主题关键词（逗号分隔，空=不限，命中任意一个即匹配）</span>
+                                <input
+                                  value={routeKeywordsInput}
+                                  onChange={(e) => setRouteKeywordsInput(e.target.value)}
+                                  placeholder="例如：黑五, vps, kvm, claude"
+                                  className="mt-1 w-full rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] outline-none focus:border-brand"
+                                />
+                              </label>
+                              <div className="flex items-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setRouteDraft({ ...routeDraft, instant: !routeDraft.instant })}
+                                  className={
+                                    "rounded border px-2.5 py-1 text-[11.5px] font-medium " +
+                                    (routeDraft.instant
+                                      ? "border-brand bg-brand-subtle text-brand"
+                                      : "border-ink-200 bg-surface text-ink-700")
+                                  }
+                                >
+                                  {routeDraft.instant ? "方式：满足条件可即时推送" : "方式：仅进入定时攒批汇总"}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-[11px] text-ink-500">允许形态（不选表示全部有效形态）</span>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {KIND_ORDER.map((k) => {
+                                  const on = routeDraft.kinds.includes(k);
+                                  return (
+                                    <button
+                                      key={k}
+                                      type="button"
+                                      onClick={() =>
+                                        setRouteDraft({
+                                          ...routeDraft,
+                                          kinds: on
+                                            ? routeDraft.kinds.filter((x) => x !== k)
+                                            : [...routeDraft.kinds, k],
+                                        })
+                                      }
+                                      className={
+                                        "rounded border px-2 py-0.5 text-[11px] " +
+                                        (on
+                                          ? "border-brand bg-brand-subtle font-medium text-brand"
+                                          : "border-ink-200 bg-surface text-ink-600")
+                                      }
+                                    >
+                                      {KIND_LABEL[k]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-[11px] text-ink-500">允许获取方式（不选表示不限）</span>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {OBTAIN_ORDER.map((o) => {
+                                  const on = routeDraft.obtainModes.includes(o);
+                                  return (
+                                    <button
+                                      key={o}
+                                      type="button"
+                                      onClick={() =>
+                                        setRouteDraft({
+                                          ...routeDraft,
+                                          obtainModes: on
+                                            ? routeDraft.obtainModes.filter((x) => x !== o)
+                                            : [...routeDraft.obtainModes, o],
+                                        })
+                                      }
+                                      className={
+                                        "rounded border px-2 py-0.5 text-[11px] " +
+                                        (on
+                                          ? "border-brand bg-brand-subtle font-medium text-brand"
+                                          : "border-ink-200 bg-surface text-ink-600")
+                                      }
+                                    >
+                                      {OBTAIN_LABEL[o]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-[11px] text-ink-500">允许分类（不选表示全部分类）</span>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {Object.entries(CATEGORY_LABEL).map(([ck, cl]) => {
+                                  const on = routeDraft.categories.includes(ck);
+                                  return (
+                                    <button
+                                      key={ck}
+                                      type="button"
+                                      onClick={() =>
+                                        setRouteDraft({
+                                          ...routeDraft,
+                                          categories: on
+                                            ? routeDraft.categories.filter((x) => x !== ck)
+                                            : [...routeDraft.categories, ck],
+                                        })
+                                      }
+                                      className={
+                                        "rounded border px-2 py-0.5 text-[11px] " +
+                                        (on
+                                          ? "border-brand bg-brand-subtle font-medium text-brand"
+                                          : "border-ink-200 bg-surface text-ink-600")
+                                      }
+                                    >
+                                      {cl}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRouteId(null);
+                                  setRouteDraft(null);
+                                }}
+                                className="rounded border border-ink-200 px-3 py-1 text-[11.5px] text-ink-600 hover:bg-ink-100"
+                              >
+                                取消
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const kws = routeKeywordsInput
+                                    .split(/[,，]/)
+                                    .map((x) => x.trim())
+                                    .filter(Boolean);
+                                  const pNum = routePriceInput.trim() === "" ? null : Number(routePriceInput.trim());
+                                  const updated: PushRoute = {
+                                    ...routeDraft,
+                                    name: routeDraft.name.trim() || "未命名路由",
+                                    keywords: kws,
+                                    maxPrice: pNum !== null && Number.isFinite(pNum) && pNum >= 0 ? pNum : null,
+                                  };
+                                  void save({
+                                    routes: (s.routes ?? []).map((x, i) => (i === idx ? updated : x)),
+                                  }).then(() => {
+                                    setEditingRouteId(null);
+                                    setRouteDraft(null);
+                                  });
+                                }}
+                                className="rounded bg-brand px-3 py-1 text-[11.5px] font-medium text-white hover:bg-brand-hover"
+                              >
+                                保存路由
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            save({
-                              routes: (s.routes ?? []).map((x, i) => (i === idx ? { ...x, enabled: !x.enabled } : x)),
-                            })
-                          }
-                          className={
-                            "rounded border px-2 py-0.5 text-[11px] font-medium " +
-                            (rt.enabled
-                              ? "border-deal-border bg-deal-subtle text-deal"
-                              : "border-ink-200 bg-ink-100 text-ink-500")
-                          }
-                        >
-                          {rt.enabled ? "已启用" : "已停用"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            save({
-                              routes: (s.routes ?? []).filter((_, i) => i !== idx),
-                            })
-                          }
-                          className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-500 hover:text-alert"
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -38,6 +38,10 @@ export const CATEGORY_LABEL: Record<string, string> = {
   domain: "域名/建站",
   opensource: "开源软件",
   software: "软件授权",
+  dev: "开发/工程",
+  design: "设计/素材",
+  security: "安全/网络",
+  hardware: "硬件/数码",
   media: "影音会员",
   game: "游戏",
   carpool: "拼车/合租",
@@ -48,6 +52,44 @@ export const CATEGORY_LABEL: Record<string, string> = {
   edu: "教育",
   other: "其它",
 };
+
+/** 资讯频道专属栏目名称（让同属 ai/dev/security/hardware 等领域的内容在资讯频道展示更自然） */
+export const NEWS_CATEGORY_LABEL: Record<string, string> = {
+  ai: "AI 前沿",
+  dev: "开发工程",
+  opensource: "开源生态",
+  security: "安全/漏洞",
+  cloud: "云与架构",
+  vps: "主机/网络",
+  hardware: "硬件数码",
+  software: "软件/应用",
+  game: "游戏动态",
+  design: "设计体验",
+  edu: "深度/教程",
+  news: "行业快讯",
+  other: "其它资讯",
+};
+
+const ALL_CATEGORY_KEYS = Object.keys(CATEGORY_LABEL);
+
+const PRESET_CATEGORIES: Record<string, string[]> = {
+  verified: ["ai", "software", "game", "cloud", "vps", "domain", "media", "design", "dev", "edu", "goods", "invite", "opensource", "security", "hardware", "other"],
+  free: ["ai", "software", "game", "cloud", "vps", "domain", "media", "design", "dev", "edu", "goods", "invite", "opensource", "security", "hardware", "other"],
+  deal: ["vps", "carpool", "trade", "game", "software", "cloud", "domain", "ai", "media", "hardware", "goods", "design", "dev", "security", "edu", "other"],
+  opensource: ["ai", "dev", "opensource", "security", "cloud", "vps", "software", "design", "media", "hardware", "edu", "other"],
+  news: ["ai", "dev", "opensource", "security", "cloud", "vps", "hardware", "software", "game", "design", "edu", "news", "other"],
+};
+
+export function categoriesForPreset(preset: string): string[] {
+  return PRESET_CATEGORIES[preset] ?? ALL_CATEGORY_KEYS;
+}
+
+export function categoryLabelForPreset(category: string, preset: string): string {
+  if (preset === "news") {
+    return NEWS_CATEGORY_LABEL[category] ?? CATEGORY_LABEL[category] ?? category;
+  }
+  return CATEGORY_LABEL[category] ?? category;
+}
 
 export type SourceGroupKey = "community" | "game" | "software" | "deals";
 

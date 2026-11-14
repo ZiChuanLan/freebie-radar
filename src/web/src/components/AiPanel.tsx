@@ -94,6 +94,7 @@ export function AiPanel({
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
   const [backfilling, setBackfilling] = useState(false);
+  const [reclassifying, setReclassifying] = useState(false);
   const [backfillMode, setBackfillMode] = useState<BackfillMode>("pending");
   const [backfillLimit, setBackfillLimit] = useState(200);
   const [backfill, setBackfill] = useState<{
@@ -209,6 +210,22 @@ export function AiPanel({
     }
   }
 
+  async function runReclassify() {
+    setReclassifying(true);
+    try {
+      const r = await fetch("/api/ai/reclassify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "other" }),
+      });
+      const j = (await r.json()) as { scanned: number; updated: number; movedFromOther: number };
+      reload();
+      onNotify?.(`已扫描 ${j.scanned} 条「其它」，成功归类 ${j.movedFromOther} 条（零 Token）`);
+    } finally {
+      setReclassifying(false);
+    }
+  }
+
   const addNoiseKeyword = () => {
     const kw = noiseInput.trim();
     if (!kw) return;
@@ -318,6 +335,17 @@ export function AiPanel({
             >
               {backfilling ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               立即执行
+            </button>
+
+            <button
+              type="button"
+              onClick={runReclassify}
+              disabled={reclassifying}
+              title="按最新关键词规则零 Token 重算历史「其它」分类"
+              className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-50"
+            >
+              {reclassifying ? <Loader2 size={12} className="animate-spin" /> : null}
+              重整分类 (0 Token)
             </button>
           </div>
         </div>

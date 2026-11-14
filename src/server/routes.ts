@@ -25,6 +25,7 @@ import {
   publicAiSettings,
   saveAiSettings,
   testAiConnection,
+  reclassifyStoredItems,
   type AiSettings,
   type BackfillMode,
 } from "./ai-admin.ts";
@@ -701,6 +702,7 @@ export function registerApi(app: Hono) {
   });
 
   app.get("/api/stats", (c) => {
+    const q = c.req.query();
     const statsCutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
     const totals = get<{
       total: number;
@@ -726,9 +728,27 @@ export function registerApi(app: Hono) {
       new Date().toISOString(),
       statsCutoff,
     );
-    const byCategory = all<{ category: string | null; n: number }>(
-      "SELECT category, COUNT(*) AS n FROM items WHERE status='active' GROUP BY category ORDER BY n DESC",
+
+    const hasChannelFilter = Boolean(
+      q.kind || q.obtain || q.aiOnly || q.hideRejected || q.unexpired || q.freeOnly || q.maxPrice ||
+      q.source || q.search || q.since || q.lang || q.hasCodes || q.expiring || q.starred ||
+      q.unread || q.subscribed || q.minScore || q.status,
     );
+    let byCategory: { category: string | null; n: number }[];
+    if (hasChannelFilter) {
+      const { category: _omit, ...restQ } = q;
+      const rules = loadActiveBlockRules();
+      const { where, params } = buildItemsQuery(restQ, rules, false);
+      const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      byCategory = all<{ category: string | null; n: number }>(
+        `SELECT category, COUNT(*) AS n FROM items ${clause} GROUP BY category ORDER BY n DESC`,
+        ...params,
+      );
+    } else {
+      byCategory = all<{ category: string | null; n: number }>(
+        "SELECT category, COUNT(*) AS n FROM items WHERE status='active' GROUP BY category ORDER BY n DESC",
+      );
+    }
     const byKind = all<{ kind: string | null; n: number }>(
       "SELECT COALESCE(kind, 'freebie') AS kind, COUNT(*) AS n FROM items WHERE status='active' GROUP BY kind ORDER BY n DESC",
     );
@@ -829,6 +849,12 @@ export function registerApi(app: Hono) {
     const mode: BackfillMode =
       body.mode === "recent" || body.mode === "rejected" ? body.mode : "pending";
     return c.json(await backfillAi(limit, mode));
+  });
+
+  app.post("/api/ai/reclassify", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { scope?: string };
+    const scope = body.scope === "all" ? "all" : "other";
+    return c.json(reclassifyStoredItems(scope));
   });
 
   /* ---------------------------------------------------------------- *

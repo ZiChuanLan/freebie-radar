@@ -9,9 +9,12 @@ import { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind } f
 
 export { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind };
 export type Category =
-  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "media" | "game" | "carpool" | "trade" | "news" | "goods" | "invite" | "edu" | "other";
+  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "dev" | "design" | "security" | "hardware" | "media" | "game" | "carpool" | "trade" | "news" | "goods" | "invite" | "edu" | "other";
 
-const CATEGORIES = new Set<string>(["ai", "cloud", "vps", "domain", "opensource", "software", "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other"]);
+const CATEGORIES = new Set<string>([
+  "ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware",
+  "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other",
+]);
 
 export function isCategory(value: unknown): value is Category {
   return typeof value === "string" && CATEGORIES.has(value);
@@ -24,6 +27,10 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   domain: "域名/建站",
   opensource: "开源软件",
   software: "软件授权",
+  dev: "开发/工程",
+  design: "设计/素材",
+  security: "安全/网络",
+  hardware: "硬件/数码",
   media: "影音会员",
   game: "游戏",
   carpool: "拼车/合租",
@@ -65,14 +72,34 @@ const RULES: Rule[] = [
     keywords: ["开源", "open source", "opensource", "github.com", "github 仓库", "github项目", "gitlab", "self-host", "selfhosted", "自托管", "自建服务", "awesome-", "mit 协议", "apache 协议", "gpl", "源码", "pull request", "开源项目", "开源软件", "开源工具", "开源库"],
   },
   {
+    category: "dev",
+    weight: 1.0,
+    keywords: ["sdk", "cli", "ide", "vscode", "vs code", "docker", "kubernetes", "git", "rust", "golang", "typescript", "python", "框架", "编译器", "api 文档", "debugger", "devtool", "browser extension", "chrome extension", "脚本", "自动化", "workflow", "ci/cd", "数据库工具", "编程语言"],
+  },
+  {
+    category: "design",
+    weight: 1.05,
+    keywords: ["字体", "font", "fonts", "icon", "icons", "图标", "ui kit", "figma", "sketch", "psd", "svg", "模板", "template", "壁纸", "wallpaper", "插画", "illustration", "3d asset", "mockup", "素材", "音效", "sfx", "lut", "预设", "preset", "配色"],
+  },
+  {
+    category: "security",
+    weight: 1.05,
+    keywords: ["漏洞", "cve", "零日", "0day", "安全公告", "防火墙", "firewall", "vpn", "wireguard", "tailscale", "零信任", "加密", "密码学", "隐私", "渗透", "内网穿透", "反诈", "sandbox", "2fa", "passkey"],
+  },
+  {
+    category: "hardware",
+    weight: 1.0,
+    keywords: ["硬件", "cpu", "gpu", "显卡", "rtx", "nas", "路由器", "软路由", "旁路由", "显示器", "键盘", "鼠标", "耳机", "ssd", "固态硬盘", "内存条", "macbook", "mac mini", "iphone", "ipad", "树莓派", "raspberry pi", "开发板", "充电头", "数码"],
+  },
+  {
     category: "software",
     weight: 1.0,
-    keywords: ["激活码", "序列号", "license", "授权", "正版", "绿色版", "注册机", "兑换码", "office", "windows", "adobe", "jetbrains", "photoshop", "会员版", "商业软件", "软件授权", "解锁", "remote desktop", "pipelines", "ci/cd", "永久授权", "免费版", "freemium", "lifetime", "限免"],
+    keywords: ["激活码", "序列号", "license", "授权", "正版", "绿色版", "注册机", "兑换码", "office", "windows", "adobe", "jetbrains", "photoshop", "会员版", "商业软件", "软件授权", "解锁", "remote desktop", "永久授权", "免费版", "freemium", "lifetime", "lifetime access", "限免", "ios", "android", "macos", "app"],
   },
   {
     category: "media",
-    weight: 1.0,
-    keywords: ["会员", "影音", "netflix", "奈飞", "spotify", "youtube", "bilibili", "爱奇艺", "优酷", "腾讯视频", "芒果", "emby", "plex", "音乐", "vip", "网盘", "115", "阿里云盘", "夸克", "影视", "韩剧", "美剧", "日剧", "剧集", "电影", "4k", "1080p", "更至", "配音", "动漫"],
+    weight: 1.05,
+    keywords: ["会员", "影音", "netflix", "奈飞", "spotify", "youtube", "bilibili", "爱奇艺", "优酷", "腾讯视频", "芒果", "emby", "plex", "音乐", "vip", "网盘", "115", "阿里云盘", "夸克", "影视", "韩剧", "美剧", "日剧", "剧集", "电影", "4k", "1080p", "更至", "配音", "动漫", "短剧", "short drama", "short dramas", "听书", "漫画", "小说"],
   },
   {
     category: "game",
@@ -97,7 +124,7 @@ const RULES: Rule[] = [
   {
     category: "goods",
     weight: 0.95,
-    keywords: ["包邮", "free shipping", "优惠券", "优惠码", "券码", "满减", "零元", "一分钱", "实物", "试用装", "小样", "京东", "淘宝", "拼多多", "天猫", "羊毛", "折扣", "降价", "元起", "% off", "deal", "clearance", "bogo"],
+    keywords: ["包邮", "free shipping", "优惠券", "优惠码", "券码", "满减", "零元", "一分钱", "实物", "试用装", "小样", "京东", "淘宝", "拼多多", "天猫", "羊毛", "折扣", "降价", "元起", "% off", "deal", "clearance", "bogo", "话费", "流量", "立减金", "红包", "外卖", "奶茶", "咖啡", "充值卡", "京豆", "cashback", "gift card"],
   },
   {
     category: "invite",
@@ -106,8 +133,8 @@ const RULES: Rule[] = [
   },
   {
     category: "edu",
-    weight: 0.85,
-    keywords: ["课程", "课", "教程", "电子书", "教材", "考试", "题库", "证书", "公开课", "学习", "资料", "ebook", "course"],
+    weight: 0.95,
+    keywords: ["课程", "课", "教程", "电子书", "教材", "考试", "题库", "证书", "公开课", "学习", "资料", "论文", "ebook", "ebooks", "audiobook", "audiobooks", "podcast", "course", "courses"],
   },
 ];
 

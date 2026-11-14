@@ -35,7 +35,7 @@ import { getToken } from "./lib/auth.ts";
 import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
-import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
+import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, categoriesForPreset, categoryLabelForPreset, formatInterval, groupOfSource } from "./lib/sources.ts";
 import { KIND_LABEL, KIND_ORDER } from "./lib/sources.ts";
 import type {
   BlockPreset,
@@ -368,6 +368,25 @@ export function App() {
     return p.toString();
   }, [debounced, source, categories, lang, sort, range, priceCap, preset, kindFilter, obtain, minScore, unreadOnly]);
 
+  const statsQuery = useMemo(() => {
+    const p = new URLSearchParams(query);
+    p.delete("category");
+    p.delete("sort");
+    p.delete("limit");
+    return p.toString();
+  }, [query]);
+
+  const switchPreset = useCallback((nextKey: string) => {
+    setPreset(nextKey);
+    setKindFilter("auto");
+    setObtain("auto");
+    setPriceCap("auto");
+    setCategories((cur) => {
+      const allowed = new Set(categoriesForPreset(nextKey));
+      return cur.filter((c) => allowed.has(c));
+    });
+  }, []);
+
   const activeFilterCount =
     [
       source,
@@ -398,7 +417,7 @@ export function App() {
     setSort("newest");
     setPreset("verified");
   }, []);
-  const stats = useApi<Stats>("/api/stats");
+  const stats = useApi<Stats>(statsQuery ? `/api/stats?${statsQuery}` : "/api/stats");
   const items = useApi<{ total: number; items: Item[] }>(`/api/items?${query}`);
   const subs = useApi<{ subscriptions: Subscription[] }>(adminReady ? "/api/subscriptions" : null);
   const sources = useApi<{ sources: Source[] }>("/api/sources");
@@ -712,7 +731,7 @@ export function App() {
                     <button
                       key={p.key}
                       type="button"
-                      onClick={() => setPreset(p.key)}
+                      onClick={() => switchPreset(p.key)}
                       className={
                         "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors " +
                         (preset === p.key
@@ -963,7 +982,7 @@ export function App() {
                         {categories.length === 0
                           ? "全部分类"
                           : categories.length === 1
-                            ? `分类：${CATEGORY_LABEL[categories[0]!] ?? categories[0]}`
+                            ? `分类：${categoryLabelForPreset(categories[0]!, preset)}`
                             : `分类：已选 ${categories.length} 项`}
                       </span>
                       <ChevronDown size={12} />
@@ -971,7 +990,7 @@ export function App() {
                     {catOpen && (
                       <div className="panel absolute top-full left-0 z-40 mt-1.5 w-[260px] p-2.5 shadow-lg">
                         <div className="mb-2 flex items-center justify-between text-[11px] text-ink-500">
-                          <span>支持多选分类</span>
+                          <span>{preset === "news" ? "资讯栏目（支持多选）" : preset === "deal" ? "好价分类（支持多选）" : preset === "opensource" ? "开源方向（支持多选）" : "福利分类（支持多选）"}</span>
                           {categories.length > 0 && (
                             <button
                               type="button"
@@ -983,32 +1002,39 @@ export function App() {
                           )}
                         </div>
                         <div className="grid max-h-[240px] grid-cols-2 gap-1 overflow-auto">
-                          {(stats.data?.byCategory ?? []).map((c) => {
-                            const key = c.category ?? "other";
-                            const checked = categories.includes(key);
-                            return (
-                              <button
-                                key={key}
-                                type="button"
-                                onClick={() =>
-                                  setCategories((cur) =>
-                                    cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key],
-                                  )
-                                }
-                                className={
-                                  "flex items-center justify-between rounded border px-2 py-1 text-left text-[11.5px] transition-colors " +
-                                  (checked
-                                    ? "border-ink-950 bg-ink-950 font-medium text-white"
-                                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
-                                }
-                              >
-                                <span className="truncate">{CATEGORY_LABEL[key] ?? key}</span>
-                                <span className={"ml-1 font-mono text-[10.5px] " + (checked ? "text-white/70" : "text-ink-400")}>
-                                  {c.n}
-                                </span>
-                              </button>
-                            );
-                          })}
+                          {(() => {
+                            const countMap = new Map((stats.data?.byCategory ?? []).map((c) => [c.category ?? "other", c.n]));
+                            const allowed = categoriesForPreset(preset);
+                            const ordered = [...allowed].sort((a, b) => (countMap.get(b) ?? 0) - (countMap.get(a) ?? 0));
+                            return ordered.map((key) => {
+                              const n = countMap.get(key) ?? 0;
+                              const checked = categories.includes(key);
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() =>
+                                    setCategories((cur) =>
+                                      cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key],
+                                    )
+                                  }
+                                  className={
+                                    "flex items-center justify-between rounded border px-2 py-1 text-left text-[11.5px] transition-colors " +
+                                    (checked
+                                      ? "border-ink-950 bg-ink-950 font-medium text-white"
+                                      : n > 0
+                                        ? "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100"
+                                        : "border-ink-100 bg-canvas/70 text-ink-400 hover:bg-ink-100")
+                                  }
+                                >
+                                  <span className="truncate">{categoryLabelForPreset(key, preset)}</span>
+                                  <span className={"ml-1 font-mono text-[10.5px] " + (checked ? "text-white/70" : "text-ink-400")}>
+                                    {n}
+                                  </span>
+                                </button>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                     )}
@@ -1021,7 +1047,7 @@ export function App() {
                     className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
                     title="内容形态"
                   >
-                    <option value="auto">形态：{preset === "free" ? "默认白嫖" : preset === "deal" ? "默认好价" : preset === "opensource" ? "默认开源" : "全部有效"}</option>
+                    <option value="auto">形态：{preset === "verified" ? "默认真福利" : preset === "free" ? "默认白嫖" : preset === "deal" ? "默认好价" : preset === "opensource" ? "默认开源" : preset === "news" ? "默认资讯" : "全部有效"}</option>
                     <option value="all">形态：全部（含其它）</option>
                     {KIND_ORDER.map((k) => (
                       <option key={k} value={k}>
@@ -1208,7 +1234,7 @@ export function App() {
                         onClick={() => setCategories((cur) => cur.filter((x) => x !== cat))}
                         className="rounded bg-brand-subtle px-2 py-0.5 text-accent hover:bg-ink-200/70"
                       >
-                        分类：{CATEGORY_LABEL[cat] ?? cat} ×
+                        分类：{categoryLabelForPreset(cat, preset)} ×
                       </button>
                     ))}
                     {lang !== "all" && (
