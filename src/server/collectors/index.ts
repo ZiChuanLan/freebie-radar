@@ -5,6 +5,7 @@ import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
 import { getAiSettings, matchesEntryNoise, shouldPassSourceToAi, shouldReview, type AiVerdict } from "../enrich/ai.ts";
 import { enqueueForAi, reviewFreshNow, setPostReviewHandler } from "../enrich/ai-queue.ts";
 import { guessObtain, type ObtainMode } from "../enrich/obtain.ts";
+import { isBlocked, loadActiveBlockRules } from "../enrich/blocklist.ts";
 import { getRetention } from "../retention.ts";
 import { getPushSettings, pushInstant, pushReviewedByIds } from "../instant.ts";
 
@@ -159,7 +160,10 @@ async function dispatchFresh(
     return;
   }
 
-  const nonNoise = fresh.filter((f) => !matchesEntryNoise(f.title, aiSettings));
+  const blockRules = loadActiveBlockRules();
+  const nonNoise = fresh.filter(
+    (f) => !matchesEntryNoise(f.title, aiSettings) && !isBlocked({ title: f.title, summary: f.summary, sourceId }, blockRules),
+  );
   if (!nonNoise.length) return;
 
   if (!shouldPassSourceToAi(sourceId, aiSettings)) {

@@ -135,7 +135,7 @@ const PRESETS: Preset[] = [
   { key: "free", label: "完全白嫖", icon: Tag },
   { key: "deal", label: "黑五/好价", icon: Flame },
   { key: "opensource", label: "开源项目", icon: Code },
-  { key: "news", label: "科技资讯", icon: Newspaper },
+  { key: "news", label: "新闻资讯", icon: Newspaper },
   { key: "codes", label: "含兑换码", icon: Zap },
   { key: "urgent", label: "今日截止", icon: Bell },
   { key: "starred", label: "我的收藏", icon: Check },

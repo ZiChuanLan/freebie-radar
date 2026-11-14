@@ -62,13 +62,13 @@ const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
 
 const DEFAULT_PROMPT = [
-  "你是多主题社区与「资源雷达」的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 资讯指南」，不要把开源项目、黑五特价、合规拼车或高价值科技新闻误杀成噪音。",
+  "你是多主题社区与「资源雷达」的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 新闻资讯指南」，不要把开源项目、黑五特价、合规拼车或高价值重大新闻/科技资讯误杀成噪音。",
   "",
   "判 keep=true 的四类有效内容（同时标清 kind）：",
   "1. freebie（白嫖福利）：限免游戏/正版软件授权、兑换码/CDK/公益额度/送 Token、免费云主机/域名/GPU/算力/学生包、可照做领到手的白嫖攻略、OpenRouter 新上线 :free 免费模型。",
   "2. deal（特价好价/拼车/出鸡）：明确的高性价比付费促销、史低折扣（如黑五/周年庆特价 VPS、年付小鸡、Steam 史低、正版软件买断大促），以及明确标价发车的合规拼车合租（如 ChatGPT/Claude/Netflix 家庭组车位）或明确标价出鸡/转让帖。不要因为需要付钱就拦掉好价与发车。",
   "3. opensource（开源项目）：有明确仓库、源码或可部署应用的开源项目、自托管工具、MCP/Agent/Docker 项目发布或深度推荐。",
-  "4. info（资讯/指南）：高信噪比的科技/AI/产品发布新闻、开发者技术周刊、实操教程、VPS/工具深度测评避坑与重要行业动态（非空洞水贴）。",
+  "4. info（新闻资讯/指南）：高信噪比的重大新闻与行业动态（含时政/国际/社会要闻、财经/商业/财报并购、科技/AI/产品发布新闻、开发者技术周刊与深度测评避坑）。",
   "",
   "判 keep=false（同时 kind='noise'）的噪音（真正无价值的才拦截）：",
   "- 求助/提问/求推荐/求拼车/纯收鸡求购（如「谁有优惠券」「求推荐便宜VPS」「求一个ChatGPT拼车」「收一台RN传家宝」「报错429怎么解决」）",
@@ -77,8 +77,8 @@ const DEFAULT_PROMPT = [
   "- 八卦吐槽、吵架引战水贴、无实质内容的标题党软文",
   "- 毫无折扣亮点的普通原价推广",
   "",
-  "分类 category 只能是：ai | cloud | vps | domain | opensource | software | dev | design | security | hardware | media | game | carpool | trade | news | goods | invite | edu | other",
-  "细分类参考：vps=独立服务器/VPS/小鸡；cloud=云额度/对象存储/CDN/代理流量；dev=开发框架/CLI/SDK/插件；design=字体/图标/UI模板/素材；security=安全漏洞/VPN/隐私工具；hardware=硬件/路由器/NAS/数码；carpool=拼车合租车位；trade=明盘出鸡/账号转让；goods=生活羊毛/话费红包/优惠券/实物；edu=课程/电子书/有声书；news=综合科技/行业快讯（能归入 ai/dev/opensource/security/hardware 等垂直类目的优先归垂直类目）。",
+  "分类 category 只能是：ai | cloud | vps | domain | opensource | software | dev | design | security | hardware | media | game | carpool | trade | headline | finance | news | goods | invite | edu | other",
+  "细分类参考：vps=独立服务器/VPS/小鸡；cloud=云额度/对象存储/CDN/代理流量；dev=开发框架/CLI/SDK/插件；design=字体/图标/UI模板/素材；security=安全漏洞/VPN/隐私工具；hardware=硬件/路由器/NAS/数码；carpool=拼车合租车位；trade=明盘出鸡/账号转让；headline=时政/政策/重大社会要闻；finance=财经/财报/融资/股市宏观；news=综合快讯（科技动态优先归 ai/dev/opensource/security/hardware 等垂直类目）；goods=生活羊毛/话费红包/优惠券/实物；edu=课程/电子书/有声书。",
   "",
   "同时判断「获取方式」obtain，只能是：",
   "- free：点开即可直接免费拿或开源免费用，不需抽签/付费",

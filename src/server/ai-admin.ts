@@ -2,6 +2,7 @@ import { all, get, run } from "./db.ts";
 import { calibrateScoreByObtain } from "./enrich/alias.ts";
 import { enrichItem, FREEBIE_ONLY_SOURCES, isCategory, resolveKind } from "./enrich/index.ts";
 import { guessObtain } from "./enrich/obtain.ts";
+import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { aiQueueStats } from "./enrich/ai-queue.ts";
 import {
   aiReady,
@@ -139,14 +140,17 @@ export async function backfillAi(
      ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?`,
     safeLimit,
   );
-  if (!rows.length) return { reviewed: 0, rejected: 0, scanned: 0, mode };
+  const blockRules = loadActiveBlockRules();
+  const activeRows = rows.filter((r) => !isBlocked(r, blockRules));
+  if (!activeRows.length) return { reviewed: 0, rejected: 0, scanned: rows.length, mode };
 
   let reviewed = 0;
   let rejected = 0;
   const CHUNK = Math.max(s.batchSize * s.concurrency, 24);
 
-  for (let start = 0; start < rows.length; start += CHUNK) {
-    const chunk = rows.slice(start, start + CHUNK);
+  for (let start = 0; start < activeRows.length; start += CHUNK) {
+    const chunk = activeRows.slice(start, start + CHUNK);
+
     const raws = chunk.map((r) => ({
       externalId: r.external_id,
       url: r.url,

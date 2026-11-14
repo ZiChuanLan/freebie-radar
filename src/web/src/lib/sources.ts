@@ -46,7 +46,9 @@ export const CATEGORY_LABEL: Record<string, string> = {
   game: "游戏",
   carpool: "拼车/合租",
   trade: "二手/交易",
-  news: "科技资讯",
+  headline: "时政/要闻",
+  finance: "财经/商业",
+  news: "综合快讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",
@@ -66,7 +68,9 @@ export const NEWS_CATEGORY_LABEL: Record<string, string> = {
   game: "游戏动态",
   design: "设计体验",
   edu: "深度/教程",
-  news: "行业快讯",
+  headline: "时政/要闻",
+  finance: "财经/商业",
+  news: "综合快讯",
   other: "其它资讯",
 };
 
@@ -77,7 +81,7 @@ const PRESET_CATEGORIES: Record<string, string[]> = {
   free: ["ai", "software", "game", "cloud", "vps", "domain", "media", "design", "dev", "edu", "goods", "invite", "opensource", "security", "hardware", "other"],
   deal: ["vps", "carpool", "trade", "game", "software", "cloud", "domain", "ai", "media", "hardware", "goods", "design", "dev", "security", "edu", "other"],
   opensource: ["ai", "dev", "opensource", "security", "cloud", "vps", "software", "design", "media", "hardware", "edu", "other"],
-  news: ["ai", "dev", "opensource", "security", "cloud", "vps", "hardware", "software", "game", "design", "edu", "news", "other"],
+  news: ["headline", "finance", "ai", "dev", "opensource", "security", "cloud", "vps", "hardware", "software", "game", "design", "edu", "news", "other"],
 };
 
 export function categoriesForPreset(preset: string): string[] {

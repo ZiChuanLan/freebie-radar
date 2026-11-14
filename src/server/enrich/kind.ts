@@ -91,7 +91,7 @@ export function guessKind(input: {
   if (input.isFree || hasDealWord) return "freebie";
   if (input.sourceId && INFO_SOURCES.has(input.sourceId)) return "info";
   if (input.category === "opensource") return "opensource";
-  if (input.category === "news") return "info";
+  if (input.category === "news" || input.category === "headline" || input.category === "finance") return "info";
   if (input.category === "edu") return "info";
   return "freebie";
 }

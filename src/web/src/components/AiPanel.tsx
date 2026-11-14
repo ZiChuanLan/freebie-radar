@@ -10,12 +10,10 @@ import {
   CircleX,
   FlaskConical,
   Loader2,
-  Plus,
   RefreshCw,
   Save,
   Filter,
   Sparkles,
-  X,
   Zap,
 } from "lucide-react";
 import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
@@ -106,7 +104,6 @@ export function AiPanel({
   } | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
-  const [noiseInput, setNoiseInput] = useState("");
 
   useEffect(() => {
     if (data?.settings && !form) setForm({ ...data.settings });
@@ -225,25 +222,6 @@ export function AiPanel({
       setReclassifying(false);
     }
   }
-
-  const addNoiseKeyword = () => {
-    const kw = noiseInput.trim();
-    if (!kw) return;
-    if (form.customNoiseKeywords.includes(kw)) {
-      setNoiseInput("");
-      return;
-    }
-    const next = [...form.customNoiseKeywords, kw];
-    setForm({ ...form, customNoiseKeywords: next });
-    setNoiseInput("");
-    void save({ customNoiseKeywords: next }, `已添加入口拦截词「${kw}」`);
-  };
-
-  const removeNoiseKeyword = (kw: string) => {
-    const next = form.customNoiseKeywords.filter((x) => x !== kw);
-    setForm({ ...form, customNoiseKeywords: next });
-    void save({ customNoiseKeywords: next }, `已移除「${kw}」`);
-  };
 
   const toggleSourceId = (id: string) => {
     const next = form.sourceIds.includes(id)
@@ -467,52 +445,9 @@ export function AiPanel({
           />
         </div>
 
-        {form.preFilterEnabled && (
-          <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[12.5px] font-medium text-ink-900">自定义入口噪音拦截词（命中即跳过送审）</span>
-              <span className="text-[11px] text-ink-500">已配置 {form.customNoiseKeywords.length} 个</span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={noiseInput}
-                onChange={(e) => setNoiseInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addNoiseKeyword();
-                }}
-                placeholder="例如：拼车 / 二手 / 出售 / 求助…"
-                className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-900 outline-none focus:border-brand"
-              />
-              <button
-                type="button"
-                onClick={addNoiseKeyword}
-                className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-hover"
-              >
-                <Plus size={13} /> 添加
-              </button>
-            </div>
-            {form.customNoiseKeywords.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {form.customNoiseKeywords.map((kw) => (
-                  <span
-                    key={kw}
-                    className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-0.5 text-[12px] text-ink-800"
-                  >
-                    {kw}
-                    <button
-                      type="button"
-                      onClick={() => removeNoiseKeyword(kw)}
-                      className="text-ink-400 hover:text-alert"
-                      title="移除"
-                    >
-                      <X size={11} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <div className="rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-600">
+          自定义拦截词已与「<span className="font-medium text-ink-900">订阅与屏蔽</span>」合并为统一规则：命中全局屏蔽词或正则的条目，同样会在入库送 AI 前直接跳过、节省审核额度。
+        </div>
 
         <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

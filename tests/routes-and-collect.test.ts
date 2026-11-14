@@ -832,3 +832,48 @@ test("细粒度分类扩展、分频道统计 /api/stats 与零Token重分类 /a
   assert.ok(freeStats.byCategory.some((c) => c.category === "goods" && c.n === 1));
   assert.ok(!freeStats.byCategory.some((c) => c.category === "security"));
 });
+
+
+test("新闻资讯扩展（时政要闻/财经商业放行）与全局屏蔽词拦截补审省额度", async () => {
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+  const { NOISE_TITLE } = await import("../src/server/enrich/noise.ts");
+  const { backfillAi } = await import("../src/server/ai-admin.ts");
+  const { saveAiSettings } = await import("../src/server/enrich/ai-settings.ts");
+  const now = new Date().toISOString();
+
+  // 时政要闻与财经动态不再被 NOISE_TITLE 入口误杀，自动落位 headline / finance 且 kind = info
+  const headline = enrichItem(
+    { externalId: "hn1", url: "https://ex.com/hn1", title: "国务院办公厅发布人工智能产业监管新规政策", publishedAt: now },
+    "rss-ithome",
+  )!;
+  assert.equal(NOISE_TITLE.test(headline.title), false);
+  assert.equal(headline.category, "headline");
+  assert.equal(headline.kind, "info");
+
+  const finance = enrichItem(
+    { externalId: "fn1", url: "https://ex.com/fn1", title: "美联储宣布降息 25 个基点，美股财报季营收超预期", publishedAt: now },
+    "rss-ithome",
+  )!;
+  assert.equal(NOISE_TITLE.test(finance.title), false);
+  assert.equal(finance.category, "finance");
+  assert.equal(finance.kind, "info");
+
+  // 命中全局 block_rules 的条目在 backfillAi 中被直接跳过，不花 AI 额度
+  run("DELETE FROM items");
+  run("DELETE FROM block_rules");
+  run(
+    `INSERT INTO block_rules (pattern, mode, scope, enabled, created_at) VALUES ('广告推广词', 'keyword', 'all', 1, ?)`,
+    now,
+  );
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, kind, score, is_free, obtain, published_at, status, first_seen_at, last_seen_at)
+     VALUES ('v2ex-free', 'blk1', 'https://ex.com/blk1', 'ex/blk1', '含广告推广词的垃圾帖', 'blk1', 'other', 'freebie', 50, 1, 'free', ?, 'active', ?, ?)`,
+    now, now, now,
+  );
+  saveAiSettings({ enabled: true, baseUrl: "https://example.invalid/v1", model: "test-model" });
+  const bf = await backfillAi(20, "pending");
+  assert.equal(bf.scanned, 1);
+  assert.equal(bf.reviewed, 0);
+  saveAiSettings({ enabled: false, baseUrl: "", model: "" });
+  run("DELETE FROM block_rules");
+});

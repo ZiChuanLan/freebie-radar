@@ -9,11 +9,11 @@ import { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind } f
 
 export { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind };
 export type Category =
-  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "dev" | "design" | "security" | "hardware" | "media" | "game" | "carpool" | "trade" | "news" | "goods" | "invite" | "edu" | "other";
+  | "ai" | "cloud" | "vps" | "domain" | "opensource" | "software" | "dev" | "design" | "security" | "hardware" | "media" | "game" | "carpool" | "trade" | "headline" | "finance" | "news" | "goods" | "invite" | "edu" | "other";
 
 const CATEGORIES = new Set<string>([
   "ai", "cloud", "vps", "domain", "opensource", "software", "dev", "design", "security", "hardware",
-  "media", "game", "carpool", "trade", "news", "goods", "invite", "edu", "other",
+  "media", "game", "carpool", "trade", "headline", "finance", "news", "goods", "invite", "edu", "other",
 ]);
 
 export function isCategory(value: unknown): value is Category {
@@ -35,7 +35,9 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   game: "游戏",
   carpool: "拼车/合租",
   trade: "二手/交易",
-  news: "科技资讯",
+  headline: "时政/要闻",
+  finance: "财经/商业",
+  news: "综合快讯",
   goods: "实物/优惠",
   invite: "邀请码",
   edu: "教育",
@@ -115,6 +117,16 @@ const RULES: Rule[] = [
     category: "trade",
     weight: 1.1,
     keywords: ["出鸡", "收鸡", "转让", "过户", "出号", "成品号", "带原油", "带原邮", "原邮", "剩余价值", "明盘", "闲置出", "折价出", "转手", "出个", "出一台", "出闲置"],
+  },
+  {
+    category: "headline",
+    weight: 1.0,
+    keywords: ["国务院", "央行", "外交部", "新规", "法规", "政策", "法案", "制裁", "峰会", "关税", "国常会", "发改委", "工信部", "通告", "突发", "白皮书", "监管", "国务院办公厅", "政府工作"],
+  },
+  {
+    category: "finance",
+    weight: 1.05,
+    keywords: ["财报", "营收", "市值", "股价", "上市", "ipo", "融资", "并购", "收购", "降息", "加息", "通胀", "汇率", "油价", "黄金", "美联储", "gdp", "基金", "债券", "业绩", "利润", "估值"],
   },
   {
     category: "news",

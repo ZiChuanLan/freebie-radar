@@ -804,23 +804,23 @@ export function PushPanel({
                           ...(s.routes ?? []),
                           {
                             id: `news-${Date.now()}`,
-                            name: "科技资讯早报",
+                            name: "新闻资讯早报",
                             enabled: true,
                             kinds: ["info"],
-                            categories: ["ai", "dev", "opensource", "security", "hardware", "news"],
+                            categories: ["headline", "finance", "ai", "dev", "opensource", "security", "hardware", "news"],
                             obtainModes: [],
                             keywords: [],
                             maxPrice: null,
                             minScore: 55,
                             instant: false,
-                            header: "📰 科技资讯",
+                            header: "📰 新闻资讯",
                           },
                         ],
                       })
                     }
                     className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
                   >
-                    + 科技资讯路由
+                    + 新闻资讯路由
                   </button>
                   <button
                     type="button"
