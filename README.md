@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="docs/logo.svg" alt="Freebie Radar Logo" width="88" height="88" />
-  <h1>白嫖雷达 · Freebie Radar</h1>
-  <p><strong>全网限免、兑换码、AI 免费额度与白嫖福利的自托管聚合筛选雷达站</strong></p>
-  <p>规则初筛 · AI 语义验真 · 获取方式分级 · Telegram 实时/攒批/日报推送 · 开箱即用</p>
+  <img src="docs/logo.svg" alt="Resource Radar Logo" width="88" height="88" />
+  <h1>资源雷达 · Resource Radar</h1>
+  <p><strong>全网福利、黑五好价、拼车交易、开源项目与新闻资讯的多兴趣自托管聚合雷达站</strong></p>
+  <p>五大内容形态分流 · 21 类分频道目录 · 统一屏蔽词省额度 · AI 语义定级 · 多路由精准推送</p>
 
   <p>
     <a href="README.md">简体中文</a> · <a href="README.en.md">English</a>
@@ -19,57 +19,80 @@
 
 ---
 
-**Freebie Radar（白嫖雷达）** 帮你把散落在各大社区、游戏平台、软件限免站、GitHub、Reddit、Bluesky 与 Telegram 的福利信息聚合到一处。它不只做简单 RSS 抓取，而是通过 **「规则初筛 → AI 语义审核 → 获取方式分级 → 屏蔽防火墙」** 把新闻、求助水帖、更新补丁、抽奖和引流广告挡在门外，让**真正现在动手就能白嫖到手**的资源第一时间展示在工作台或推送到你的 Telegram。
+**资源雷达（Resource Radar / repo: `freebie-radar`）** 是一款轻量、开箱即用的多兴趣社区信息聚合与精准推送工作台。它从各大开发者社区、游戏平台、软件限免站、GitHub、Reddit、Bluesky、Telegram 频道及自定义 RSS 采集信息，并通过 **「规则初筛与统一屏蔽 → AI 语义定级与分流 → 分频道目录呈现 → 多路由精准推送」** 把每条内容送到它该去的位置：
+
+- 只想纯粹蹲羊毛？首页默认 **「真福利精选」** 严格锁定 AI 验真的 `freebie`（直接白嫖 + 实操可领的有条件福利），绝不被付费好价、拼车、二手或新闻污染。
+- 想看 **黑五 VPS 好价 / 合规拼车 / 开源项目 / 重大新闻与科技资讯**？一键切换顶部兴趣频道即可浏览各自专属的下级分类、真实有效计数与图文卡片，并可分别配置互不干扰的 Telegram 专题推送路由。
 
 ---
 
->演示站: https://radar.zichuanlan.top
+> 在线演示：<https://radar.zichuanlan.top>
 
 ---
 
 ## 界面预览
 
-| 资源流工作台（AI 验真过滤 + 兑换码一键复制 + 跨源合并 · 默认按最新发布排序） |
-| :---: |
-| ![资源流工作台](docs/ui-public.png) |
-
-| 推送规则（推送时机、AI 兜底策略、多维筛选、静默时段与预览诊断） | AI 语义审核引擎（规则初筛、源分流、性能并发、补充规则与反馈学习） |
+| 工作台列表视图（多兴趣频道栏 + 跨源折叠 + 兑换码一键复制） | 三列图文卡片视图（零额外请求封面图提取 + 响应式 2列/3列网格） |
 | :---: | :---: |
-| ![推送规则](docs/ui-push-panel.png) | ![AI 引擎](docs/ui-ai-panel.png) |
+| ![工作台列表视图](docs/ui-public.png) | ![三列图文卡片视图](docs/ui-grid.png) |
 
+| 多路由精准推送（分形态/分类/获取方式/关键词定制即时或攒批路由） | AI 语义引擎（21 类分流、自适应学习与零 Token 存量重整分类） |
+| :---: | :---: |
+| ![多路由精准推送](docs/ui-push-panel.png) | ![AI 语义引擎](docs/ui-ai-panel.png) |
+
+| 移动端自适应（<640px 顶部折叠筛选、触控友好操作栏与全宽排版） |
+| :---: |
+| ![移动端视图](docs/ui-mobile.png) |
+
+---
 
 ## 核心特性
 
-- **63 个内置数据源（精简提纯后默认启用 33 个高信噪比源）**：覆盖 LINUX DO RSS、OpenRouter 新免费大模型、NodeSeek 福利情报（按板块与免费关键词提纯）、V2EX、其乐 Keylol、Epic Games、Steam、itch.io 100% 限免、GamerPower 游戏与礼包 Key、CheapShark、IsThereAnyDeal、FreeSteamKeys、SharewareOnSale 100% 限免、TickCoupon、Giveaway of the Day、果核剥壳、Reddit、Telegram 频道，并支持本机回环助手或油猴脚本零 Cookie 上传回传知乎、小红书、小黑盒。
-- **三层高信噪比过滤链路**：
-  1. **第一道 · 规则初筛**：可开关的入口噪音预拦截（求助、问价、版本更新补丁等）+ 自定义入口拦截词，省 Token 提速度；
-  2. **第二道 · AI 语义审核**：支持任意 OpenAI 兼容接口，同时输出 `keep`（是否真福利）、`category`（11 类）、`obtain`（获取方式）、`quality`（1–5 质量分）与一句话理由；支持纯白嫖专源免送 AI 直通、自定义补充规则（不破坏内置口径）、从收藏/关闭自动学习偏好；
-  3. **第三道 · 获取方式分级 & 屏蔽防火墙**：严格区分 `直接白嫖`、`有条件`、`抽奖`、`试用`、`推广`、`需付费`，默认「真福利精选」展现直接白嫖 + 实操可领的有条件白嫖并隔离抽奖/试用/推广/付费，配合关键词/正则屏蔽词防火墙与价格上限筛选（完全白嫖 / ≤5 / ≤10 / ≤30 / ≤100 元 / 自定义金额）。
-- **所筛即所推 · 推送精细可控**：
-  - **推送时机**：支持「推送前先过 AI（防误推）」与「极速抢码先推后审」，并支持后台补审通过后自动补推；
-  - **AI 兜底模式**：提供「严进（宁缺毋滥）」「均衡兜底」「仅用规则」三种策略；
-  - **防误推二次校验**：攒批队列发送前二次回查数据库最新状态、AI 结论与屏蔽词；修改攒批周期立即热重建定时器；
-  - **完整自定义**：独立夜间免打扰开关与处理方式（转攒批/跳过）、新帖时效闸门、数据源过滤、消息元素开关（价格/截止日/评分/获取方式/AI 理由/自定义前缀）及拦截分布试算预览。
-- **极简轻量 & 零外部数据库**：基于 `node:24-alpine` 原生直接运行 TypeScript（零运行时转译器开销），内置 `node:sqlite`（WAL 模式 + 内存上限调优），日常主服务内存 < 100MB，轻松跑在 512MB 低配 VPS。
-- **公开浏览 + 单密码管理分区**：设置 `ADMIN_TOKEN` 后，资源流与每日精选保持公开只读，订阅屏蔽、推送、AI、数据源运维与条目标记操作全部自动进入鉴权保护；未设置时全部开放，方便内网自用。
+### 1. 多兴趣频道与「形态 × 领域 × 获取方式」正交分类
+- **5 大内容形态（`kind`）**：`freebie`（白嫖福利）、`deal`（特价好价·含黑五 VPS/拼车/二手出鸡）、`opensource`（开源项目）、`info`（新闻资讯·指南）、`noise`（纯求助/灌水噪音）。
+- **21 个垂直领域（`category`）**：覆盖 `ai`（AI 额度）、`vps`（VPS/主机）、`cloud`（云服务）、`domain`（域名/建站）、`opensource`（开源软件）、`software`（软件授权）、`dev`（开发/工程）、`design`（设计/素材）、`security`（安全/网络）、`hardware`（硬件/数码）、`media`（影音会员）、`game`（游戏）、`carpool`（拼车/合租）、`trade`（二手/交易）、`headline`（时政/要闻）、`finance`（财经/商业）、`news`（综合快讯）、`goods`（实物/优惠/话费券）、`invite`（邀请码）、`edu`（教育/电子书）、`other`（其它）。
+- **分频道自适应下级分类**：
+  - 「真福利精选 / 完全白嫖」只展现福利类目（隐藏拼车/交易/新闻要闻），统计数字实时排除 `noise` 假数；
+  - 「新闻资讯」自动切换为资讯栏目视角（时政/要闻、财经/商业、AI 前沿、开发工程、开源生态、安全/漏洞、硬件数码、综合快讯）；
+  - 切换频道自动重置不兼容的形态、获取方式与价格上限，避免空屏串态。
+- **6 级获取方式（`obtain`）**：严格区分 `free`（直接白嫖）、`conditional`（有条件）、`lottery`（抽奖）、`trial`（试用/Demo）、`promo`（推广/引流）、`paid`（需付费）。
+
+### 2. 三层高信噪比治理（统一屏蔽 · AI 定级 · 零 Token 重整）
+- **统一屏蔽词防火墙（省额度 + 隐网页 + 拦推送）**：在「订阅与屏蔽」配置关键词、正则或分源规则，不仅隐藏网页条目、拦截推送与日报，**在采集入库送 AI 审核及历史补审前也会直接跳过**，无需在两处重复配置。
+- **AI 语义审核引擎**：支持任意 OpenAI 兼容接口，单次输出 `keep`、`kind`、`category`、`obtain`、`quality`（1–5 星）与中文理由；支持白嫖专源免审直通、追加补充规则、从收藏/关闭自动学习个人偏好。
+- **零 Token 存量分类重整**：内置「重整分类 (0 Token)」入口与 CLI，更新关键词规则后可一键将历史 `other` 条目零成本归位到细分类目。
+
+### 3. 三种响应式视图与零请求封面图提取
+- **单行紧凑 / 2列卡片 / 3列卡片** 一键切换并记住偏好。
+- 10 路采集器（Epic / Steam / GamerPower / CheapShark / GOG / RSS `<media:content>` & `<img>` / Telegram / LINUX DO / V2EX / 本地回环）零额外请求提取封面图，纯文本条目自动收起封面区避免网格空洞。
+
+### 4. 多路由精准 Telegram 推送
+- **全局策略 + 多专题路由**：支持一键新增或可视化编辑独立路由（例如：「🎁 真福利直推」「🖥 黑五/VPS 即时提醒」「📦 开源项目攒批汇总」「📰 新闻资讯早报」），每条路由可单独设定形态、分类、获取方式、关键词、最高价、最低分、即时/攒批模式与自定义前缀头。
+- **推送时机与兜底**：支持「推送前先过 AI（防误推）」与「极速抢码先推后审（后台补审后自动补推）」；提供 `strict` / `rule_fallback` / `ignore_ai` 三种 AI 兜底模式。
+- **防误推二次校验与诊断预览**：攒批发送前二次回查 DB 状态与最新屏蔽词；支持查看拦截原因分布与路由命中预览；内置夜间静默时段与多语言/时效闸门。
+
+### 5. 极简部署与单密码鉴权分区
+- **零外部数据库**：基于 `node:24-alpine` 原生运行 TypeScript，内置 `node:sqlite`（WAL 模式 + 内存上限调优，自动增量迁移至 Schema v17），日常运行内存 < 100MB。
+- **63 个内置数据源（默认精选启用 33 个）**：覆盖 LINUX DO、NodeSeek（含福利/资讯/拼车交易板块）、V2EX、OpenRouter `:free` 模型、GitHub、Epic、Steam、GamerPower、CheapShark、ITAD、SharewareOnSale、TickCoupon、Reddit、Bluesky、Telegram 频道，并支持自定义 RSS 与本地回环/油猴脚本抓取知乎/小红书/小黑盒。
+- **公开/管理隔离**：配置 `ADMIN_TOKEN` 后，资源流与每日精选保持公开浏览，管理配置与写入接口全部自动鉴权保护。
+
+---
 
 ## 工作流架构
 
 ```mermaid
 flowchart LR
-  S["63 个精简提纯源（RSS / API / Telegram / 回环 / 油猴）"] --> E["规则初筛与特征抽取（价格 / 兑换码 / 跨源双语合并指纹）"]
-  E --> F{"规则初筛开关（硬噪音 / 自定义拦截词）"}
-  F -->|命中噪音| D["直接降权跳过"]
-  F -->|通过| M{"送审源策略"}
-  M -->|白嫖专源免审| A1["自动标为真福利"]
-  M -->|送入 AI 审核| T{"推送时机"}
-  T -->|先审后推| Q1["前 N 条同步过 AI → 即时/攒批"]
-  Q1 -->|超出上限| Q2["后台队列 → 通过后自动补推"]
-  T -->|极速抢码| P1["先按规则直推 → 后台异步补审"]
-  A1 --> P2["Telegram 推送 / Web 工作台 / 每日精选"]
-  Q2 --> P2
-  P1 --> P2
+  S["63 个内置源 + 自定义 RSS + 回环/油猴"] --> E["规则初筛与特征抽取（10 路封面图 / 兑换码 / 价格 / 双语去重指纹）"]
+  E --> F{"统一屏蔽与噪音初筛（block_rules + NOISE_TITLE）"}
+  F -->|命中屏蔽/硬噪音| D["跳过 AI 省额度并隔离"]
+  F -->|通过| M{"AI 审核分流"}
+  M -->|白嫖专源免审| A1["直标 freebie · 进精选"]
+  M -->|AI 语义定级| Q["输出 keep · kind · category · obtain · quality"]
+  Q -->|freebie / deal / opensource / info| P["Web 多频道工作台（紧凑 / 2列 / 3列）"]
+  Q -->|命中多路由规则| R["Telegram 多专题路由（即时直推 / 定时攒批 / 每日精选）"]
 ```
+
+---
 
 ## 快速开始（开箱即用）
 
@@ -81,7 +104,7 @@ flowchart LR
 git clone https://github.com/ZiChuanLan/freebie-radar.git
 cd freebie-radar
 
-# 可选：复制并编辑环境变量（例如设置 ADMIN_TOKEN 管理密码、Telegram 推送等）
+# 可选：复制并编辑环境变量（设置 ADMIN_TOKEN 管理密码、Telegram 推送、AI 等）
 cp .env.example .env
 
 # 启动服务（默认监听 http://127.0.0.1:8788）
@@ -95,7 +118,7 @@ docker compose up -d --build
 > docker compose --profile cf up -d --build
 > ```
 
-启动后验证健康检查与日志：
+验证健康状态与日志：
 
 ```bash
 curl http://127.0.0.1:8788/health
@@ -104,7 +127,7 @@ curl http://127.0.0.1:8788/health
 docker compose logs -f --tail 50
 ```
 
-数据库与持久化数据保存在当前目录 `./data/radar.db`，升级时只需 `git pull && docker compose up -d --build`，数据零丢失。
+数据库保存在 `./data/radar.db`，升级只需 `git pull && docker compose up -d --build`，自动完成数据库迁移，数据零丢失。
 
 ### 方式二：源码运行（Node.js ≥ 22.5 + pnpm 10）
 
@@ -115,19 +138,21 @@ cd freebie-radar
 pnpm install
 cp .env.example .env      # 按需填写 ADMIN_TOKEN / 代理 / Telegram 等
 pnpm build                # 构建前端产物到 dist/web
-pnpm start                # 自动建表 + 初始化 63 个数据源 + 启动 http://127.0.0.1:8788
+pnpm start                # 自动建表迁移 + 初始化 63 个数据源 + 启动 :8788
 ```
 
-开发模式（热更新）：
+开发模式（前后端热更新）：
 
 ```bash
 pnpm dev        # 后端 API :8788
 pnpm dev:web    # 前端 Vite :5173（自动代理 /api 到 8788）
 ```
 
+---
+
 ## 环境变量说明（`.env`）
 
-所有策略类配置（AI 端点/模型/提示词/初筛规则、推送阈值/免打扰/格式、屏蔽词、源启停与间隔、数据清理天数）均**直接在网页管理区热修改并实时生效**，`.env` 仅需关注进程级参数：
+所有策略配置（AI 模型/提示词/初筛开关、多路由推送/静默时段、屏蔽词、数据源启停与周期、数据保留天数）均**在网页管理区实时热修改**，`.env` 仅需关注进程级环境变量：
 
 | 变量名 | 默认值 | 说明 |
 |---|---|---|
@@ -140,22 +165,26 @@ pnpm dev:web    # 前端 Vite :5173（自动代理 /api 到 8788）
 | `TELEGRAM_BOT_TOKEN` | 留空 | Telegram Bot Token（`@BotFather` 获取） |
 | `TELEGRAM_CHAT_ID` | 留空 | 接收推送的个人/群组 Chat ID |
 | `TELEGRAM_PROXY` | 留空 | 仅用于 Telegram 推送的代理 |
-| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 留空 | 首次启动默认 AI 参数，之后推荐直接在网页「AI 引擎」修改 |
-| `INGEST_TOKEN` | 留空（禁止写入） | 给 `scripts/pw-collect.mjs` 回传知乎/小红书/小黑盒数据的 Bearer Token |
+| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 留空 | 首次启动默认 AI 参数，之后推荐在网页「AI 引擎」修改 |
+| `INGEST_TOKEN` | 留空（禁止写入） | 给 `scripts/pw-collect.mjs` 或油猴脚本回传数据的 Bearer Token |
 | `GITHUB_TOKEN` | 留空 | 可选，将 GitHub 采集限额从 60/h 提升到 5000/h |
-| `ENABLE_SCHEDULER` | `true` | 是否开启内置采集、攒批、每日精选与数据清理调度 |
+| `ENABLE_SCHEDULER` | `true` | 是否开启内置采集、攒批、每日精选与清理调度 |
 | `DAILY_CRON` / `DAILY_TOP_N` | `30 8 * * *` / `12` | 每日精选生成时间与条数 |
+
+---
 
 ## 登录态站点采集（知乎 / 小红书 / 小黑盒）
 
-这三个站需要浏览器登录态与前端签名，通过 `scripts/pw-collect.mjs` 使用持久化 Chrome Profile 运行，既可以在本地电脑跑，也可以在带图形桌面的远程服务器跑：
+这三个站点依赖浏览器登录态与前端签名，通过 `scripts/pw-collect.mjs` 使用持久化 Chrome Profile 运行，支持本机或带图形桌面的远程服务器：
 
-- **本机回环登录服务（推荐）**：运行 `node scripts/pw-collect.mjs serve`（平时无常驻浏览器，仅占 ~25MB），在雷达「数据源运维」页直接点「扫码登录」跳回环窗扫码，登完自动抓取公开帖并跳回雷达页、立刻关闭浏览器释放全部内存。也支持直接复制页面提供的 **Tampermonkey 油猴脚本**，无需装 Node/Playwright。
-- **服务器脚本运行**：
+- **本机回环登录服务（推荐）**：运行 `node scripts/pw-collect.mjs serve`，在网页「数据源运维」点「扫码登录」打开登录窗口扫码，登完自动抓取公开帖并回传雷达。也支持直接复制页面提供的 **Tampermonkey 油猴脚本**，无需本地安装 Node/Playwright。
+- **服务器定时脚本**：
   ```bash
   PROFILE_DIR=/data/profile SERVER_URL=http://127.0.0.1:8788 HEADLESS=1 INGEST_TOKEN=your_token node scripts/pw-collect.mjs
   ```
-- **隐私安全边界**：服务端不存储任何 Cookie、账号密码或登录凭据，登录态始终留在你本地的 `PROFILE_DIR` 目录中，回传仅包含公开帖子的标题、链接与摘要。
+- **隐私边界**：服务端不保存任何 Cookie 或账号凭据，登录态仅留存在本地 `PROFILE_DIR`。
+
+---
 
 ## 常用 CLI 工具
 
@@ -164,33 +193,44 @@ pnpm tsx src/server/cli.ts sources              # 查看全部 63 个数据源�
 pnpm tsx src/server/cli.ts collect [sourceId]   # 立即采集（不传则跑全部启用源）
 pnpm tsx src/server/cli.ts enable <id...>       # 启用指定源
 pnpm tsx src/server/cli.ts disable <id...>      # 禁用指定源
+pnpm tsx src/server/cli.ts config <id> <json>   # 更新指定源配置
 pnpm tsx src/server/cli.ts reclassify           # 重跑规则分类、评分与双语去重键
 pnpm tsx src/server/cli.ts ai-review [limit]    # 批量补审未审条目
-pnpm tsx src/server/cli.ts diagnose             # 推送筛选体检
+pnpm tsx src/server/cli.ts daily [--dry-run]    # 生成或预览每日精选
+pnpm tsx src/server/cli.ts digests              # 查看历史每日精选日期
+pnpm tsx src/server/cli.ts stats                # 查看分类统计
+pnpm tsx src/server/cli.ts diagnose             # 推送筛选与命中体检
+pnpm tsx src/server/cli.ts obtain               # 按获取方式重算统计
 ```
+
+---
 
 ## 目录结构与延伸文档
 
 ```text
 src/
 ├── server/
-│   ├── collectors/    # 各数据源采集器与调度（SEEDS / dispatchFresh）
-│   ├── enrich/        # 归一化、双语聚类去重、价格/码抽取、规则初筛、AI 审核与异步队列
-│   ├── push.ts        # Telegram 即时推送、攒批二次校验、静默时段、预览诊断
+│   ├── collectors/    # 采集器与调度（SEEDS / dispatchFresh / 封面图提取）
+│   ├── enrich/        # 归一化、双语去重、21 类规则、形态分流(kind)、获取方式(obtain)、AI 队列与屏蔽词
+│   ├── push.ts        # 多路由分流、Telegram 即时/攒批二次校验、静默时段、预览诊断
 │   ├── digest.ts      # 每日精选生成与格式化
 │   ├── retention.ts   # 数据保留策略与自动清理
+│   ├── ai-admin.ts    # AI 管理、历史补审与零 Token 存量重分类
 │   └── routes.ts      # Hono REST API 与单密码鉴权分区
-└── web/               # React 19 + Vite + Tailwind v4 前端工作台
+└── web/               # React 19 + Vite + Tailwind v4 工作台（紧凑 / 2列 / 3列视图 + 多路由编辑器）
 ```
 
-更多细节文档见 `docs/`：
+延伸文档见 `docs/`：
 - [`docs/data-sources.md`](docs/data-sources.md) — 数据源清单与可达性说明
 - [`docs/obtain.md`](docs/obtain.md) — 获取方式（`free` / `conditional` / `lottery` / `trial` / `promo` / `paid`）分级体系
 - [`docs/ai.md`](docs/ai.md) — AI 语义审核口径与误判治理
 - [`docs/push.md`](docs/push.md) — 推送分级分流、去重与静默时段
+- [`CHANGELOG.md`](CHANGELOG.md) — 版本变更记录
+
+---
 
 ## 免责与许可
 
 - 本项目仅对公开网页与接口信息进行聚合、筛选与去重，不存储或传播受版权保护的内容，不提供账号共享；请遵守各目标站点的服务条款并控制合理抓取频率。
 - 基于 [MIT License](LICENSE) 开源。如果这个项目帮到了你，欢迎点个 ⭐ Star 支持！
-- 致谢 [LinuxDo](https://linux.do) 以及所有报告问题、补充适配和参与改进的使用者。
+- 致谢 [LinuxDo](https://linux.do) 以及所有反馈问题、补充源适配与参与改进的开发者。
