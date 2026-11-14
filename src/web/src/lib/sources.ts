@@ -126,6 +126,10 @@ export function groupOfSource(s: Source): SourceGroupKey {
   if (
     id.startsWith("cctv-") ||
     id.startsWith("rss-chinanews-") ||
+    id.startsWith("rss-gnews-") ||
+    id === "rss-bbc-zh" ||
+    id === "rss-dw-cn" ||
+    id === "rss-rfi-cn" ||
     id === "rss-wallstreetcn" ||
     id === "rss-ithome" ||
     id === "rss-sspai" ||

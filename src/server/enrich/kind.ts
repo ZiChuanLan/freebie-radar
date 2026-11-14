@@ -35,11 +35,21 @@ const DEAL_SOURCES = new Set([
   "rss-smzdm",
 ]);
 
-const NEWS_SOURCES = new Set([
+export const NEWS_SOURCES = new Set([
   "cctv-news",
   "rss-chinanews-scroll",
+  "rss-chinanews-china",
   "rss-chinanews-world",
+  "rss-bbc-zh",
+  "rss-dw-cn",
+  "rss-rfi-cn",
+  "rss-gnews-cn",
+  "rss-gnews-world",
 ]);
+
+export function isAuthoritativeNewsSource(sourceId: string | null | undefined): boolean {
+  return Boolean(sourceId && NEWS_SOURCES.has(sourceId));
+}
 
 const INFO_SOURCES = new Set([
   "cctv-economy",
@@ -104,12 +114,34 @@ export function guessKind(input: {
 
   if (input.sourceId && NEWS_SOURCES.has(input.sourceId)) return "news";
   if (input.isFree || hasDealWord) return "freebie";
-  if (input.category === "headline" || input.category === "world") return "news";
   if (input.sourceId && INFO_SOURCES.has(input.sourceId)) return "info";
   if (input.category === "opensource") return "opensource";
-  if (input.category === "stock" || input.category === "finance" || input.category === "tech" || input.category === "news") return "info";
-  if (input.category === "edu") return "info";
+  if (
+    input.category === "headline" ||
+    input.category === "world" ||
+    input.category === "stock" ||
+    input.category === "finance" ||
+    input.category === "tech" ||
+    input.category === "news" ||
+    input.category === "edu"
+  ) {
+    // 非权威新闻源（如什么值得买/IT之家/社区）不得落入 news，统一归为 info（导购站由上方 DEAL_SOURCES 先拦）
+    return "info";
+  }
   return "freebie";
+}
+
+function coerceNonNewsKind(fallbackInput: Parameters<typeof guessKind>[0]): ContentKind {
+  if (
+    fallbackInput.sourceId &&
+    DEAL_SOURCES.has(fallbackInput.sourceId) &&
+    !fallbackInput.isFree &&
+    !DEAL_HINT.test(fallbackInput.title ?? "")
+  ) {
+    return "deal";
+  }
+  const guessed = guessKind(fallbackInput);
+  return guessed === "news" || guessed === "noise" ? "info" : guessed;
 }
 
 /** 结合 AI 输出与规则上下文归一化最终 kind。 */
@@ -123,6 +155,10 @@ export function resolveKind(
     if (aiKind === "noise" && aiKeep === true) return guessKind(fallbackInput);
     if (aiKind === "opensource" && (fallbackInput.category === "headline" || fallbackInput.category === "world" || fallbackInput.category === "stock")) {
       return guessKind(fallbackInput);
+    }
+    // 重要新闻严格限定于权威新闻源，禁止导购/购物/普通社区（如什么值得买、IT之家等）混入「重要新闻」
+    if (aiKind === "news" && !isAuthoritativeNewsSource(fallbackInput.sourceId)) {
+      return coerceNonNewsKind(fallbackInput);
     }
     return aiKind;
   }

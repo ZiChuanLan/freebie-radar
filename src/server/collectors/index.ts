@@ -122,7 +122,7 @@ export const SEEDS: SourceSeed[] = [
   { id: "rss-slickdeals", name: "Slickdeals（需过盾）", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "slickdeals", url: "https://slickdeals.net/newsearch.php?rss=1&searcharea=deals&searchin=first", limit: 30 }] } },
   { id: "rss-appinn", name: "小众软件 Appinn", kind: "rss", enabled: false, config: { feeds: [{ id: "appinn", url: "https://www.appinn.com/feed/", limit: 20 }] } },
   { id: "rss-sspai", name: "少数派", kind: "rss", enabled: false, config: { feeds: [{ id: "sspai", url: "https://sspai.com/feed", limit: 20 }] } },
-  // === 重要新闻（央视新闻 / 中新网等权威媒体，直入「重要新闻」频道，不污染白嫖视图）===
+  // === 重要新闻（央视新闻 / 中新网 / 国际权威中文媒体，直入「重要新闻」频道，严禁导购/社区源混入）===
   {
     id: "cctv-news",
     name: "央视新闻 · 重要新闻",
@@ -132,12 +132,21 @@ export const SEEDS: SourceSeed[] = [
     config: {
       channels: [
         { channel: "news", cb: "news", categoryHint: "headline", limit: 20 },
+        { channel: "china", cb: "china", categoryHint: "headline", limit: 15 },
         { channel: "world", cb: "world", categoryHint: "world", limit: 15 },
+        { channel: "society", cb: "society", categoryHint: "headline", limit: 10 },
+        { channel: "law", cb: "law", categoryHint: "headline", limit: 10 },
       ],
     },
   },
-  { id: "rss-chinanews-scroll", name: "中新网 · 滚动要闻", kind: "rss", enabled: false, intervalSec: 1800, config: { feeds: [{ id: "chinanews-scroll", url: "https://www.chinanews.com.cn/rss/scroll-news.xml", limit: 25 }] } },
-  { id: "rss-chinanews-world", name: "中新网 · 国际要闻", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "chinanews-world", url: "https://www.chinanews.com.cn/rss/world.xml", limit: 20 }] } },
+  { id: "rss-chinanews-china", name: "中新网 · 时政国内", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "chinanews-china", url: "https://www.chinanews.com.cn/rss/china.xml", limit: 20, categoryHint: "headline" }] } },
+  { id: "rss-chinanews-world", name: "中新网 · 国际要闻", kind: "rss", enabled: true, intervalSec: 3600, config: { feeds: [{ id: "chinanews-world", url: "https://www.chinanews.com.cn/rss/world.xml", limit: 20, categoryHint: "world" }] } },
+  { id: "rss-chinanews-scroll", name: "中新网 · 滚动要闻", kind: "rss", enabled: true, intervalSec: 1800, config: { feeds: [{ id: "chinanews-scroll", url: "https://www.chinanews.com.cn/rss/scroll-news.xml", limit: 25, categoryHint: "headline" }] } },
+  { id: "rss-gnews-cn", name: "Google News · 中文要闻", kind: "rss", enabled: false, intervalSec: 1800, config: { feeds: [{ id: "gnews-cn", url: "https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans", limit: 25, categoryHint: "headline" }] } },
+  { id: "rss-gnews-world", name: "Google News · 国际头条", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "gnews-world", url: "https://news.google.com/rss/headlines/section/topic/WORLD?hl=zh-CN&gl=CN&ceid=CN:zh-Hans", limit: 20, categoryHint: "world" }] } },
+  { id: "rss-bbc-zh", name: "BBC 中文 · 国际要闻", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "bbc-zh", url: "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", limit: 20, categoryHint: "world" }] } },
+  { id: "rss-dw-cn", name: "德国之声 · 中文要闻", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "dw-cn", url: "https://rss.dw.com/xml/rss-chi-all", limit: 20, categoryHint: "world" }] } },
+  { id: "rss-rfi-cn", name: "法广中文 · 国际时政", kind: "rss", enabled: false, intervalSec: 3600, config: { feeds: [{ id: "rfi-cn", url: "https://www.rfi.fr/cn/rss", limit: 20, categoryHint: "world" }] } },
 
   // === 行业资讯（经济 / 股票 / 科技 / AI / 数码，直入「行业资讯」频道）===
   {
@@ -387,6 +396,26 @@ export function ensureSources(seeds: SourceSeed[] = SEEDS): void {
       "rss-sharewareonsale",
       JSON.stringify({ feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25 }] }),
       JSON.stringify(SEEDS.find((s) => s.id === "rss-sharewareonsale")?.config ?? {}),
+    ],
+    [
+      "cctv-news",
+      JSON.stringify({
+        channels: [
+          { channel: "news", cb: "news", categoryHint: "headline", limit: 20 },
+          { channel: "world", cb: "world", categoryHint: "world", limit: 15 },
+        ],
+      }),
+      JSON.stringify(SEEDS.find((s) => s.id === "cctv-news")?.config ?? {}),
+    ],
+    [
+      "rss-chinanews-scroll",
+      JSON.stringify({ feeds: [{ id: "chinanews-scroll", url: "https://www.chinanews.com.cn/rss/scroll-news.xml", limit: 25 }] }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-chinanews-scroll")?.config ?? {}),
+    ],
+    [
+      "rss-chinanews-world",
+      JSON.stringify({ feeds: [{ id: "chinanews-world", url: "https://www.chinanews.com.cn/rss/world.xml", limit: 20 }] }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-chinanews-world")?.config ?? {}),
     ],
   ];
   for (const [id, oldCfg, nextCfg] of upgrades) {

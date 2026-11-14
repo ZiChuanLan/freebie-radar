@@ -267,13 +267,15 @@ export function buildHotReport(windowHours = 24, rawScope?: string): HotReport {
   // 「热点新闻与行业资讯」：重要新闻、经济股票、科技前沿与开源项目（同样跨源去重）
   const newsCandidates = rawCurrent.filter((r) => {
     const k = r.kind ?? "freebie";
+    if (scope === "news") return k === "news";
+    if (scope === "info") return k === "info" || k === "opensource";
     return k === "news" || k === "info" || k === "opensource";
   });
   const topNews = clusterDedupe(newsCandidates)
     .sort(
       (a, b) =>
-        (b.row.ai_quality ?? 0) - (a.row.ai_quality ?? 0) ||
         (b.row.kind === "news" ? 1 : 0) - (a.row.kind === "news" ? 1 : 0) ||
+        (b.row.ai_quality ?? 0) - (a.row.ai_quality ?? 0) ||
         b.row.score - a.row.score ||
         (b.row.published_at ?? b.row.first_seen_at).localeCompare(a.row.published_at ?? a.row.first_seen_at),
     )

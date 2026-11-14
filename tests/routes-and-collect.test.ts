@@ -844,7 +844,7 @@ test("新闻资讯扩展（时政要闻/财经商业放行）与全局屏蔽词�
   // 时政要闻与财经动态不再被 NOISE_TITLE 入口误杀，自动落位 headline / finance 且 kind = info
   const headline = enrichItem(
     { externalId: "hn1", url: "https://ex.com/hn1", title: "国务院办公厅发布人工智能产业监管新规政策", publishedAt: now },
-    "rss-ithome",
+    "cctv-news",
   )!;
   assert.equal(NOISE_TITLE.test(headline.title), false);
   assert.equal(headline.category, "headline");
@@ -932,4 +932,21 @@ test("cctvCollector 与新闻/资讯/黑五VPS分类分离", async () => {
   )!;
   assert.equal(vpsDeal.category, "vps");
   assert.equal(vpsDeal.kind, "deal");
+});
+
+
+test("重要新闻严格限定于权威新闻源，禁止什么值得买/社区源进入 kind=news", async () => {
+  const { resolveKind } = await import("../src/server/enrich/kind.ts");
+  assert.equal(
+    resolveKind("news", true, { title: "胖东来称有问题会负责，这次赔付规则是什么？", sourceId: "rss-smzdm", category: "headline", isFree: false }),
+    "deal",
+  );
+  assert.equal(
+    resolveKind("news", true, { title: "2026 商保创新药目录扩容至 28 种", sourceId: "rss-ithome", category: "headline", isFree: false }),
+    "info",
+  );
+  assert.equal(
+    resolveKind("news", true, { title: "国务院发布稳外贸若干政策措施", sourceId: "rss-chinanews-china", category: "headline", isFree: false }),
+    "news",
+  );
 });

@@ -1,6 +1,7 @@
 import { all, get, run } from "./db.ts";
 import { calibrateScoreByObtain } from "./enrich/alias.ts";
 import { enrichItem, FREEBIE_ONLY_SOURCES, isCategory, resolveKind } from "./enrich/index.ts";
+import { isAuthoritativeNewsSource } from "./enrich/kind.ts";
 import { guessObtain } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { aiQueueStats } from "./enrich/ai-queue.ts";
@@ -331,9 +332,22 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other"): {
       r.source_id,
     );
     if (!e) continue;
-    // 已人工/AI 审核过的非 other 条目不随意覆盖其 AI 分类，只修复 other 或未审条目
-    const nextCat = r.ai_keep !== null && r.category && r.category !== "other" ? r.category : e.category;
-    const nextKind = r.ai_keep === null ? e.kind : (r.kind ?? e.kind);
+    // 已人工/AI 审核过的非 other 条目不随意覆盖其 AI 分类，只修复 other / 误判成 news 的 VPS 帖子 / 非权威源的 news
+    const catWasLegacyNews = (r.category === "news" || r.category === "headline") && e.category === "vps";
+    const nextCat =
+      r.ai_keep !== null && r.category && r.category !== "other" && !catWasLegacyNews ? r.category : e.category;
+    let nextKind = r.ai_keep === null ? e.kind : (r.kind ?? e.kind);
+    if (nextKind === "news" && !isAuthoritativeNewsSource(r.source_id)) {
+      nextKind = resolveKind("news", r.ai_keep === 1 ? true : r.ai_keep === 0 ? false : null, {
+        title: r.title,
+        summary: r.summary ?? "",
+        sourceId: r.source_id,
+        category: nextCat,
+        obtain: r.obtain,
+        isFree: e.isFree,
+        price: e.price,
+      });
+    }
     const fallbackObtain = guessObtain(r.title, r.summary ?? "");
     const nextObtain = r.ai_keep === null ? fallbackObtain : (r.obtain ?? fallbackObtain);
 
