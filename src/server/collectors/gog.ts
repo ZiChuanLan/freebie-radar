@@ -9,6 +9,9 @@ type GogProduct = {
   genres?: { name?: string }[];
   tags?: { name?: string }[];
   price?: { finalMoney?: { amount?: string }; final?: string; base?: string; discount?: string };
+  coverHorizontal?: string;
+  coverVertical?: string;
+  image?: string;
 };
 
 function isoDate(d?: string): string | null {
@@ -51,6 +54,7 @@ export const gogCollector: Collector = {
       author: "GOG.com",
       publishedAt: isoDate(p.releaseDate),
       tags: ["gog", "100% off", ...(p.tags ?? []).map((t) => t.name ?? "").filter(Boolean).slice(0, 3)],
+      imageUrl: p.coverHorizontal || p.image || p.coverVertical || null,
       raw: { id: p.id, slug: p.slug, discount: p.price?.discount },
     }));
 

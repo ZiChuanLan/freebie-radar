@@ -1,7 +1,7 @@
 import { config } from "./config.ts";
 import { all, get, run } from "./db.ts";
-import { CATEGORY_LABEL, dedupeByTitle, type DedupeEntry } from "./enrich/index.ts";
-import { DEAL_HINT, NOISE_TITLE } from "./enrich/noise.ts";
+import { CATEGORY_LABEL, dedupeByTitle, KIND_LABEL, type ContentKind, type DedupeEntry } from "./enrich/index.ts";
+import { hasValueSignal, NOISE_TITLE } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
@@ -12,6 +12,7 @@ export type DigestItem = {
   title: string;
   url: string;
   category: string | null;
+  kind?: string | null;
   score: number;
   expires_at: string | null;
   published_at: string | null;
@@ -65,7 +66,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, url, url_key AS urlKey, category, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
+    "SELECT id, source_id, title, url, url_key AS urlKey, category, kind, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
@@ -83,7 +84,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
       try { aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null; } catch { aiKeep = null; }
     }
     aiKeepMap.set(r.id, aiKeep);
-    if (settings.aiFallbackMode !== "ignore_ai" && aiKeep === false) return false;
+    if (settings.aiFallbackMode !== "ignore_ai" && (aiKeep === false || r.kind === "noise")) return false;
     if (!settings.applyToDigest) return true;
     return passesPushFilters({
       sourceId: r.source_id,
@@ -93,18 +94,19 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
       price: r.price ?? null,
       isFree: r.is_free === 1,
       aiKeep,
+      kind: r.kind ?? null,
       category: r.category,
       obtain: r.obtain ?? null,
       publishedAt: r.published_at,
     }, settings);
   });
 
-  const hasDealSignal = (r: DigestItem) => aiKeepMap.get(r.id) === true || DEAL_HINT.test(r.title);
-  const strictRaw = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && hasDealSignal(r) && !NOISE_TITLE.test(r.title));
+  const hasSignal = (r: DigestItem) => aiKeepMap.get(r.id) === true || hasValueSignal(r.title, r.kind);
+  const strictRaw = fresh.filter((r) => r.score >= MIN_DIGEST_SCORE && hasSignal(r) && !NOISE_TITLE.test(r.title));
   const strict = dedupeByTitle(strictRaw, pushed.seeds);
   if (strict.length >= Math.min(6, topN)) return strict.slice(0, topN);
 
-  const relaxedRaw = fresh.filter((r) => hasDealSignal(r) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
+  const relaxedRaw = fresh.filter((r) => hasSignal(r) && !NOISE_TITLE.test(r.title) && r.score >= MIN_DIGEST_SCORE - 10);
   const relaxed = dedupeByTitle(relaxedRaw, pushed.seeds);
   return relaxed.slice(0, topN);
 }
@@ -126,8 +128,9 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
   const lines = ["🛰 白嫖雷达 · " + label + " 精选 " + items.length + " 条", ""];
   items.forEach((it, i) => {
     const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
+    const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
-    const meta = [sourceLabel(it.source_id), cat, exp].filter(Boolean).join(" · ");
+    const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
     lines.push(i + 1 + ". " + it.title.slice(0, 100));
     lines.push("   " + meta);
     lines.push("   " + it.url);

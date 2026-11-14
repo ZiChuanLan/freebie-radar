@@ -53,6 +53,9 @@ export type ItemRow = {
   summary: string | null;
   author: string | null;
   category: string | null;
+  image_url?: string | null;
+  kind?: string | null;
+  ai_quality?: number | null;
   tags: string;
   codes?: string;
   price?: number | null;
@@ -142,6 +145,16 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
     } else if (cats.length > 1) {
       where.push(`category IN (${cats.map(() => "?").join(",")})`);
       params.push(...cats);
+    }
+  }
+  if (q.kind) {
+    const kinds = q.kind.split(",").map((s) => s.trim()).filter(Boolean);
+    if (kinds.length === 1) {
+      where.push("kind = ?");
+      params.push(kinds[0]!);
+    } else if (kinds.length > 1) {
+      where.push(`kind IN (${kinds.map(() => "?").join(",")})`);
+      params.push(...kinds);
     }
   }
   if (q.lang === "zh") where.push("is_zh(title) = 1");
@@ -341,6 +354,16 @@ export function registerApi(app: Hono) {
         } else if (cats.length > 1) {
           subConds.push(`x.category IN (${cats.map(() => "?").join(",")})`);
           params.push(...cats);
+        }
+      }
+      if (q.kind) {
+        const kinds = q.kind.split(",").map((s) => s.trim()).filter(Boolean);
+        if (kinds.length === 1) {
+          subConds.push("x.kind = ?");
+          params.push(kinds[0]!);
+        } else if (kinds.length > 1) {
+          subConds.push(`x.kind IN (${kinds.map(() => "?").join(",")})`);
+          params.push(...kinds);
         }
       }
       if (q.unexpired === "1") {
@@ -706,6 +729,9 @@ export function registerApi(app: Hono) {
     const byCategory = all<{ category: string | null; n: number }>(
       "SELECT category, COUNT(*) AS n FROM items WHERE status='active' GROUP BY category ORDER BY n DESC",
     );
+    const byKind = all<{ kind: string | null; n: number }>(
+      "SELECT COALESCE(kind, 'freebie') AS kind, COUNT(*) AS n FROM items WHERE status='active' GROUP BY kind ORDER BY n DESC",
+    );
     const bySource = all<{ source_id: string; n: number }>(
       "SELECT source_id, COUNT(*) AS n FROM items WHERE status='active' GROUP BY source_id ORDER BY n DESC",
     );
@@ -730,6 +756,7 @@ export function registerApi(app: Hono) {
         cleanFree: totals?.cleanFree ?? 0,
       },
       byCategory,
+      byKind,
       bySource,
       price: get<{ free: number; under5: number; under10: number; known: number }>(
         `SELECT SUM(CASE WHEN is_free = 1 OR price = 0 THEN 1 ELSE 0 END) AS free,

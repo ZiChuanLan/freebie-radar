@@ -107,14 +107,16 @@ export function OpsPanel({
       const items = [...document.querySelectorAll("section.note-item")].map((c) => {
         const a = c.querySelector('a.cover, a[href*="/explore/"], a[href*="/search_result/"]');
         const t = c.querySelector(".title span, .footer .title, .title");
-        return a && t ? { externalId: a.href, url: a.href, title: t.textContent.trim(), summary: "" } : null;
+        const img = c.querySelector("img");
+        return a && t ? { externalId: a.href, url: a.href, title: t.textContent.trim(), summary: "", imageUrl: img?.src || "" } : null;
       }).filter((x) => x && x.title && x.url);
       push("xhs-search", items);
     } else if (h.includes("zhihu")) {
       const items = [...document.querySelectorAll(".SearchResult-Card, .List-item")].map((c) => {
         const a = c.querySelector("h2 a, .ContentItem-title a");
         const t = c.querySelector(".RichText");
-        return a ? { externalId: a.href, url: a.href, title: a.textContent.trim(), summary: (t?.textContent || "").trim().slice(0, 300) } : null;
+        const img = c.querySelector("img");
+        return a ? { externalId: a.href, url: a.href, title: a.textContent.trim(), summary: (t?.textContent || "").trim().slice(0, 300), imageUrl: img?.getAttribute("data-original") || img?.src || "" } : null;
       }).filter((x) => x && x.title && x.url);
       push("zhihu-search", items);
     }

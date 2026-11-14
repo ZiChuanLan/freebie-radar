@@ -7,6 +7,9 @@ export type Item = {
   summary: string | null;
   author: string | null;
   category: string | null;
+  kind?: string | null;
+  ai_quality?: number | null;
+  image_url?: string | null;
   tags: string[];
   codes: string[];
   content: string | null;
@@ -45,6 +48,7 @@ export type Stats = {
     aiRejected: number;
     cleanFree: number;
   };
+  byKind?: { kind: string | null; n: number }[];
   byCategory: { category: string | null; n: number }[];
   bySource: { source_id: string; n: number }[];
   price?: { free: number; under5: number; under10: number; known: number };
@@ -139,6 +143,20 @@ export type PushSettings = {
   dedupeByTitle: boolean;
   maxPrice: number | null;
   obtainModes: string[];
+  kinds: string[];
+  routes: {
+    id: string;
+    name: string;
+    enabled: boolean;
+    kinds: string[];
+    categories: string[];
+    obtainModes: string[];
+    keywords: string[];
+    maxPrice: number | null;
+    minScore: number;
+    instant: boolean;
+    header?: string;
+  }[];
   categories: string[];
   prioritizeSubscribed: boolean;
   applyToDigest: boolean;
@@ -205,6 +223,7 @@ export type AiStats = {
   rejected: number;
   pending: number;
   queue?: { queued: number; processed: number; dropped: number; running: boolean };
+  byKind?: { kind: string; n: number }[];
   byCategory: { category: string; n: number }[];
   recent: {
     id: number;
@@ -212,6 +231,7 @@ export type AiStats = {
     title: string;
     score: number;
     keep: boolean | null;
+    kind?: string;
     reason: string;
     category: string;
     obtain?: string;

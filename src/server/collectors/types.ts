@@ -13,6 +13,8 @@ export type RawItem = {
   categoryHint?: string | null;
   /** 正文全文（可选，用于抽取兑换码与留档，避免原帖被删后信息丢失） */
   content?: string | null;
+  /** 封面/缩略图 URL（可选，仅限合法 http(s) 地址） */
+  imageUrl?: string | null;
   raw?: unknown;
 };
 

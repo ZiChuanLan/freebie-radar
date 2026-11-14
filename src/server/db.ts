@@ -207,6 +207,29 @@ const MIGRATIONS: string[] = [
   UPDATE sources SET interval_sec = 2700
    WHERE id LIKE 'rss-reddit-%' AND interval_sec < 2700;
   `,
+
+  /* v15：引入内容形态 kind 与 AI 质量分 ai_quality，解耦「低噪有效」与「必须免费白嫖」 */
+  `
+  ALTER TABLE items ADD COLUMN kind TEXT;
+  ALTER TABLE items ADD COLUMN ai_quality INTEGER;
+  CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);
+  UPDATE items
+     SET kind = CASE
+       WHEN ai_keep = 0 THEN 'noise'
+       WHEN category = 'opensource' THEN 'opensource'
+       WHEN obtain = 'paid' THEN 'deal'
+       ELSE 'freebie'
+     END
+   WHERE kind IS NULL;
+  UPDATE items
+     SET ai_quality = json_extract(ai, '$.quality')
+   WHERE ai IS NOT NULL AND ai_quality IS NULL;
+  `,
+
+  /* v16：保存封面图 URL，支撑 2/3 列图文卡片布局 */
+  `
+  ALTER TABLE items ADD COLUMN image_url TEXT;
+  `,
 ];
 
 export function dbPath(): string {

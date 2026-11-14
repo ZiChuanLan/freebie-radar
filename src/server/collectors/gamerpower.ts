@@ -14,6 +14,8 @@ type Giveaway = {
   type?: string;
   status?: string;
   users?: number;
+  thumbnail?: string;
+  image?: string;
 };
 
 /** GamerPower 聚合 Epic / Steam / GOG / Prime / itch.io / IndieGala 等平台的限时免费。 */
@@ -43,6 +45,7 @@ export const gamerpowerCollector: Collector = {
         expiresAt: g.end_date && g.end_date !== "N/A" ? g.end_date : null,
         tags: [g.platforms ?? "", g.type ?? ""].flatMap((x) => x.split(",")).map((x) => x.trim()).filter(Boolean),
         raw: { worth: g.worth, users: g.users, platforms: g.platforms, type: g.type },
+        imageUrl: g.image || g.thumbnail || null,
       }));
 
     ctx.log("parsed " + items.length + " active giveaways");

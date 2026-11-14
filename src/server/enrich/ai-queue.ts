@@ -1,5 +1,5 @@
 import { getAiSettings, reviewItems, type AiVerdict } from "./ai-settings.ts";
-import { isCategory } from "./index.ts";
+import { FREEBIE_ONLY_SOURCES, isCategory, resolveKind, type ContentKind } from "./index.ts";
 import { calibrateScoreByObtain } from "./alias.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { get, run } from "../db.ts";
@@ -56,6 +56,7 @@ export function aiQueueStats(): { queued: number; processed: number; dropped: nu
 
 export type AppliedVerdict = {
   aiKeep: boolean;
+  kind: ContentKind;
   category: string | null;
   obtain: string | null;
   score: number;
@@ -63,37 +64,68 @@ export type AppliedVerdict = {
 };
 
 function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict | null {
-  const keep = verdict.keep ? 1 : 0;
   const nextCategory = isCategory(verdict.category) ? verdict.category : null;
   const nextObtain = verdict.obtain && VALID_OBTAIN.has(verdict.obtain) ? verdict.obtain : null;
+  const nextQuality =
+    typeof verdict.quality === "number" && Number.isFinite(verdict.quality)
+      ? Math.min(5, Math.max(1, Math.round(verdict.quality)))
+      : null;
   try {
-    const cur = get<{ score: number; ai_keep: number | null; obtain: string | null; category: string | null }>(
-      "SELECT score, ai_keep, obtain, category FROM items WHERE id = ?",
+    const cur = get<{
+      score: number;
+      ai_keep: number | null;
+      obtain: string | null;
+      category: string | null;
+      title: string;
+      summary: string | null;
+      source_id: string;
+      is_free: number;
+      price: number | null;
+    }>(
+      "SELECT score, ai_keep, obtain, category, title, summary, source_id, is_free, price FROM items WHERE id = ?",
       itemId,
     );
+    const effectiveCategory = nextCategory ?? cur?.category ?? null;
     const effectiveObtain = nextObtain ?? cur?.obtain ?? null;
+    const effectiveKind = resolveKind(verdict.kind, verdict.keep, {
+      title: cur?.title ?? "",
+      summary: cur?.summary ?? "",
+      sourceId: cur?.source_id,
+      category: effectiveCategory,
+      obtain: effectiveObtain,
+      isFree: cur?.is_free === 1,
+      price: cur?.price ?? null,
+      freebieOnlySource: Boolean(cur?.source_id && FREEBIE_ONLY_SOURCES.has(cur.source_id)),
+    });
+    const effectiveKeep = effectiveKind === "noise" ? false : verdict.keep;
+    const keep = effectiveKeep ? 1 : 0;
     const nextScore =
       cur && cur.ai_keep === null
-        ? calibrateScoreByObtain(cur.score, effectiveObtain, verdict.keep, verdict.quality)
+        ? calibrateScoreByObtain(cur.score, effectiveObtain, effectiveKeep, nextQuality, effectiveKind)
         : cur?.score ?? 0;
     run(
       `UPDATE items
           SET ai = ?,
               ai_keep = ?,
+              kind = ?,
+              ai_quality = COALESCE(?, ai_quality),
               obtain = COALESCE(?, obtain),
               category = COALESCE(?, category),
               score = ?
         WHERE id = ?`,
-      JSON.stringify(verdict),
+      JSON.stringify({ ...verdict, keep: effectiveKeep, kind: effectiveKind }),
       keep,
+      effectiveKind,
+      nextQuality,
       nextObtain,
       nextCategory,
       nextScore,
       itemId,
     );
     return {
-      aiKeep: verdict.keep,
-      category: nextCategory ?? cur?.category ?? null,
+      aiKeep: effectiveKeep,
+      kind: effectiveKind,
+      category: effectiveCategory,
       obtain: effectiveObtain,
       score: nextScore,
       reason: typeof verdict.reason === "string" && verdict.reason.trim() ? verdict.reason.trim() : null,

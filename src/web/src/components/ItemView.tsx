@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, expiresLabel, extractBlockCandidates, timeAgo } from "../lib/sources.ts";
+import { KIND_LABEL } from "../lib/sources.ts";
 import type { Item } from "../types.ts";
 
 export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string) => void }) {
@@ -83,6 +84,30 @@ const OBTAIN_TEXT: Record<string, string> = {
 };
 
 /** 获取方式徽章：非 free 的一律标出来，避免抽奖/试用/推广混进「完全白嫖」。 */
+const KIND_STYLE: Record<string, string> = {
+  deal: "bg-amber-50 text-amber-700",
+  opensource: "bg-emerald-50 text-emerald-700",
+  info: "bg-sky-50 text-sky-700",
+};
+
+function KindBadge({ kind, inline = false }: { kind: string | null | undefined; inline?: boolean }) {
+  if (!kind || kind === "freebie" || kind === "noise") return null;
+  const label = KIND_LABEL[kind];
+  if (!label) return null;
+  if (inline) {
+    return (
+      <span className={"shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium " + (KIND_STYLE[kind] ?? "bg-ink-100 text-ink-600")}>
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className={"inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium " + (KIND_STYLE[kind] ?? "bg-ink-100 text-ink-600")}>
+      {label}
+    </span>
+  );
+}
+
 function ObtainBadge({ obtain, inline = false }: { obtain: string | null | undefined; inline?: boolean }) {
   const mode = obtain ?? "free";
   if (mode === "free") return null;
@@ -178,6 +203,7 @@ export function CompactRow({
           >
             {item.title}
           </span>
+          <KindBadge kind={item.kind} inline />
           <PriceBadge item={item} inline />
           <ObtainBadge obtain={item.obtain} inline />
           {matched.length > 0 && (
@@ -292,7 +318,37 @@ export function CompactRow({
   );
 }
 
-/** 舒适卡片视图（可选切换） */
+function CoverImage({
+  src,
+  className = "",
+  children,
+}: {
+  src: string | null | undefined;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
+
+  if (!src || broken) return null;
+  return (
+    <div className={"relative overflow-hidden bg-ink-100 " + className}>
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
+        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+      />
+      {children}
+    </div>
+  );
+}
+
+/** 网格卡片视图（支持 2列 / 3列与封面图，无图条目保持紧凑纯文字卡片） */
 export function ItemCard({
   item,
   sourceName,
@@ -302,6 +358,7 @@ export function ItemCard({
   onCopyCode,
   onToggleRelated,
   expanded,
+  relatedItems,
 }: {
   item: Item;
   sourceName: (id: string) => string;
@@ -311,41 +368,103 @@ export function ItemCard({
   onCopyCode: (code: string) => void;
   onToggleRelated?: (id: number) => void;
   expanded?: boolean;
+  relatedItems?: (Item & { sourceName?: string })[];
 }) {
   const exp = expiresLabel(item.expires_at);
   const codes = Array.isArray(item.codes) ? item.codes : [];
   const matched = Array.isArray(item.matched) ? item.matched : [];
+  const aiRejected = item.ai?.keep === false;
+  const [imgBroken, setImgBroken] = useState(false);
+  useEffect(() => {
+    setImgBroken(false);
+  }, [item.image_url]);
+  const hasImage = Boolean(item.image_url && !imgBroken);
 
   return (
     <article
       onClick={() => onOpen(item)}
       className={
-        "panel group cursor-pointer p-3.5 transition-colors hover:border-ink-300 sm:p-4 " +
+        "panel group flex h-full cursor-pointer flex-col overflow-hidden transition-all hover:border-ink-300 hover:shadow-sm " +
         (item.read ? "opacity-65 hover:opacity-100" : "")
       }
     >
-      <div className="flex items-start justify-between gap-2 sm:gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-500">
-            <span className="font-medium text-ink-700">{sourceName(item.source_id)}</span>
+      {hasImage && (
+        <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-ink-100 bg-ink-100">
+          <img
+            src={item.image_url!}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setImgBroken(true)}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+          <span
+            className={
+              "absolute top-2.5 right-2.5 rounded-md px-2 py-0.5 font-mono text-[11.5px] font-semibold tabular-nums backdrop-blur-sm " +
+              (item.score >= 70 ? "bg-deal/90 text-white" : "bg-ink-950/75 text-white")
+            }
+          >
+            {Math.round(item.score)}
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col p-3.5 sm:p-4">
+        <div className="mb-1.5 flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] text-ink-500">
+            <span
+              className={
+                "h-[6px] w-[6px] shrink-0 rounded-full " +
+                (item.read ? "border border-ink-300 bg-transparent" : "bg-accent")
+              }
+              title={item.read ? "已读" : "未读"}
+            />
+            <span className="truncate font-medium text-ink-700">{sourceName(item.source_id)}</span>
             {item.category && (
               <>
                 <span aria-hidden="true">·</span>
                 <span>{CATEGORY_LABEL[item.category] ?? item.category}</span>
               </>
             )}
+            <KindBadge kind={item.kind} />
             <PriceBadge item={item} />
             <ObtainBadge obtain={item.obtain} />
-            {exp && (
-              <span className={"inline-flex items-center gap-1 " + (exp.urgent ? "font-medium text-code" : "")}>
-                <Clock3 size={11} /> {exp.text}
+          </div>
+          {!hasImage && (
+            <span
+              className={
+                "shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[12px] font-semibold tabular-nums " +
+                (item.score >= 70 ? "text-deal" : "text-ink-600")
+              }
+            >
+              {Math.round(item.score)}
+            </span>
+          )}
+        </div>
+
+        <h3
+          className={
+            "line-clamp-2 text-[14.5px] leading-snug font-semibold text-ink-950 transition-colors group-hover:text-accent " +
+            (aiRejected ? "line-through decoration-ink-300 text-ink-500" : "")
+          }
+        >
+          {item.title}
+        </h3>
+
+        {item.summary && (
+          <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-ink-600">{item.summary}</p>
+        )}
+
+        {(matched.length > 0 || codes.length > 0 || item.ai?.reason || (item.dupCount ?? 1) > 1) && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]" onClick={(e) => e.stopPropagation()}>
+            {matched.length > 0 && (
+              <span className="rounded bg-code-subtle px-1.5 py-0.5 font-medium text-code">
+                命中：{matched.join("/")}
               </span>
             )}
-            <span className="tabular-nums text-ink-400">{timeAgo(item.published_at ?? item.first_seen_at)}</span>
-          </div>
-
-          <h3 className="text-[15px] leading-snug font-semibold text-ink-950 transition-colors group-hover:text-accent">
-            {item.title}
+            {codes.slice(0, 2).map((code) => (
+              <CodeChip key={code} code={code} onCopy={onCopyCode} />
+            ))}
             {(item.dupCount ?? 1) > 1 && (
               <button
                 type="button"
@@ -355,46 +474,32 @@ export function ItemCard({
                   onToggleRelated?.(item.id);
                 }}
                 title="同一福利被多个源报道，点击看全部来源"
-                className="ml-2 rounded bg-brand-subtle px-1.5 py-0.5 align-middle text-[11px] font-medium text-accent hover:bg-ink-200/70"
+                className="rounded bg-brand-subtle px-1.5 py-0.5 font-medium text-accent hover:bg-ink-200/70"
               >
                 {expanded ? "收起" : `${item.dupCount} 个来源`}
               </button>
             )}
-          </h3>
+            {item.ai?.reason && (
+              <span className={"line-clamp-1 " + (item.ai.keep === false ? "text-ink-400" : "text-deal")}>
+                {item.ai.reason}
+              </span>
+            )}
+          </div>
+        )}
 
-          {item.summary && (
-            <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-ink-600">{item.summary}</p>
-          )}
-
-          {(matched.length > 0 || codes.length > 0 || item.ai?.reason) && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11.5px]" onClick={(e) => e.stopPropagation()}>
-              {matched.length > 0 && (
-                <span className="rounded bg-code-subtle px-2 py-0.5 font-medium text-code">
-                  命中：{matched.join(" / ")}
-                </span>
-              )}
-              {codes.map((code) => (
-                <CodeChip key={code} code={code} onCopy={onCopyCode} />
-              ))}
-              {item.ai?.reason && (
-                <span className={item.ai.keep === false ? "text-ink-400" : "text-deal"}>
-                  {item.ai.reason}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 flex-col items-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <span
-            className={
-              "font-mono text-[13px] font-semibold tabular-nums " +
-              (item.score >= 70 ? "text-deal" : "text-ink-600")
-            }
-          >
-            {Math.round(item.score)}
-          </span>
-          <div className="flex items-center gap-0.5">
+        <div
+          className="mt-auto flex items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-[11.5px] text-ink-400"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="tabular-nums">{timeAgo(item.published_at ?? item.first_seen_at)}</span>
+            {exp && (
+              <span className={"inline-flex items-center gap-1 truncate " + (exp.urgent ? "font-medium text-code" : "")}>
+                <Clock3 size={11} /> {exp.text}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
             <a
               href={item.url}
               target="_blank"
@@ -405,7 +510,7 @@ export function ItemCard({
               className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-950"
               title="打开原文"
             >
-              <ArrowUpRight size={15} />
+              <ArrowUpRight size={14} />
             </a>
             <button
               type="button"
@@ -436,6 +541,32 @@ export function ItemCard({
             </button>
           </div>
         </div>
+
+        {expanded && relatedItems && relatedItems.length > 0 && (
+          <div
+            className="mt-2.5 rounded-lg border border-ink-100 bg-surface-hover p-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 text-[11px] font-medium text-ink-500">
+              其他 {relatedItems.length} 条来源报道
+            </div>
+            <ul className="space-y-1">
+              {relatedItems.map((r) => (
+                <li key={r.id} className="flex items-center gap-2 text-[11.5px]">
+                  <span className="w-20 shrink-0 truncate text-ink-500">{r.sourceName ?? r.source_id}</span>
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-ink-700 hover:text-accent hover:underline"
+                  >
+                    {r.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </article>
   );
@@ -525,6 +656,7 @@ export function ItemDetailDrawer({
 
         {/* 内容区 */}
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
+          <CoverImage src={item.image_url} className="aspect-[16/9] w-full rounded-lg border border-ink-100" />
           <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
             {item.category && (
               <span className="rounded bg-brand-subtle px-2 py-0.5 font-medium text-accent">

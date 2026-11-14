@@ -12,6 +12,7 @@ type Deal = {
   steamRatingPercent?: string | null;
   steamAppID?: string | null;
   releaseDate?: number;
+  thumb?: string;
 };
 
 const STORE_NAME: Record<string, string> = {
@@ -66,6 +67,9 @@ export const cheapsharkCollector: Collector = {
         publishedAt: null,
         categoryHint: "game",
         tags: ["game", store.toLowerCase(), sale === 0 ? "free" : "deal"],
+        imageUrl: d.steamAppID
+          ? "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/" + d.steamAppID + "/header.jpg"
+          : d.thumb || null,
         raw: { dealID: d.dealID, salePrice: d.salePrice, normalPrice: d.normalPrice, store },
       };
     });

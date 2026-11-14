@@ -21,6 +21,16 @@ export const OBTAIN_HINT: Record<string, string> = {
 
 export const OBTAIN_ORDER = ["free", "conditional", "lottery", "trial", "promo", "paid"] as const;
 
+export const KIND_LABEL: Record<string, string> = {
+  freebie: "白嫖福利",
+  deal: "特价好价",
+  opensource: "开源项目",
+  info: "实用指南",
+  noise: "噪音水帖",
+};
+
+export const KIND_ORDER = ["freebie", "deal", "opensource", "info"] as const;
+
 export const CATEGORY_LABEL: Record<string, string> = {
   ai: "AI 额度",
   cloud: "云服务",

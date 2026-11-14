@@ -23,6 +23,8 @@ import {
   Wrench,
   X,
   Zap,
+  Code,
+  Flame,
 } from "lucide-react";
 import { CompactRow, ItemCard, ItemDetailDrawer, QuickBlockModal } from "./components/ItemView.tsx";
 import { DigestPanel } from "./components/DigestPanel.tsx";
@@ -33,6 +35,7 @@ import { RulesPanel } from "./components/RulesPanel.tsx";
 import { OpsPanel } from "./components/OpsPanel.tsx";
 import { PushPanel } from "./components/PushPanel.tsx";
 import { CATEGORY_LABEL, OBTAIN_HINT, OBTAIN_LABEL, SOURCE_GROUPS, formatInterval, groupOfSource } from "./lib/sources.ts";
+import { KIND_LABEL, KIND_ORDER } from "./lib/sources.ts";
 import type {
   BlockPreset,
   BlockRule,
@@ -127,8 +130,10 @@ function Toast({ message }: { message: string | null }) {
 type Preset = { key: string; label: string; icon: typeof Sparkles };
 
 const PRESETS: Preset[] = [
-  { key: "verified", label: "真福利精选", icon: Sparkles },
+  { key: "verified", label: "精选聚合", icon: Sparkles },
   { key: "free", label: "完全白嫖", icon: Tag },
+  { key: "deal", label: "黑五/好价", icon: Flame },
+  { key: "opensource", label: "开源项目", icon: Code },
   { key: "codes", label: "含兑换码", icon: Zap },
   { key: "urgent", label: "今日截止", icon: Bell },
   { key: "starred", label: "我的收藏", icon: Check },
@@ -201,8 +206,21 @@ export function App() {
   const [priceCap, setPriceCap] = useState("auto");
   const [minScore, setMinScore] = useState("all");
   const [obtain, setObtain] = useState("auto");
+  const [kindFilter, setKindFilter] = useState("auto");
   const [preset, setPreset] = useState("verified");
-  const [viewMode, setViewMode] = useState<"compact" | "card">("compact");
+  const [viewMode, setViewMode] = useState<"compact" | "grid2" | "grid3">(() => {
+    if (typeof localStorage === "undefined") return "compact";
+    const saved = localStorage.getItem("radar_view_mode");
+    return saved === "grid2" || saved === "grid3" || saved === "compact" ? saved : "compact";
+  });
+  const updateViewMode = useCallback((m: "compact" | "grid2" | "grid3") => {
+    setViewMode(m);
+    try {
+      localStorage.setItem("radar_view_mode", m);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [showAllSources, setShowAllSources] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -302,12 +320,19 @@ export function App() {
       p.set("unexpired", "1");
       p.set("aiOnly", "1");
       if (range === "auto") p.set("maxAgeDays", "7");
-      if (obtain === "auto") p.set("obtain", "free,conditional");
     } else if (preset === "free") {
       p.set("unexpired", "1");
+      if (kindFilter === "auto") p.set("kind", "freebie");
       if (range === "auto") p.set("maxAgeDays", "14");
       if (priceCap === "auto") p.set("freeOnly", "1");
       if (obtain === "auto") p.set("obtain", "free");
+    } else if (preset === "deal") {
+      p.set("unexpired", "1");
+      if (kindFilter === "auto") p.set("kind", "deal");
+      p.set("hideRejected", "1");
+    } else if (preset === "opensource") {
+      if (kindFilter === "auto") p.set("kind", "opensource");
+      p.set("hideRejected", "1");
     } else if (preset === "codes") {
       p.set("unexpired", "1");
       p.set("hasCodes", "1");
@@ -319,6 +344,8 @@ export function App() {
       p.set("status", "ignored");
     }
     if (preset === "all") p.set("hideRejected", "1");
+
+    if (kindFilter !== "auto" && kindFilter !== "all") p.set("kind", kindFilter);
 
     if (priceCap === "free") p.set("freeOnly", "1");
     else if (priceCap !== "auto" && priceCap !== "all") p.set("maxPrice", priceCap);
@@ -332,7 +359,7 @@ export function App() {
     if (days) p.set("since", new Date(Date.now() - days * 86_400_000).toISOString());
     p.set("limit", "100");
     return p.toString();
-  }, [debounced, source, categories, lang, sort, range, priceCap, preset, obtain, minScore, unreadOnly]);
+  }, [debounced, source, categories, lang, sort, range, priceCap, preset, kindFilter, obtain, minScore, unreadOnly]);
 
   const activeFilterCount =
     [
@@ -342,6 +369,7 @@ export function App() {
       debounced,
       minScore !== "all",
       unreadOnly,
+      kindFilter !== "auto",
       priceCap !== "auto",
       obtain !== "auto",
       range !== "auto",
@@ -356,6 +384,7 @@ export function App() {
     setDebounced("");
     setMinScore("all");
     setUnreadOnly(false);
+    setKindFilter("auto");
     setPriceCap("auto");
     setObtain("auto");
     setRange("auto");
@@ -767,7 +796,7 @@ export function App() {
           <div className="flex min-w-0 items-center gap-2 text-[13px]">
             {tab === "feed" ? (
               <div className="flex items-center gap-1">
-                {PRESETS.slice(0, 5).map((p) => (
+                {PRESETS.slice(0, 6).map((p) => (
                   <button
                     key={p.key}
                     type="button"
@@ -882,16 +911,18 @@ export function App() {
                 </button>
                 <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5">
                   {[
-                    { key: "compact" as const, icon: AlignJustify, label: "紧凑列表" },
-                    { key: "card" as const, icon: LayoutGrid, label: "卡片视图" },
+                    { key: "compact" as const, icon: AlignJustify, label: "紧凑列表", text: "" },
+                    { key: "grid2" as const, icon: LayoutGrid, label: "卡片网格", text: "" },
                   ].map((v) => (
                     <button
                       key={v.key}
                       type="button"
-                      onClick={() => setViewMode(v.key)}
+                      onClick={() => updateViewMode(v.key)}
                       className={
                         "rounded px-2 py-1.5 text-[12px] font-medium transition-colors " +
-                        (viewMode === v.key ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
+                        (viewMode === v.key || (v.key === "grid2" && viewMode === "grid3")
+                          ? "bg-ink-950 text-white"
+                          : "text-ink-500 hover:text-ink-950")
                       }
                       title={v.label}
                     >
@@ -975,6 +1006,22 @@ export function App() {
                       </div>
                     )}
                   </div>
+
+                  {/* 内容形态筛选 */}
+                  <select
+                    value={kindFilter}
+                    onChange={(e) => setKindFilter(e.target.value)}
+                    className="h-7 rounded-md border border-ink-200 bg-surface px-2 text-[12px] text-ink-700 outline-none focus:border-accent"
+                    title="内容形态"
+                  >
+                    <option value="auto">形态：{preset === "free" ? "默认白嫖" : preset === "deal" ? "默认好价" : preset === "opensource" ? "默认开源" : "全部有效"}</option>
+                    <option value="all">形态：全部（含其它）</option>
+                    {KIND_ORDER.map((k) => (
+                      <option key={k} value={k}>
+                        {KIND_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
 
                   {/* 语言筛选 */}
                   <select
@@ -1101,20 +1148,22 @@ export function App() {
                     </span>
                     <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5">
                       {[
-                        { key: "compact" as const, icon: AlignJustify, label: "紧凑列表" },
-                        { key: "card" as const, icon: LayoutGrid, label: "卡片视图" },
+                        { key: "compact" as const, icon: AlignJustify, label: "单行紧凑列表", text: "紧凑" },
+                        { key: "grid2" as const, icon: LayoutGrid, label: "双列图文卡片", text: "2列" },
+                        { key: "grid3" as const, icon: LayoutGrid, label: "三列图文卡片", text: "3列" },
                       ].map((v) => (
                         <button
                           key={v.key}
                           type="button"
-                          onClick={() => setViewMode(v.key)}
+                          onClick={() => updateViewMode(v.key)}
                           className={
-                            "rounded px-2 py-1 text-[12px] transition-colors " +
+                            "inline-flex items-center gap-1 rounded px-2 py-1 text-[11.5px] font-medium transition-colors " +
                             (viewMode === v.key ? "bg-ink-950 text-white" : "text-ink-500 hover:text-ink-950")
                           }
                           title={v.label}
                         >
-                          <v.icon size={13} />
+                          <v.icon size={12} />
+                          <span>{v.text}</span>
                         </button>
                       ))}
                     </div>
@@ -1274,42 +1323,26 @@ export function App() {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-2.5 px-3.5 py-3 sm:px-6 sm:py-4">
+                <div
+                  className={
+                    viewMode === "grid3"
+                      ? "grid grid-cols-1 gap-3.5 px-3.5 py-3 md:grid-cols-2 xl:grid-cols-3 sm:px-6 sm:py-4"
+                      : "grid grid-cols-1 gap-3.5 px-3.5 py-3 md:grid-cols-2 sm:px-6 sm:py-4"
+                  }
+                >
                   {visible.map((item) => (
-                    <Fragment key={item.id}>
-                      <ItemCard
-                        item={item}
-                        sourceName={sourceName}
-                        onPatch={patch}
-                        onOpen={setDetail}
-                        onQuickBlock={setQuickBlock}
-                        onCopyCode={copyCode}
-                        expanded={relatedOpen === item.id}
-                        onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
-                      />
-                      {relatedOpen === item.id && relatedMap[item.id] ? (
-                        <div className="panel px-4 py-3">
-                          <div className="mb-2 text-[12px] font-medium text-ink-500">
-                            同一福利的其他 {relatedMap[item.id]!.length} 条来源报道
-                          </div>
-                          <ul className="space-y-1.5">
-                            {relatedMap[item.id]!.map((r) => (
-                              <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                                <span className="w-24 shrink-0 truncate text-ink-500 sm:w-32">{r.sourceName ?? r.source_id}</span>
-                                <a
-                                  href={r.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="truncate text-ink-700 hover:text-accent hover:underline"
-                                >
-                                  {r.title}
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </Fragment>
+                    <ItemCard
+                      key={item.id}
+                      item={item}
+                      sourceName={sourceName}
+                      onPatch={patch}
+                      onOpen={setDetail}
+                      onQuickBlock={setQuickBlock}
+                      onCopyCode={copyCode}
+                      expanded={relatedOpen === item.id}
+                      relatedItems={relatedOpen === item.id ? relatedMap[item.id] : undefined}
+                      onToggleRelated={(id) => setRelatedOpen((cur) => (cur === id ? null : id))}
+                    />
                   ))}
                 </div>
               )}

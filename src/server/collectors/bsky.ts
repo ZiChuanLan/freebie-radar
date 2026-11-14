@@ -6,7 +6,10 @@ type BskyFeedItem = {
     uri?: string;
     author?: { handle?: string; displayName?: string };
     record?: { text?: string; createdAt?: string };
-    embed?: { external?: { uri?: string; title?: string; description?: string } };
+    embed?: {
+      external?: { uri?: string; title?: string; description?: string; thumb?: string };
+      images?: { thumb?: string; fullsize?: string }[];
+    };
   };
 };
 
@@ -63,6 +66,7 @@ export const bskyCollector: Collector = {
             content: txt,
             author: p.author?.displayName || handle,
             publishedAt: p.record?.createdAt ?? null,
+            imageUrl: ext?.thumb || p.embed?.images?.[0]?.thumb || p.embed?.images?.[0]?.fullsize || null,
             tags: ["bsky", handle],
             raw: { actor, uri: p.uri, bskyUrl: postUrl(handle, p.uri) },
           });

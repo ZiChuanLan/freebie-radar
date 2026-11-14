@@ -2,7 +2,8 @@ import { config, pushEnabled } from "./config.ts";
 import { all, get, run } from "./db.ts";
 import { matchesEntryNoise, shouldReview } from "./enrich/ai.ts";
 import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
-import { DEAL_HINT, NOISE_TITLE, URGENT } from "./enrich/noise.ts";
+import { hasValueSignal, URGENT } from "./enrich/noise.ts";
+import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
 import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { sendTelegram } from "./telegram.ts";
@@ -17,6 +18,27 @@ export type AiFallbackMode = "strict" | "rule_fallback" | "ignore_ai";
 export type PushSourceMode = "all" | "include" | "exclude";
 export type QuietAction = "batch" | "drop";
 
+export type PushRoute = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** 允许的内容形态：freebie / deal / opensource / info；空数组表示不限（自动排除 noise） */
+  kinds: string[];
+  /** 允许的分类；空数组表示不限 */
+  categories: string[];
+  /** 允许的获取方式；空数组表示不限 */
+  obtainModes: string[];
+  /** 主题关键词（任一命中即可）；空数组表示不限 */
+  keywords: string[];
+  /** 最高价格上限：null 不限 / 0 仅免费 */
+  maxPrice: number | null;
+  /** 最低评分要求（0-100） */
+  minScore: number;
+  /** true = 满足高分/急迫条件可即时推送；false = 仅进攒批汇总 */
+  instant: boolean;
+  /** 可选自定义消息头前缀（覆盖全局 customHeader） */
+  header?: string;
+};
 export type PushSettings = {
   /** 总开关；关掉后即时和攒批都不发，日报仍可单独触发 */
   enabled: boolean;
@@ -80,6 +102,10 @@ export type PushSettings = {
   maxPrice: number | null;
   /** 允许推送的获取方式；空数组表示不限制。默认只推 free */
   obtainModes: string[];
+  /** 允许推送的内容形态（freebie / deal / opensource / info）；空数组表示不限（排除 noise） */
+  kinds: string[];
+  /** 多频道推送路由：非空且有启用路由时，按路由各自条件分流匹配 */
+  routes: PushRoute[];
   /** 允许推送的分类白名单；空数组表示全部允许 */
   categories: string[];
   /** 命中「我的订阅」关键词时优先走即时推送 */
@@ -120,6 +146,8 @@ export const DEFAULT_SETTINGS: PushSettings = {
   dedupeByTitle: true,
   maxPrice: null,
   obtainModes: ["free"],
+  kinds: [],
+  routes: [],
   categories: [],
   prioritizeSubscribed: true,
   applyToDigest: true,
@@ -128,6 +156,7 @@ export const DEFAULT_SETTINGS: PushSettings = {
 const SETTINGS_KEY = "push";
 const VALID_CATEGORIES = new Set(["ai", "cloud", "domain", "opensource", "software", "media", "game", "goods", "invite", "edu", "other"]);
 const VALID_OBTAIN = new Set(["free", "conditional", "lottery", "trial", "promo", "paid"]);
+const VALID_KINDS = new Set(["freebie", "deal", "opensource", "info"]);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
   const n = Number(v);
@@ -152,6 +181,39 @@ function normalizeObtain(v: unknown): string[] {
   return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_OBTAIN.has(x)))];
 }
 
+function normalizeKinds(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((x): x is string => typeof x === "string" && VALID_KINDS.has(x)))];
+}
+
+function normalizeRoutes(v: unknown): PushRoute[] {
+  if (!Array.isArray(v)) return [];
+  const out: PushRoute[] = [];
+  for (let i = 0; i < Math.min(v.length, 20); i += 1) {
+    const raw = v[i] as Partial<PushRoute> | null;
+    if (!raw || typeof raw !== "object") continue;
+    const name = typeof raw.name === "string" ? raw.name.trim().slice(0, 40) : "";
+    if (!name) continue;
+    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim().slice(0, 40) : `route-${i + 1}`;
+    const keywords = Array.isArray(raw.keywords)
+      ? [...new Set(raw.keywords.filter((k): k is string => typeof k === "string").map((k) => k.trim()).filter(Boolean))].slice(0, 30)
+      : [];
+    out.push({
+      id,
+      name,
+      enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
+      kinds: normalizeKinds(raw.kinds),
+      categories: normalizeCategories(raw.categories),
+      obtainModes: normalizeObtain(raw.obtainModes),
+      keywords,
+      maxPrice: normalizeMaxPrice(raw.maxPrice),
+      minScore: numOr(raw.minScore, 55, 0, 100),
+      instant: typeof raw.instant === "boolean" ? raw.instant : true,
+      header: typeof raw.header === "string" ? raw.header.trim().slice(0, 40) : undefined,
+    });
+  }
+  return out;
+}
 function normalizeSourceIds(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean))].slice(0, 200);
@@ -202,6 +264,8 @@ function normalizeSettings(raw: Partial<PushSettings>, base: PushSettings = DEFA
     dedupeByTitle: typeof raw.dedupeByTitle === "boolean" ? raw.dedupeByTitle : base.dedupeByTitle,
     maxPrice: "maxPrice" in raw ? normalizeMaxPrice(raw.maxPrice) : base.maxPrice,
     obtainModes: "obtainModes" in raw ? normalizeObtain(raw.obtainModes) : base.obtainModes,
+    kinds: "kinds" in raw ? normalizeKinds(raw.kinds) : base.kinds,
+    routes: "routes" in raw ? normalizeRoutes(raw.routes) : base.routes,
     categories: "categories" in raw ? normalizeCategories(raw.categories) : base.categories,
     prioritizeSubscribed: typeof raw.prioritizeSubscribed === "boolean" ? raw.prioritizeSubscribed : base.prioritizeSubscribed,
     applyToDigest: typeof raw.applyToDigest === "boolean" ? raw.applyToDigest : base.applyToDigest,
@@ -266,16 +330,18 @@ export function priceAllowed(
   maxPrice: number | null,
 ): boolean {
   if (maxPrice === null) return true;
-  if (item.obtain === "paid") return false;
-  if (maxPrice === 0 && item.obtain && item.obtain !== "free" && item.obtain !== "conditional") return false;
   const free = item.isFree === true || item.price === 0;
-  if (maxPrice === 0) return free;
+  if (maxPrice === 0) {
+    if (item.obtain === "paid") return false;
+    if (item.obtain && item.obtain !== "free" && item.obtain !== "conditional") return false;
+    return free;
+  }
   if (free) return true;
   return typeof item.price === "number" && item.price <= maxPrice;
 }
 
 export function aiAllowed(
-  item: { title: string; score: number; codes: string[]; aiKeep?: boolean | null },
+  item: { title: string; score: number; codes: string[]; aiKeep?: boolean | null; kind?: string | null },
   onlyAiKeepOrSettings: boolean | PushSettings,
 ): boolean {
   const mode: AiFallbackMode =
@@ -286,12 +352,12 @@ export function aiAllowed(
       : onlyAiKeepOrSettings.aiFallbackMode;
 
   if (mode === "ignore_ai") return true;
-  if (item.aiKeep === false) return false;
+  if (item.aiKeep === false || item.kind === "noise") return false;
   if (item.aiKeep === true) return true;
   // 还没有 AI 结论（aiKeep === null | undefined）
   if (!shouldReview()) return true;
   if (mode === "strict") return false;
-  return item.codes.length > 0 || (item.score >= 70 && DEAL_HINT.test(item.title));
+  return item.codes.length > 0 || (item.score >= 70 && hasValueSignal(item.title, item.kind));
 }
 
 export function categoryAllowed(category: string | null | undefined, allow: string[]): boolean {
@@ -302,6 +368,39 @@ export function categoryAllowed(category: string | null | undefined, allow: stri
 export function obtainAllowed(obtain: string | null | undefined, allow: string[]): boolean {
   if (!allow.length) return true;
   return allow.includes(obtain ?? "free");
+}
+
+export function kindAllowed(kind: string | null | undefined, allow: string[]): boolean {
+  if (!allow.length) return kind !== "noise";
+  return allow.includes(kind ?? "freebie");
+}
+
+export function matchPushRoute(
+  item: {
+    title: string;
+    summary?: string | null;
+    score: number;
+    price?: number | null;
+    isFree?: boolean;
+    kind?: string | null;
+    category?: string | null;
+    obtain?: string | null;
+  },
+  routes: PushRoute[],
+): PushRoute | null {
+  const enabled = routes.filter((r) => r.enabled);
+  if (!enabled.length) return null;
+  const hay = (item.title + " " + (item.summary ?? "")).toLowerCase();
+  for (const r of enabled) {
+    if (!kindAllowed(item.kind, r.kinds)) continue;
+    if (!categoryAllowed(item.category, r.categories)) continue;
+    if (!obtainAllowed(item.obtain, r.obtainModes)) continue;
+    if (!priceAllowed(item, r.maxPrice)) continue;
+    if (r.keywords.length && !r.keywords.some((kw) => hay.includes(kw.toLowerCase()))) continue;
+    if (item.score < r.minScore) continue;
+    return r;
+  }
+  return null;
 }
 
 export function freshEnoughForPush(
@@ -315,17 +414,19 @@ export function freshEnoughForPush(
   return nowMs - ts <= maxAgeHours * 3_600_000;
 }
 
-export type FilterRejectReason = "stale" | "source" | "lang" | "category" | "price" | "ai" | "obtain";
+export type FilterRejectReason = "stale" | "source" | "lang" | "kind" | "category" | "price" | "ai" | "obtain" | "route";
 
 export function checkPushFilter(
   item: {
     sourceId?: string;
     title: string;
+    summary?: string | null;
     score: number;
     codes: string[];
     price?: number | null;
     isFree?: boolean;
     aiKeep?: boolean | null;
+    kind?: string | null;
     category?: string | null;
     obtain?: string | null;
     publishedAt?: string | null;
@@ -335,23 +436,32 @@ export function checkPushFilter(
   if (!freshEnoughForPush(item.publishedAt, s.maxAgeHours)) return "stale";
   if (!sourceAllowed(item.sourceId, s)) return "source";
   if (!langAllowed(item, s)) return "lang";
+  if (!aiAllowed(item, s)) return "ai";
+
+  const hasEnabledRoutes = s.routes?.some((r) => r.enabled);
+  if (hasEnabledRoutes) {
+    return matchPushRoute(item, s.routes) ? null : "route";
+  }
+
+  if (!kindAllowed(item.kind, s.kinds ?? [])) return "kind";
   if (!categoryAllowed(item.category, s.categories)) return "category";
   if (!priceAllowed(item, s.maxPrice)) return "price";
-  if (!aiAllowed(item, s)) return "ai";
   if (!obtainAllowed(item.obtain, s.obtainModes)) return "obtain";
   return null;
 }
 
-/** 推送与日报共用的筛选检查：时效 / 源 / 语言 / 分类 / 最高价格 / AI 验真 / 获取方式。 */
+/** 推送与日报共用的筛选检查：时效 / 源 / 语言 / 形态 / 分类 / 最高价格 / AI 验真 / 获取方式 / 多路由。 */
 export function passesPushFilters(
   item: {
     sourceId?: string;
     title: string;
+    summary?: string | null;
     score: number;
     codes: string[];
     price?: number | null;
     isFree?: boolean;
     aiKeep?: boolean | null;
+    kind?: string | null;
     category?: string | null;
     obtain?: string | null;
     publishedAt?: string | null;
@@ -499,29 +609,37 @@ export function isQuietNow(s = getPushSettings(), at = new Date()): boolean {
  * 候选筛选
  * ------------------------------------------------------------------ */
 
-type Decision = { push: boolean; reason: string; urgent: boolean };
+type Decision = { push: boolean; reason: string; urgent: boolean; route?: PushRoute | null };
 
-function decide(item: FreshItem, s: PushSettings, subHits: string[]): Decision {
-  if (matchesEntryNoise(item.title)) return { push: false, reason: "", urgent: false };
-  if (s.aiFallbackMode !== "ignore_ai" && item.aiKeep === false) return { push: false, reason: "", urgent: false };
+function decide(item: FreshItem, s: PushSettings, subHits: string[], route: PushRoute | null = null): Decision {
+  if (matchesEntryNoise(item.title)) return { push: false, reason: "", urgent: false, route };
+  if (s.aiFallbackMode !== "ignore_ai" && (item.aiKeep === false || item.kind === "noise")) {
+    return { push: false, reason: "", urgent: false, route };
+  }
+  const routeTag = route ? `[${route.name}] ` : "";
+  if (route && !route.instant) {
+    return { push: false, reason: "", urgent: false, route };
+  }
   if (s.prioritizeSubscribed && subHits.length > 0) {
-    return { push: true, reason: "订阅命中：" + subHits.join("/"), urgent: true };
+    return { push: true, reason: routeTag + "订阅命中：" + subHits.join("/"), urgent: true, route };
   }
-  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: "含兑换码", urgent: true };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "含兑换码", urgent: true, route };
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
-    return { push: true, reason: "限量/限时", urgent: true };
+    return { push: true, reason: routeTag + "限量/限时", urgent: true, route };
   }
-  if (item.score >= s.instantScore) return { push: true, reason: "高分 " + Math.round(item.score), urgent: false };
-  return { push: false, reason: "", urgent: false };
+  const scoreGate = route ? Math.max(s.instantScore, route.minScore) : s.instantScore;
+  if (item.score >= scoreGate) return { push: true, reason: routeTag + "高分 " + Math.round(item.score), urgent: false, route };
+  return { push: false, reason: "", urgent: false, route };
 }
 
 function canEnterBatch(item: FreshItem, s: PushSettings, d: Decision): boolean {
   if (matchesEntryNoise(item.title)) return false;
-  if (s.aiFallbackMode !== "ignore_ai" && item.aiKeep === false) return false;
-  // 已通过 AI 验真的条目不必受限于中文 DEAL_HINT 词库
-  const hasDealSignal = item.aiKeep === true || DEAL_HINT.test(item.title);
-  if (!hasDealSignal && !d.push) return false;
-  return item.score >= s.batchScore || d.push;
+  if (s.aiFallbackMode !== "ignore_ai" && (item.aiKeep === false || item.kind === "noise")) return false;
+  // 已通过 AI 验真或命中白嫖/特价/开源任一频道价值信号即可进攒批，不再被纯中文 DEAL_HINT 卡死
+  const hasSignal = item.aiKeep === true || hasValueSignal(item.title, item.kind);
+  if (!hasSignal && !d.push) return false;
+  const batchGate = d.route ? d.route.minScore : s.batchScore;
+  return item.score >= batchGate || d.push;
 }
 
 function recentPushedSeeds(includeQueue = true): DedupeEntry[] {
@@ -610,6 +728,8 @@ function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: numbe
   const lines: string[] = [];
   const prefix = seq === undefined ? "" : seq + ". ";
   const meta: string[] = [sourceLabel(sourceId)];
+  const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
+  if (kindTag) meta.push(kindTag);
   const price = s.includePrice ? fmtPrice(it) : null;
   if (price) meta.push(price);
   if (s.includeObtain && it.obtain && it.obtain !== "free") {
@@ -649,17 +769,19 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   });
   const deduper = s.dedupeByTitle ? new TitleDeduper(candidates, recentPushedSeeds(true)) : null;
 
-  const instant: { it: FreshItem; reason: string; subHits: string[] }[] = [];
+  const instant: { it: FreshItem; reason: string; subHits: string[]; route: PushRoute | null }[] = [];
   const batched: QueueItem[] = [];
   const quiet = isQuietNow(s);
+  const hasRoutes = s.routes?.some((r) => r.enabled);
 
   for (const it of candidates) {
     if (deduper?.isDuplicate(it)) continue;
     const subHits = matchSubscriptions(it, subKeywords);
-    const d = decide(it, s, subHits);
+    const route = hasRoutes ? matchPushRoute(it, s.routes) : null;
+    const d = decide(it, s, subHits, route);
 
     if (d.push && !quiet) {
-      instant.push({ it, reason: d.reason, subHits });
+      instant.push({ it, reason: d.reason, subHits, route });
       deduper?.markSeen(it);
       continue;
     }
@@ -681,10 +803,10 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   const picked = instant.slice(0, Math.min(s.maxPerInstant, budget));
   if (!picked.length) return 0;
 
-  const headPrefix = s.customHeader ? s.customHeader + " · " : "⚡ 新羊毛 · ";
   let sent = 0;
-  for (const { it, reason, subHits } of picked) {
-    const lines = [headPrefix + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
+  for (const { it, reason, subHits, route } of picked) {
+    const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ 新动态 · ";
+    const lines = [prefix + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
     const text = lines.join("\n");
     try {
       await sendTelegram(text);
@@ -716,6 +838,7 @@ export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Pr
     summary: string | null;
     url: string;
     category: string | null;
+    kind: string | null;
     score: number;
     codes: string;
     price: number | null;
@@ -725,7 +848,7 @@ export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Pr
     published_at: string | null;
     ai: string | null;
   }>(
-    `SELECT id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, published_at, ai
+    `SELECT id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai
        FROM items
       WHERE id IN (${ph}) AND status = 'active' AND pushed_at IS NULL`,
     ...itemIds,
@@ -752,6 +875,7 @@ export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Pr
       isFree: r.is_free === 1,
       aiKeep: aiMeta.aiKeep,
       aiReason: aiMeta.aiReason,
+      kind: r.kind,
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
@@ -787,6 +911,7 @@ export async function flushBatch(force = false): Promise<number> {
     summary: string | null;
     url: string;
     category: string | null;
+    kind: string | null;
     score: number;
     codes: string;
     price: number | null;
@@ -798,13 +923,14 @@ export async function flushBatch(force = false): Promise<number> {
     status: string;
     ai: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai
+    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai
        FROM items WHERE id IN (${ph})`,
     ...ids,
   );
   const rowMap = new Map(dbRows.map((r) => [r.id, r]));
   const rules = loadActiveBlockRules();
   const subKeywords = all<{ keyword: string }>("SELECT keyword FROM subscriptions").map((r) => r.keyword);
+  const hasRoutes = s.routes?.some((r) => r.enabled);
 
   const refreshed: QueueItem[] = [];
   for (const q of rawTake) {
@@ -831,13 +957,15 @@ export async function flushBatch(force = false): Promise<number> {
       isFree: r.is_free === 1,
       aiKeep: aiMeta.aiKeep,
       aiReason: aiMeta.aiReason,
+      kind: r.kind,
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
     };
     if (!passesPushFilters({ ...fresh, sourceId: r.source_id }, s)) continue;
     const subHits = matchSubscriptions(fresh, subKeywords);
-    const d = decide(fresh, s, subHits);
+    const route = hasRoutes ? matchPushRoute(fresh, s.routes) : null;
+    const d = decide(fresh, s, subHits, route);
     if (!canEnterBatch(fresh, s, d)) continue;
     refreshed.push({ id: r.id, sourceId: r.source_id, item: fresh, subHits });
   }
@@ -943,10 +1071,12 @@ export function previewPush(limit = 6): {
     stale: number;
     source: number;
     lang: number;
+    kind: number;
     category: number;
     price: number;
     ai: number;
     obtain: number;
+    route: number;
     lowScore: number;
   };
 } {
@@ -961,6 +1091,7 @@ export function previewPush(limit = 6): {
     summary: string | null;
     url: string;
     category: string | null;
+    kind: string | null;
     score: number;
     codes: string;
     price: number | null;
@@ -971,7 +1102,7 @@ export function previewPush(limit = 6): {
     published_at: string | null;
     ai: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai
+    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai
      FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
     new Date(Date.now() - lookbackHours * 3_600_000).toISOString(),
@@ -986,13 +1117,16 @@ export function previewPush(limit = 6): {
     stale: 0,
     source: 0,
     lang: 0,
+    kind: 0,
     category: 0,
     price: 0,
     ai: 0,
     obtain: 0,
+    route: 0,
     lowScore: 0,
   };
   const deduper = s.dedupeByTitle ? new TitleDeduper(rows, recentPushedSeeds(true)) : null;
+  const hasRoutes = s.routes?.some((r) => r.enabled);
 
   for (const r of rows) {
     if (isBlocked(r, rules)) {
@@ -1022,6 +1156,7 @@ export function previewPush(limit = 6): {
       isFree: r.is_free === 1,
       aiKeep: aiMeta.aiKeep,
       aiReason: aiMeta.aiReason,
+      kind: r.kind,
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
@@ -1034,10 +1169,12 @@ export function previewPush(limit = 6): {
 
     matched += 1;
     const subHits = matchSubscriptions(fresh, subKeywords);
-    const d = decide(fresh, s, subHits);
+    const route = hasRoutes ? matchPushRoute(fresh, s.routes) : null;
+    const d = decide(fresh, s, subHits, route);
     const block = itemBlock(r.source_id, fresh, s, undefined, subHits).join("\n");
     if (d.push && instant.length < limit) {
-      instant.push((s.customHeader ? s.customHeader + " · " : "⚡ ") + d.reason + "\n" + block);
+      const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ ";
+      instant.push(prefix + d.reason + "\n" + block);
       deduper?.markSeen(r);
     } else if (canEnterBatch(fresh, s, d) && batch.length < limit) {
       batch.push(block);

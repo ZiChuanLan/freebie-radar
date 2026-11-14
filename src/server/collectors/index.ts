@@ -1,6 +1,6 @@
 import { aiEnabled, config, pushEnabled } from "../config.ts";
 import { all, get, run, tx } from "../db.ts";
-import { enrichItem, FREEBIE_ONLY_SOURCES } from "../enrich/index.ts";
+import { enrichItem, FREEBIE_ONLY_SOURCES, resolveKind, type ContentKind } from "../enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
 import { getAiSettings, matchesEntryNoise, shouldPassSourceToAi, shouldReview, type AiVerdict } from "../enrich/ai.ts";
 import { enqueueForAi, reviewFreshNow, setPostReviewHandler } from "../enrich/ai-queue.ts";
@@ -56,7 +56,6 @@ export const SEEDS: SourceSeed[] = [
           url: "https://rss.nodeseek.com/",
           limit: 30,
           includeCategories: ["info", "promotion"],
-          titleKeywords: ["免费", "白嫖", "cdk", "兑换", "限免", "福利", "赠", "领", "送", "free", "0元"],
         },
       ],
     },
@@ -171,15 +170,17 @@ async function dispatchFresh(
           const verdict = {
             index: 0,
             keep: true,
+            kind: "freebie" as const,
             category: f.category ?? "other",
             obtain: (f.obtain as ObtainMode | undefined) ?? "free",
             quality: 4,
             reason: autoReason,
           };
           f.aiKeep = true;
+          f.kind = "freebie";
           f.aiReason = autoReason;
           run(
-            "UPDATE items SET ai = ?, ai_keep = 1, obtain = COALESCE(obtain, 'free') WHERE id = ? AND ai IS NULL",
+            "UPDATE items SET ai = ?, ai_keep = 1, kind = 'freebie', ai_quality = 4, obtain = COALESCE(obtain, 'free') WHERE id = ? AND ai IS NULL",
             JSON.stringify(verdict),
             f.id,
           );
@@ -205,6 +206,7 @@ async function dispatchFresh(
       const v = verdicts.get(f.id);
       if (!v) continue;
       f.aiKeep = v.aiKeep;
+      f.kind = v.kind;
       if (v.category) f.category = v.category;
       if (v.obtain) f.obtain = v.obtain;
       if (v.reason) f.aiReason = v.reason;
@@ -319,6 +321,19 @@ export function ensureSources(seeds: SourceSeed[] = SEEDS): void {
       JSON.stringify(SEEDS.find((s) => s.id === "rss-nodeseek")?.config ?? {}),
     ],
     [
+      "rss-nodeseek",
+      JSON.stringify({
+        feeds: [{
+          id: "nodeseek",
+          url: "https://rss.nodeseek.com/",
+          limit: 30,
+          includeCategories: ["info", "promotion"],
+          titleKeywords: ["免费", "白嫖", "cdk", "兑换", "限免", "福利", "赠", "领", "送", "free", "0元"],
+        }],
+      }),
+      JSON.stringify(SEEDS.find((s) => s.id === "rss-nodeseek")?.config ?? {}),
+    ],
+    [
       "rss-sharewareonsale",
       JSON.stringify({ feeds: [{ id: "sharewareonsale", url: "https://sharewareonsale.com/feed", limit: 25 }] }),
       JSON.stringify(SEEDS.find((s) => s.id === "rss-sharewareonsale")?.config ?? {}),
@@ -357,6 +372,8 @@ export type FreshItem = {
   /** AI 一句话理由，用于推送展示 */
   aiReason?: string | null;
   /** 归一化分类，用于推送分类过滤 */
+  /** 内容形态：freebie / deal / opensource / info / noise */
+  kind?: ContentKind | string | null;
   category?: string | null;
   /** 获取方式：free 才算完全白嫖，抽奖/试用/推广默认不推 */
   obtain?: string | null;
@@ -392,19 +409,49 @@ function persist(
 
       const verdict = aiMap?.get(index) ?? null;
       const effectiveObtain = obtainOf(e, verdict);
-      const score = calibrateScoreByObtain(e.score, effectiveObtain, verdict ? verdict.keep : null, verdict?.quality);
-      const aiJson = verdict ? JSON.stringify(verdict) : null;
+      const effectiveKind = verdict
+        ? resolveKind(verdict.kind, verdict.keep, {
+            title: e.title,
+            summary: e.summary ?? undefined,
+            sourceId,
+            category: verdict.category || e.category,
+            obtain: effectiveObtain,
+            isFree: e.isFree,
+            price: e.price,
+            freebieOnlySource: FREEBIE_ONLY_SOURCES.has(sourceId),
+          })
+        : e.kind;
+      const effectiveQuality =
+        typeof verdict?.quality === "number" && Number.isFinite(verdict.quality)
+          ? Math.min(5, Math.max(1, Math.round(verdict.quality)))
+          : null;
+      const score = calibrateScoreByObtain(
+        e.score,
+        effectiveObtain,
+        verdict ? verdict.keep : null,
+        effectiveQuality,
+        effectiveKind,
+      );
+      const aiJson = verdict ? JSON.stringify({ ...verdict, kind: effectiveKind }) : null;
       const status = e.keep ? "active" : "expired";
       const titleKey = resolveDbMergeKey(e.title);
 
-      const existing = get<{ id: number; title: string; ai_keep: number | null; obtain: string | null; ai: string | null }>(
-        "SELECT id, title, ai_keep, obtain, ai FROM items WHERE source_id = ? AND external_id = ?",
+      const existing = get<{
+        id: number;
+        title: string;
+        ai_keep: number | null;
+        obtain: string | null;
+        ai: string | null;
+        kind: string | null;
+        ai_quality: number | null;
+      }>(
+        "SELECT id, title, ai_keep, obtain, ai, kind, ai_quality FROM items WHERE source_id = ? AND external_id = ?",
         sourceId,
         e.externalId,
       );
       if (existing) {
-        let existingQuality: number | null = null;
-        if (existing.ai) {
+        let existingQuality: number | null = existing.ai_quality ?? null;
+        if (existingQuality === null && existing.ai) {
           try {
             const q = (JSON.parse(existing.ai) as { quality?: number }).quality;
             if (typeof q === "number") existingQuality = q;
@@ -417,10 +464,12 @@ function persist(
           /即将免费|预告/.test(existing.title) &&
           /本周免费|限时免费/.test(e.title);
         if (promotedFromUpcoming) {
-          run("UPDATE items SET ai = NULL, ai_keep = NULL WHERE id = ?", existing.id);
+          run("UPDATE items SET ai = NULL, ai_keep = NULL, ai_quality = NULL WHERE id = ?", existing.id);
           existing.ai = null;
           existing.ai_keep = null;
+          existing.kind = null;
         }
+        const nextKind = verdict ? effectiveKind : existing.ai_keep === null ? e.kind : existing.kind;
         const nextScore = verdict
           ? score
           : calibrateScoreByObtain(
@@ -428,6 +477,7 @@ function persist(
               existing.obtain,
               existing.ai_keep === null ? null : existing.ai_keep === 1,
               existingQuality,
+              nextKind,
             );
         run(
           `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
@@ -436,6 +486,9 @@ function persist(
              ai = COALESCE(?, ai),
              obtain = COALESCE(?, obtain),
              ai_keep = COALESCE(?, ai_keep),
+             kind = COALESCE(?, kind),
+             ai_quality = COALESCE(?, ai_quality),
+             image_url = COALESCE(?, image_url),
              status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END
            WHERE id = ?`,
           e.url,
@@ -456,6 +509,9 @@ function persist(
           aiJson,
           verdict?.obtain ?? null,
           verdict ? (verdict.keep ? 1 : 0) : null,
+          verdict ? effectiveKind : existing.ai_keep === null ? e.kind : null,
+          effectiveQuality,
+          e.imageUrl,
           status,
           existing.id,
         );
@@ -472,8 +528,8 @@ function persist(
       try {
         const res = run(
           `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, author, category,
-             tags, score, expires_at, published_at, raw, status, ai, obtain, ai_keep, content, codes, price, is_free, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             tags, score, expires_at, published_at, raw, status, ai, obtain, ai_keep, kind, ai_quality, image_url, content, codes, price, is_free, first_seen_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
@@ -490,8 +546,11 @@ function persist(
           JSON.stringify(e.raw ?? {}),
           status,
           aiJson,
-          obtainOf(e, verdict),
+          effectiveObtain,
           verdict ? (verdict.keep ? 1 : 0) : null,
+          effectiveKind,
+          effectiveQuality,
+          e.imageUrl,
           e.content ?? null,
           JSON.stringify(e.codes),
           e.price,
@@ -511,6 +570,7 @@ function persist(
           isFree: e.isFree,
           aiKeep: verdict ? verdict.keep : null,
           aiReason: verdict?.reason ?? null,
+          kind: effectiveKind,
           category: verdict?.category || e.category,
           obtain: effectiveObtain,
           summary: e.summary ?? null,

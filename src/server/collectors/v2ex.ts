@@ -1,4 +1,5 @@
 import { flaresolverrGet, hasFlare } from "../flaresolverr.ts";
+import { extractImageFromHtml } from "../enrich/normalize.ts";
 import type { Collector, RawItem } from "./types.ts";
 
 type V2Topic = {
@@ -47,6 +48,7 @@ export const v2exCollector: Collector = {
       summary: (t.content ?? "").slice(0, 300),
       author: t.member?.username ?? null,
       publishedAt: t.created ? new Date(t.created * 1000).toISOString() : null,
+      imageUrl: extractImageFromHtml(t.content_rendered ?? t.content, t.url),
       tags: t.node?.name ? [t.node.name] : [],
       raw: { id: t.id, replies: t.replies, node: t.node?.name },
     }));

@@ -19,6 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
+import { KIND_LABEL } from "../lib/sources.ts";
 import type { AiPayload, AiSettings, AiSourceMode, Source } from "../types.ts";
 
 type TestResult = {
@@ -29,6 +30,7 @@ type TestResult = {
     title: string;
     keep: boolean;
     category: string;
+    kind?: string;
     obtain?: string;
     quality?: number | null;
     reason: string;
@@ -338,6 +340,11 @@ export function AiPanel({
                   {r.keep ? <Check size={12} /> : <CircleX size={12} />}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-medium text-ink-800">{r.title}</span>
+                {r.kind && r.kind !== "noise" && (
+                  <span className="rounded bg-surface px-1.5 py-0.5 text-[11px] font-medium text-brand">
+                    {KIND_LABEL[r.kind] ?? r.kind}
+                  </span>
+                )}
                 <span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-ink-600">
                   {CATEGORY_LABEL[r.category] ?? r.category}
                 </span>
@@ -811,6 +818,11 @@ export function AiPanel({
                 {r.keep ? <Check size={12} /> : <CircleX size={12} />}
               </span>
               <span className="min-w-0 flex-1 truncate text-ink-800">{r.title}</span>
+              {r.kind && r.kind !== "noise" && (
+                <span className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-brand">
+                  {KIND_LABEL[r.kind] ?? r.kind}
+                </span>
+              )}
               {r.category && (
                 <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-600">
                   {CATEGORY_LABEL[r.category] ?? r.category}

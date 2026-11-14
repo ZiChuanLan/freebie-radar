@@ -1,6 +1,6 @@
 import { all, get, run } from "./db.ts";
 import { calibrateScoreByObtain } from "./enrich/alias.ts";
-import { enrichItem, isCategory } from "./enrich/index.ts";
+import { enrichItem, FREEBIE_ONLY_SOURCES, isCategory, resolveKind } from "./enrich/index.ts";
 import { guessObtain } from "./enrich/obtain.ts";
 import { aiQueueStats } from "./enrich/ai-queue.ts";
 import {
@@ -15,14 +15,25 @@ import {
   type AiSettings,
 } from "./enrich/ai-settings.ts";
 
-function updateAi(id: number, ai: string, keep: number, score: number, category: string | null, obtain: string): void {
+function updateAi(
+  id: number,
+  ai: string,
+  keep: number,
+  score: number,
+  category: string | null,
+  obtain: string,
+  kind: string,
+  quality: number | null,
+): void {
   run(
-    "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ?, obtain = ? WHERE id = ?",
+    "UPDATE items SET ai = ?, ai_keep = ?, score = ?, category = ?, obtain = ?, kind = ?, ai_quality = COALESCE(?, ai_quality) WHERE id = ?",
     ai,
     keep,
     score,
     category,
     obtain,
+    kind,
+    quality,
     id,
   );
 }
@@ -41,15 +52,21 @@ export function aiStats() {
      FROM items WHERE status = 'active' AND ai_keep = 1
      GROUP BY category ORDER BY n DESC`,
   );
+  const byKind = all<{ kind: string; n: number }>(
+    `SELECT COALESCE(kind,'freebie') AS kind, COUNT(*) AS n
+     FROM items WHERE status = 'active'
+     GROUP BY kind ORDER BY n DESC`,
+  );
   const recent = all<{
     id: number;
     source_id: string;
     title: string;
     score: number;
     obtain: string | null;
+    kind: string | null;
     ai: string;
   }>(
-    `SELECT id, source_id, title, score, obtain, ai FROM items
+    `SELECT id, source_id, title, score, obtain, kind, ai FROM items
      WHERE ai IS NOT NULL ORDER BY last_seen_at DESC LIMIT 15`,
   );
   return {
@@ -58,8 +75,9 @@ export function aiStats() {
     pending: totals?.pending ?? 0,
     queue: aiQueueStats(),
     byCategory,
+    byKind,
     recent: recent.map((r) => {
-      let v: { keep?: boolean; reason?: string; category?: string; obtain?: string; quality?: number } = {};
+      let v: { keep?: boolean; kind?: string; reason?: string; category?: string; obtain?: string; quality?: number } = {};
       try {
         v = JSON.parse(r.ai) as typeof v;
       } catch {
@@ -71,6 +89,7 @@ export function aiStats() {
         title: r.title,
         score: r.score,
         keep: v.keep ?? null,
+        kind: v.kind ?? r.kind ?? (v.keep === false ? "noise" : "freebie"),
         reason: v.reason ?? "",
         category: v.category ?? "",
         obtain: v.obtain ?? r.obtain ?? "free",
@@ -147,8 +166,6 @@ export async function backfillAi(
       if (!v) continue;
       reviewed += 1;
       if (!v.keep) rejected += 1;
-      const ai = JSON.stringify(v);
-      const keep = v.keep ? 1 : 0;
       const obtain = v.obtain ?? guessObtain(row.title, row.summary ?? "");
       // 重审时重算一次基础分再校准，避免多次叠加乘除失真
       const baseEnriched = enrichItem(
@@ -163,9 +180,26 @@ export async function backfillAi(
         row.source_id,
       );
       const baseScore = baseEnriched ? baseEnriched.score : row.score;
-      const score = calibrateScoreByObtain(baseScore, obtain, v.keep, v.quality);
       const category = isCategory(v.category) ? v.category : row.category;
-      updateAi(row.id, ai, keep, score, category, obtain);
+      const quality =
+        typeof v.quality === "number" && Number.isFinite(v.quality)
+          ? Math.min(5, Math.max(1, Math.round(v.quality)))
+          : null;
+      const kind = resolveKind(v.kind, v.keep, {
+        title: row.title,
+        summary: row.summary ?? "",
+        sourceId: row.source_id,
+        category,
+        obtain,
+        isFree: baseEnriched?.isFree ?? false,
+        price: baseEnriched?.price ?? null,
+        freebieOnlySource: FREEBIE_ONLY_SOURCES.has(row.source_id),
+      });
+      const effectiveKeep = kind === "noise" ? false : v.keep;
+      const keep = effectiveKeep ? 1 : 0;
+      const ai = JSON.stringify({ ...v, keep: effectiveKeep, kind });
+      const score = calibrateScoreByObtain(baseScore, obtain, effectiveKeep, quality, kind);
+      updateAi(row.id, ai, keep, score, category, obtain, kind, quality);
     }
   }
 

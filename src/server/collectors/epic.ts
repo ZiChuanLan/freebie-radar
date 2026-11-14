@@ -12,6 +12,7 @@ type Element = {
   offerMappings?: { pageSlug?: string }[];
   price?: { totalPrice?: { discountPrice?: number; originalPrice?: number; fmtPrice?: { originalPrice?: string } } };
   promotions?: { promotionalOffers?: Promotion[]; upcomingPromotionalOffers?: Promotion[] };
+  keyImages?: { type?: string; url?: string }[];
 };
 
 function flatten(groups: Promotion[] | undefined): Offer[] {
@@ -66,6 +67,14 @@ export const epicCollector: Collector = {
       const window0 = (isNow ? current[0] : upcoming[0]) ?? {};
       const original = e.price?.totalPrice?.fmtPrice?.originalPrice ?? "";
 
+      const imgs = e.keyImages ?? [];
+      const pickImg =
+        imgs.find((k) => k.type === "OfferImageWide")?.url ||
+        imgs.find((k) => k.type === "DieselStoreFrontWide")?.url ||
+        imgs.find((k) => k.type === "Thumbnail")?.url ||
+        imgs.find((k) => k.url)?.url ||
+        null;
+
       items.push({
         externalId: e.id,
         url: "https://store.epicgames.com/zh-CN/p/" + (slug || e.id),
@@ -74,6 +83,7 @@ export const epicCollector: Collector = {
         author: "Epic Games",
         publishedAt: window0.startDate ?? null,
         expiresAt: window0.endDate ?? null,
+        imageUrl: pickImg,
         tags: ["epic", isNow ? "当前免费" : "即将免费"],
         raw: { slug, id: e.id, isNow, start: window0.startDate, end: window0.endDate },
       });

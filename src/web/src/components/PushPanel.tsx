@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CATEGORY_LABEL, OBTAIN_LABEL } from "../lib/sources.ts";
+import { KIND_LABEL, KIND_ORDER } from "../lib/sources.ts";
 import type {
   AiFallbackMode,
   PushLogItem,
@@ -157,10 +158,12 @@ const REJECT_LABELS: { key: string; label: string }[] = [
   { key: "stale", label: "超新帖时效" },
   { key: "source", label: "数据源限制" },
   { key: "lang", label: "语言不符" },
+  { key: "kind", label: "内容形态" },
   { key: "category", label: "分类不符" },
   { key: "price", label: "超价格上限" },
   { key: "ai", label: "AI 审核拦截" },
   { key: "obtain", label: "获取方式" },
+  { key: "route", label: "未命中路由" },
   { key: "lowScore", label: "低于推送分" },
 ];
 
@@ -583,6 +586,47 @@ export function PushPanel({
               </div>
             </div>
 
+            {/* 内容形态白名单 */}
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[13px] font-medium text-ink-900">只推哪些内容形态（不勾选表示全部有效形态）</span>
+                {(s.kinds?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => save({ kinds: [] })}
+                    className="text-[12px] font-medium text-brand hover:underline"
+                  >
+                    恢复全部形态
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {KIND_ORDER.map((key) => {
+                  const checked = (s.kinds ?? []).includes(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() =>
+                        save({
+                          kinds: checked ? (s.kinds ?? []).filter((x) => x !== key) : [...(s.kinds ?? []), key],
+                        })
+                      }
+                      className={
+                        "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] transition-colors " +
+                        (checked
+                          ? "border-brand bg-brand-subtle font-medium text-brand"
+                          : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
+                      }
+                    >
+                      {checked && <Check size={12} />}
+                      {KIND_LABEL[key]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* 分类白名单 */}
             <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -635,7 +679,7 @@ export function PushPanel({
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {(["free", "conditional", "lottery", "trial", "promo"] as const).map((key) => {
+                {(["free", "conditional", "paid", "lottery", "trial", "promo"] as const).map((key) => {
                   const checked = s.obtainModes.includes(key);
                   return (
                     <button
@@ -662,6 +706,128 @@ export function PushPanel({
               <p className="mt-1.5 text-[11px] text-ink-500">
                 抽奖、试用、推广容易混入营销内容，默认只推「直接白嫖」。
               </p>
+            </div>
+
+            {/* 多频道推送路由 */}
+            <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-[13px] font-medium text-ink-900">多频道专题路由（可选）</span>
+                  <p className="mt-0.5 text-[11px] text-ink-500">
+                    启用任意路由后，将按路由条件分流匹配（可同时推「黑五 VPS」与「开源项目」，未启用路由时走全局筛选）
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      save({
+                        routes: [
+                          ...(s.routes ?? []),
+                          {
+                            id: `vps-${Date.now()}`,
+                            name: "黑五/VPS 好价",
+                            enabled: true,
+                            kinds: ["deal", "freebie"],
+                            categories: ["cloud", "domain"],
+                            obtainModes: ["free", "conditional", "paid"],
+                            keywords: ["黑五", "vps", "kvm", "年付"],
+                            maxPrice: null,
+                            minScore: 55,
+                            instant: true,
+                            header: "🖥 VPS 好价",
+                          },
+                        ],
+                      })
+                    }
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  >
+                    + 黑五/VPS 路由
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      save({
+                        routes: [
+                          ...(s.routes ?? []),
+                          {
+                            id: `os-${Date.now()}`,
+                            name: "开源项目精选",
+                            enabled: true,
+                            kinds: ["opensource"],
+                            categories: [],
+                            obtainModes: [],
+                            keywords: [],
+                            maxPrice: null,
+                            minScore: 60,
+                            instant: false,
+                            header: "📦 开源雷达",
+                          },
+                        ],
+                      })
+                    }
+                    className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
+                  >
+                    + 开源项目路由
+                  </button>
+                </div>
+              </div>
+              {(s.routes?.length ?? 0) > 0 && (
+                <div className="mt-2 space-y-2">
+                  {(s.routes ?? []).map((rt, idx) => (
+                    <div
+                      key={rt.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[12px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 font-medium text-ink-900">
+                          <span>{rt.name}</span>
+                          <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10.5px] text-ink-600">
+                            {rt.instant ? "可即时" : "仅攒批"}
+                          </span>
+                          <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[10.5px] text-ink-600">
+                            ≥{rt.minScore}分
+                          </span>
+                          {rt.keywords.length > 0 && (
+                            <span className="text-[11px] font-normal text-ink-500">
+                              关键词：{rt.keywords.join("/")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            save({
+                              routes: (s.routes ?? []).map((x, i) => (i === idx ? { ...x, enabled: !x.enabled } : x)),
+                            })
+                          }
+                          className={
+                            "rounded border px-2 py-0.5 text-[11px] font-medium " +
+                            (rt.enabled
+                              ? "border-deal-border bg-deal-subtle text-deal"
+                              : "border-ink-200 bg-ink-100 text-ink-500")
+                          }
+                        >
+                          {rt.enabled ? "已启用" : "已停用"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            save({
+                              routes: (s.routes ?? []).filter((_, i) => i !== idx),
+                            })
+                          }
+                          className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-500 hover:text-alert"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 数据源范围控制 */}

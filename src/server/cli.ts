@@ -1,5 +1,5 @@
 import { all, get, migrate, run } from "./db.ts";
-import { enrichItem, isCategory } from "./enrich/index.ts";
+import { enrichItem, FREEBIE_ONLY_SOURCES, isCategory, resolveKind } from "./enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "./enrich/alias.ts";
 import { backfillAi } from "./ai-admin.ts";
 import { runAll, runSource, ensureSources } from "./collectors/index.ts";
@@ -84,23 +84,35 @@ async function main() {
         let finalCategory = e.category;
         let finalObtain = row.obtain;
         let finalQuality: number | null = null;
+        let aiKind: string | undefined;
         if (row.ai) {
           try {
-            const parsed = JSON.parse(row.ai) as { category?: string; obtain?: string; quality?: number };
+            const parsed = JSON.parse(row.ai) as { category?: string; obtain?: string; quality?: number; kind?: string };
             if (isCategory(parsed.category)) finalCategory = parsed.category;
             if (parsed.obtain && ["free", "conditional", "lottery", "trial", "promo", "paid"].includes(parsed.obtain)) {
               finalObtain = parsed.obtain;
             }
             if (typeof parsed.quality === "number") finalQuality = parsed.quality;
+            if (typeof parsed.kind === "string") aiKind = parsed.kind;
           } catch { /* ignore */ }
         }
         if (finalCategory !== row.category) changed += 1;
         const aiKeepBool = row.ai_keep === null ? null : row.ai_keep === 1;
-        const finalScore = calibrateScoreByObtain(e.score, finalObtain, aiKeepBool, finalQuality);
+        const finalKind = resolveKind(aiKind, aiKeepBool, {
+          title: row.title,
+          summary: row.summary ?? "",
+          sourceId: row.source_id,
+          category: finalCategory,
+          obtain: finalObtain,
+          isFree: e.isFree,
+          price: e.price,
+          freebieOnlySource: FREEBIE_ONLY_SOURCES.has(row.source_id),
+        });
+        const finalScore = calibrateScoreByObtain(e.score, finalObtain, aiKeepBool, finalQuality, finalKind);
         const titleKey = resolveDbMergeKey(row.title);
         run(
-          "UPDATE items SET category = ?, obtain = ?, tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, title_key = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
-          finalCategory, finalObtain, JSON.stringify(e.tags), finalScore, e.expiresAt,
+          "UPDATE items SET category = ?, obtain = ?, kind = ?, ai_quality = COALESCE(?, ai_quality), tags = ?, score = ?, expires_at = ?, price = ?, is_free = ?, codes = ?, title_key = ?, status = CASE WHEN status = 'ignored' THEN 'ignored' ELSE ? END WHERE id = ?",
+          finalCategory, finalObtain, finalKind, finalQuality, JSON.stringify(e.tags), finalScore, e.expiresAt,
           e.price, e.isFree ? 1 : 0, JSON.stringify(e.codes), titleKey,
           e.keep ? "active" : "expired", row.id,
         );

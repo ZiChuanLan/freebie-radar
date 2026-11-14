@@ -581,3 +581,172 @@ test("rssCollector 源级分类/关键词/only100Off 提纯过滤与 openrouterC
   assert.equal(orOut.items[0]!.externalId, "vendor/new-model:free");
   assert.equal(orOut.items[0]!.categoryHint, "ai");
 });
+
+
+test("多兴趣频道重构：kind 分流、取消 paid 25分封顶、放行好价/开源初筛与多路由推送", async () => {
+  const { NOISE_TITLE, hasValueSignal } = await import("../src/server/enrich/noise.ts");
+  const { enrichItem } = await import("../src/server/enrich/index.ts");
+  const { calibrateScoreByObtain } = await import("../src/server/enrich/alias.ts");
+  const { DEFAULT_SETTINGS, priceAllowed, previewPush, savePushSettings } = await import("../src/server/push.ts");
+  const { pickDaily } = await import("../src/server/digest.ts");
+
+  // 1) 黑五降价促销、VPS 测评、开源工具盘点不再被 NOISE_TITLE 全局误杀
+  assert.equal(NOISE_TITLE.test("RackNerd 黑五 VPS 降价促销年付 $10.99"), false);
+  assert.equal(NOISE_TITLE.test("2026 自托管开源监控工具盘点与深度测评"), false);
+  assert.equal(NOISE_TITLE.test("请问黑五哪里有便宜 VPS"), true);
+  assert.equal(NOISE_TITLE.test("《某游戏》免费更新内容公告"), true);
+
+  // 2) 黑五 VPS 与开源项目能识别正确 kind 并获得合理高分（不再被 paid<=25 截断）
+  const now = new Date().toISOString();
+  const vpsDeal = enrichItem(
+    {
+      externalId: "bf-vps-1",
+      url: "https://lowendbox.com/bf-1",
+      title: "[黑五特惠] RackNerd 2核2G KVM VPS 年付 $10.99 限时促销",
+      summary: "Black Friday KVM VPS 年付特价",
+      publishedAt: now,
+    },
+    "rss-lowendbox",
+  )!;
+  assert.equal(vpsDeal.kind, "deal");
+  assert.equal(vpsDeal.category, "cloud");
+  assert.equal(hasValueSignal(vpsDeal.title, vpsDeal.kind), true);
+  assert.ok(calibrateScoreByObtain(vpsDeal.score, "paid", true, 5, "deal") >= 75);
+
+  const osItem = enrichItem(
+    {
+      externalId: "os-1",
+      url: "https://github.com/example/panel",
+      title: "开源自托管轻量 Docker 监控面板 v2.1.0 发布 (MIT 协议)",
+      summary: "GitHub 开源项目 self-hosted",
+      publishedAt: now,
+    },
+    "linuxdo-resource",
+  )!;
+  assert.equal(osItem.kind, "opensource");
+  assert.equal(osItem.category, "opensource");
+  assert.equal(hasValueSignal(osItem.title, osItem.kind), true);
+  assert.ok(calibrateScoreByObtain(osItem.score, "free", true, 5, "opensource") >= 75);
+
+  // 3) priceAllowed：maxPrice=100 允许 <=100 元的 paid 好价；maxPrice=0 拦截 paid
+  assert.equal(priceAllowed({ price: 78, isFree: false, obtain: "paid" }, 100), true);
+  assert.equal(priceAllowed({ price: 78, isFree: false, obtain: "paid" }, 0), false);
+
+  // 4) 入库后按 kind 查询、统计 byKind，并验证多路由推送 & 日报放行
+  run("DELETE FROM items");
+  run(
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, kind, score, price, is_free, obtain, ai, ai_keep, ai_quality, published_at, status, first_seen_at, last_seen_at)
+     VALUES ('rss-lowendbox', 'bf-1', 'https://lowendbox.com/bf-1', 'leb/bf1', '[黑五特惠] RackNerd KVM VPS 年付 $10.99', 'racknerd bf', 'cloud', 'deal', 82, 78, 0, 'paid', '{"keep":true,"kind":"deal","quality":5,"reason":"黑五神价VPS"}', 1, 5, ?, 'active', ?, ?),
+            ('linuxdo-resource', 'os-2', 'https://github.com/acme/radar', 'gh/radar', '开源自托管面板 v2.1 (MIT)', 'acme radar', 'opensource', 'opensource', 76, NULL, 1, 'free', '{"keep":true,"kind":"opensource","quality":4,"reason":"实用开源面板"}', 1, 4, ?, 'active', ?, ?)`,
+    now, now, now, now, now, now,
+  );
+
+  const dealRes = await app.request("/api/items?kind=deal");
+  const dealJson = (await dealRes.json()) as { total: number; items: { kind: string }[] };
+  assert.equal(dealJson.total, 1);
+  assert.equal(dealJson.items[0]!.kind, "deal");
+
+  const statsRes = await app.request("/api/stats");
+  const statsJson = (await statsRes.json()) as { byKind: { kind: string; n: number }[] };
+  assert.ok(statsJson.byKind.some((k) => k.kind === "deal" && k.n === 1));
+  assert.ok(statsJson.byKind.some((k) => k.kind === "opensource" && k.n === 1));
+
+  // 多路由推送：仅推「黑五 VPS」即时 + 「开源项目」攒批
+  savePushSettings({
+    ...DEFAULT_SETTINGS,
+    routes: [
+      {
+        id: "vps",
+        name: "黑五VPS",
+        enabled: true,
+        kinds: ["deal"],
+        categories: ["cloud"],
+        obtainModes: ["paid", "free"],
+        keywords: ["黑五", "vps"],
+        maxPrice: 100,
+        minScore: 60,
+        instant: true,
+        header: "🖥 VPS",
+      },
+      {
+        id: "os",
+        name: "开源雷达",
+        enabled: true,
+        kinds: ["opensource"],
+        categories: [],
+        obtainModes: [],
+        keywords: [],
+        maxPrice: null,
+        minScore: 60,
+        instant: false,
+      },
+    ],
+  });
+
+  const pv = previewPush(6);
+  assert.equal(pv.matched, 2);
+  assert.equal(pv.instant.length, 1);
+  assert.ok(pv.instant[0]!.includes("RackNerd"));
+  assert.equal(pv.batch.length, 1);
+  assert.ok(pv.batch[0]!.includes("开源自托管面板"));
+
+  const daily = pickDaily(new Date(), 10);
+  assert.equal(daily.length, 2);
+
+  // 恢复默认推送设置以免影响其他测试
+  savePushSettings({ ...DEFAULT_SETTINGS });
+});
+
+
+test("封面图提取与持久化：sanitizeImageUrl 过滤杂图、RSS 抽图并写入 image_url 返回给列表 API", async () => {
+  const { sanitizeImageUrl, extractImageFromHtml } = await import("../src/server/enrich/normalize.ts");
+  const { rssCollector } = await import("../src/server/collectors/rss.ts");
+
+  assert.equal(sanitizeImageUrl("https://gravatar.com/avatar/123"), null);
+  assert.equal(sanitizeImageUrl("data:image/png;base64,xxx"), null);
+  assert.equal(sanitizeImageUrl("//cdn.example.com/cover.jpg"), "https://cdn.example.com/cover.jpg");
+
+  const html = `<img src="https://example.com/pixel.gif" width="1" height="1" /><img src="https://img.example.com/hero.png" />`;
+  assert.equal(extractImageFromHtml(html, "https://example.com"), "https://img.example.com/hero.png");
+
+  const fakeXml = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Feed</title>
+    <item>
+      <title>免费领取封面游戏 A</title>
+      <link>https://example.com/game-a</link>
+      <media:thumbnail url="https://cdn.example.com/game-a.jpg" />
+    </item>
+    <item>
+      <title>开源工具 B 发布</title>
+      <link>https://example.com/tool-b</link>
+      <description><![CDATA[<p>介绍</p><img src="/assets/tool-b.png" />]]></description>
+    </item>
+  </channel></rss>`;
+
+  const out = await rssCollector.collect({
+    sourceId: "rss-test-img",
+    cursor: null,
+    maxItems: 10,
+    config: { feeds: [{ id: "img", url: "https://example.com/rss.xml" }] },
+    http: {
+      text: async () => ({ status: 200, url: "", body: fakeXml, headers: new Headers(), bytes: Buffer.alloc(0), contentType: "application/xml" }),
+      json: async () => ({ status: 200, url: "", data: {} as never, response: { status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" } }),
+      raw: async () => ({ status: 200, url: "", body: "", headers: new Headers(), bytes: Buffer.alloc(0), contentType: "" }),
+    },
+    log: () => {},
+  });
+
+  assert.equal(out.items.length, 2);
+  assert.equal(out.items[0]!.imageUrl, "https://cdn.example.com/game-a.jpg");
+  assert.equal(out.items[1]!.imageUrl, "https://example.com/assets/tool-b.png");
+
+  run("DELETE FROM items");
+  const { saveAiSettings } = await import("../src/server/enrich/ai-settings.ts");
+  saveAiSettings({ enabled: false });
+  ingestItems("rss-ithome", out.items.map((it) => ({ ...it, publishedAt: new Date().toISOString() })));
+  const res = await app.request("/api/items?limit=10");
+  const json = (await res.json()) as { items: { title: string; image_url: string | null }[] };
+  const gameA = json.items.find((i) => i.title.includes("游戏 A"));
+  const toolB = json.items.find((i) => i.title.includes("工具 B"));
+  assert.equal(gameA?.image_url, "https://cdn.example.com/game-a.jpg");
+  assert.equal(toolB?.image_url, "https://example.com/assets/tool-b.png");
+});

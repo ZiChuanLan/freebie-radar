@@ -4,15 +4,18 @@ import type { RawItem } from "../collectors/types.ts";
 import { NOISE_TITLE } from "./noise.ts";
 import { FREEBIE_ONLY_SOURCES } from "./index.ts";
 import type { ObtainMode } from "./obtain.ts";
+import { isContentKind, type ContentKind } from "./kind.ts";
 
 export type AiVerdict = {
   index: number;
   keep: boolean;
+  /** 内容形态：freebie=白嫖福利 | deal=特价好价 | opensource=开源项目 | info=实用指南 | noise=噪音 */
+  kind?: ContentKind;
   category: string;
   reason: string;
   /** 获取方式：AI 判断；缺失时由规则兜底 */
   obtain?: ObtainMode;
-  /** 1-5 分质量评估：5=高价值必抢，4=明确好福利，3=普通，2=鸡肋，1=非福利 */
+  /** 1-5 分质量评估：5=高价值必看/必抢，4=明确好内容，3=普通，2=鸡肋，1=噪音 */
   quality?: number;
 };
 
@@ -59,38 +62,35 @@ const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
 
 const DEFAULT_PROMPT = [
-  "你是福利信息审核员。判断每一条是否值得展示和推送给找羊毛/白嫖的用户，目标是「用户点进去真的能薅到或照着领到实际权益」，同时拦掉求助、买卖、纯资讯和无关水贴。",
+  "你是多主题社区与资源雷达的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 实用指南」，不要把开源项目或黑五特价误杀成噪音。",
   "",
-  "判 keep=true 的情况（满足其一即保留，并说清能拿到什么）：",
-  "- 限时免费/喜加一：Epic/Steam/itch.io 限免游戏、正版商业软件 100% 限免授权",
-  "- 兑换码/邀请码/直领福利：激活码、代金券、CDK、社区大佬发福利/送 Token/公益额度/周末撒福利/睡前福利",
-  "- 高价值云资源/AI/会员白嫖：新人或活动免费领云主机/云电脑（如天翼云 4核8G、免费服务器、免费域名/GPU/算力）、学生包、会员天数",
-  "- 可实操的白嫖攻略/亲测贴：明确分享自己刚白嫖成功且附上怎么领/怎么薅的步骤或入口（如「白嫖了台4核8G云电脑」「已撸成功附食用指南」），能帮用户直接照做拿到手，不算空泛水贴",
-  "- 新上线免费 AI 模型/API：如 OpenRouter 新增 :free 模型、平台新开放免费大模型 API/每日积分或算力活动",
+  "判 keep=true 的四类有效内容（同时标清 kind）：",
+  "1. freebie（白嫖福利）：限免游戏/正版软件授权、兑换码/CDK/公益额度/送 Token、免费云主机/域名/GPU/算力/学生包、可照做领到手的白嫖攻略、OpenRouter 新上线 :free 免费模型。",
+  "2. deal（特价好价）：明确的高性价比付费促销或史低折扣（如黑五/周年庆特价 VPS、年付小鸡优惠、Steam 史低、正版软件买断大促、高折扣订阅）。不要因为需要付钱就拦掉好价。",
+  "3. opensource（开源项目）：有明确仓库、源码或可部署应用的开源项目、自托管工具、MCP/Agent/Docker 项目发布或深度推荐。",
+  "4. info（实用指南）：高信噪比的实操教程、VPS/工具深度测评避坑、技术实战指南（非空洞水贴）。",
   "",
-  "判 keep=false 的情况（真正没有领取价值的噪音才拦截）：",
+  "判 keep=false（同时 kind='noise'）的噪音（真正无价值的才拦截）：",
   "- 求助/提问/求推荐/求拼车（如「谁有优惠券」「求推荐便宜VPS」「报错429怎么解决」）",
   "- 二手交易/收鸡出鸡/付费拼车/代购/求购/有偿转让",
-  "- 软件/游戏版本更新或补丁说明（如「某游戏免费更新新地图/DLC」，本体仍需购买）",
-  "- 纯行业新闻、财报、政策解读、硬件评测、纯情绪吐槽/吵架水贴",
-  "- 只是普通打折促销且需实付较大金额（明显不是免费或超低价薅羊毛）",
-  "- 纯泛泛科普/长期众所周知的开源项目榜单（如 GitHub awesome 清单介绍文、老生常谈的免费工具盘点）",
-  "- 明显引流卖课/卖会员的纯硬广，或必须先充值付费才算赠品的伪福利",
+  "- 软件/游戏常规版本更新或补丁说明（如「某游戏免费更新新地图」，本体仍需原价购买且非限免/史低）",
+  "- 纯宏观行业新闻、财报、政策解读、八卦吐槽/吵架水贴",
+  "- 毫无折扣亮点的普通原价推广或纯硬广卖课",
   "",
-  "分类只能是：ai | cloud | domain | opensource | software | media | game | goods | invite | edu | other",
-  "opensource 仅用于开源自托管/源码工具本身；限时免费的商业软件授权选 software；云主机/云电脑/代理流量/对象存储选 cloud。",
+  "分类 category 只能是：ai | cloud | domain | opensource | software | media | game | goods | invite | edu | other",
+  "opensource 用于开源自托管/源码工具；限免或打折的商业软件选 software；VPS/云主机/代理流量/对象存储选 cloud。",
   "",
   "同时判断「获取方式」obtain，只能是：",
-  "- free：点开即可直接领或无门槛白嫖，不需拉人头/抽签/绑卡付费",
-  "- conditional：需要注册、实名、填表报名、签到攒积分、回复/关注等条件才能拿到（如天翼云领积分换云电脑、实名领免费云机属于 conditional，不要误标成 trial）",
-  "- lottery：抽奖/拼手气/随机送，不一定中",
-  "- trial：纯商业 SaaS 短期体验几天，到期不付钱就停用",
-  "- promo：商家推广自家付费服务的引流钩子",
-  "- paid：要实付钱才拿得到",
+  "- free：点开即可直接免费拿或开源免费用，不需抽签/付费",
+  "- conditional：需注册、实名、填表、签到攒积分、回复或新用户条件才可领",
+  "- lottery：抽奖/拼手气/随机送",
+  "- trial：商业 SaaS 短期试用，到期不付钱即停用",
+  "- promo：纯商业引流钩子",
+  "- paid：需实际付费购买（如黑五特价 VPS、史低游戏、买断软件）",
   "",
-  "同时给出 1-5 的 quality 质量评分：5=高价值白嫖（3A喜加一/高配云电脑/大额Token/直接兑换码），4=明确好福利（新:free模型/每日积分/正版软件限免/实用白嫖入口），3=一般小福利或有条件/步骤领取，2=限制极多/鸡肋，1=非福利。",
-  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"category":"game","obtain":"free","quality":5,"reason":"Epic 本周免费游戏"}。',
-  "reason 用一句不超过 20 字的中文，keep=true 说清「能拿到什么」，keep=false 说清「为什么不是福利」，不要输出多余文本。",
+  "同时给出 1-5 的 quality 质量评分：5=极高价值（3A喜加一/神价黑五VPS/爆款开源/大额Token），4=明确好内容（新:free模型/高性价比年付鸡/实用开源工具/正版限免），3=一般或有条件，2=限制极多/鸡肋，1=噪音。",
+  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"kind":"deal","category":"cloud","obtain":"paid","quality":5,"reason":"黑五特价 $10.99/年 KVM VPS"}。',
+  "reason 用一句不超过 20 字的中文说清亮点或拦截原因，不要输出多余文本。",
 ].join("\n");
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -386,7 +386,7 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   ok: boolean;
   ms: number;
   model: string;
-  results: { title: string; keep: boolean; category: string; obtain: string; quality: number | null; reason: string }[];
+  results: { title: string; keep: boolean; kind: string; category: string; obtain: string; quality: number | null; reason: string }[];
   error?: string;
 }> {
   const cur = getAiSettings();
@@ -400,8 +400,9 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
 
   const samples: RawItem[] = [
     { externalId: "t1", url: "https://example.com/1", title: "【福利】送 5 个 500M 动态IP测试，先到先得", summary: "回复即可" },
-    { externalId: "t2", url: "https://example.com/2", title: "88% 受访开发者点头赞成：FreeBSD 组建工作组制定 AI 使用新规", summary: "行业新闻" },
-    { externalId: "t3", url: "https://example.com/3", title: "谁有 ovh 年付 10% 优惠券哇", summary: "求优惠券" },
+    { externalId: "t2", url: "https://example.com/2", title: "[黑五特惠] RackNerd 2核2G KVM VPS 年付 $10.99", summary: "黑五促销" },
+    { externalId: "t3", url: "https://example.com/3", title: "开源自托管轻量状态监控面板 v2.1 发布 (Docker/MIT)", summary: "GitHub 开源" },
+    { externalId: "t4", url: "https://example.com/4", title: "谁有 ovh 年付 10% 优惠券哇", summary: "求优惠券" },
   ] as RawItem[];
 
   const t0 = Date.now();
@@ -415,9 +416,12 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
       model: s.model,
       results: samples.map((it, i) => {
         const v = map.get(i);
+        const keep = v?.keep ?? false;
+        const kind = isContentKind(v?.kind) ? v.kind : keep ? "freebie" : "noise";
         return {
           title: it.title,
-          keep: v?.keep ?? false,
+          keep,
+          kind,
           category: v?.category ?? "-",
           obtain: v?.obtain ?? "-",
           quality: typeof v?.quality === "number" ? v.quality : null,

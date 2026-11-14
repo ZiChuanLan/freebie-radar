@@ -39,6 +39,9 @@ export const steamCollector: Collector = {
       summary: "Steam 限时免费（100% off）",
       author: "Steam",
       publishedAt: null,
+      imageUrl: /^\d+$/.test(r.appId)
+        ? "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/" + r.appId + "/header.jpg"
+        : null,
       tags: ["steam", "限时免费"],
       raw: { appId: r.appId },
     }));

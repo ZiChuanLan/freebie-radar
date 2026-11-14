@@ -95,3 +95,40 @@ export function guessExpiry(text: string): string | null {
   if (rel) return new Date(now + Number(rel[1]) * 86_400_000).toISOString();
   return null;
 }
+
+const NOISE_IMG_RE = /(?:spacer|pixel|blank|1x1|tracking|beacon|gravatar\.com\/avatar|emoji|twemoji|\/avatars\/|user_avatar|badge|shields\.io|data:image)/i;
+
+/** 校验并清洗封面图 URL：仅留合法 http(s) 地址，过滤追踪像素/头像/徽章等杂图。 */
+export function sanitizeImageUrl(input: unknown, base?: string): string | null {
+  if (typeof input !== "string") return null;
+  let s = decodeEntities(input).trim();
+  if (!s) return null;
+  if (s.startsWith("//")) s = "https:" + s;
+  if (NOISE_IMG_RE.test(s)) return null;
+  try {
+    const u = new URL(s, base);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const full = u.toString();
+    return full.length <= 600 ? full : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 从 HTML 片段里提取第一张有效内容图片 URL。 */
+export function extractImageFromHtml(html: string | null | undefined, base?: string): string | null {
+  if (!html) return null;
+  const re = /<img\b[^>]*\b(?:src|data-src|data-original)\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const tag = m[0] ?? "";
+    const widthM = /\bwidth\s*=\s*["']?(\d+)/i.exec(tag);
+    const heightM = /\bheight\s*=\s*["']?(\d+)/i.exec(tag);
+    if ((widthM && Number(widthM[1]) > 0 && Number(widthM[1]) < 32) || (heightM && Number(heightM[1]) > 0 && Number(heightM[1]) < 32)) {
+      continue;
+    }
+    const clean = sanitizeImageUrl(m[1], base);
+    if (clean) return clean;
+  }
+  return null;
+}

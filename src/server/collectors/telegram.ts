@@ -6,7 +6,15 @@ function stripTags(html: string): string {
   return cleanText(html.replace(/<br\s*\/?>/gi, "\n"), 400);
 }
 
-type Message = { postId: string; text: string; datetime: string | null };
+type Message = { postId: string; text: string; datetime: string | null; imageUrl: string | null };
+
+function extractTgImage(block: string): string | null {
+  const bg = /tgme_widget_message_photo_wrap[^>]*style="[^"]*background-image:url\('([^']+)'\)/i.exec(block);
+  if (bg?.[1]) return bg[1];
+  const img = /<img[^>]+src="([^"]+)"/i.exec(block);
+  if (img?.[1] && !/emoji|avatar/i.test(img[1])) return img[1];
+  return null;
+}
 
 function parseChannelPage(html: string): Message[] {
   const out: Message[] = [];
@@ -21,6 +29,7 @@ function parseChannelPage(html: string): Message[] {
       postId: idMatch[2] ?? "",
       text: stripTags(textMatch[1] ?? ""),
       datetime: timeMatch?.[1] ?? null,
+      imageUrl: extractTgImage(block),
     });
   }
   return out;
@@ -70,6 +79,7 @@ export const telegramCollector: Collector = {
             author: channel,
             publishedAt: parseDate(m.datetime),
             tags: ["telegram", channel],
+            imageUrl: m.imageUrl,
             raw: { channel, postId: m.postId },
           });
         }

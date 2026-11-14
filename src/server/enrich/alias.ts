@@ -46,15 +46,16 @@ const QUALITY_BONUS: Record<number, number> = {
   1: -20,
 };
 
-/** 结合 AI 质量分（1-5）与获取方式对基础分做统一校准。 */
+/** 结合 AI 质量分（1-5）、内容形态（kind）与获取方式对基础分做统一校准。 */
 export function calibrateScoreByObtain(
   score: number,
   obtain: string | null | undefined,
   aiKeep: boolean | null,
   quality?: number | null,
+  kind?: string | null,
 ): number {
   let out = score;
-  if (aiKeep === false) {
+  if (aiKeep === false || kind === "noise") {
     out = Math.min(Math.round(out * 0.4), 35);
     return Math.max(0, out);
   }
@@ -62,8 +63,14 @@ export function calibrateScoreByObtain(
     const q = Math.min(5, Math.max(1, Math.round(quality)));
     out += QUALITY_BONUS[q] ?? 0;
   }
-  if (obtain === "paid") out = Math.min(out, 25);
-  else if (obtain === "trial" || obtain === "promo") out = Math.round(out * 0.78);
-  else if (obtain === "conditional") out = Math.round(out * 0.9);
+  if (kind === "deal" || kind === "opensource" || kind === "info") {
+    // 付费好价（如黑五 VPS / 史低）与开源项目不再被「paid <= 25」一刀切压死
+    if (obtain === "promo") out = Math.round(out * 0.85);
+    else if (obtain === "trial") out = Math.round(out * 0.85);
+  } else {
+    if (obtain === "paid") out = Math.min(out, 25);
+    else if (obtain === "trial" || obtain === "promo") out = Math.round(out * 0.78);
+    else if (obtain === "conditional") out = Math.round(out * 0.9);
+  }
   return Math.max(0, Math.min(100, out));
 }

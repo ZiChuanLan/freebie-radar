@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { flaresolverrGet, hasFlare } from "../flaresolverr.ts";
-import { cleanText, parseDate } from "../enrich/normalize.ts";
+import { cleanText, extractImageFromHtml, parseDate } from "../enrich/normalize.ts";
 import type { Collector, RawItem } from "./types.ts";
 
 /**
@@ -74,6 +74,7 @@ function toRawItem(it: FeedItem, categoryName: string): RawItem | null {
     content: cleanText(description, 1200),
     author: textOf(it["dc:creator"]) || null,
     publishedAt: parseDate(textOf(it.pubDate)),
+    imageUrl: extractImageFromHtml(description, link),
     tags: [categoryName],
     raw: { category: categoryName, via: "rss" },
   };

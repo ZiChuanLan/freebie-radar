@@ -1,8 +1,13 @@
-import { cleanText, guessExpiry, normalizeUrl, urlKey } from "./normalize.ts";
+import { cleanText, guessExpiry, normalizeUrl, sanitizeImageUrl, urlKey } from "./normalize.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { extractCodes } from "./codes.ts";
 import { extractPrice } from "./pricing.ts";
 
+import { OPENSOURCE_HINT, PROMO_HINT } from "./noise.ts";
+import { guessObtain } from "./obtain.ts";
+import { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind } from "./kind.ts";
+
+export { guessKind, isContentKind, KIND_LABEL, resolveKind, type ContentKind };
 export type Category =
   | "ai" | "cloud" | "domain" | "opensource" | "software" | "media" | "game" | "goods" | "invite" | "edu" | "other";
 
@@ -149,6 +154,8 @@ export type EnrichedItem = RawItem & {
   url: string;
   urlKey: string;
   expiresAt: string | null;
+  imageUrl: string | null;
+  kind: ContentKind;
   keep: boolean;
   reason: string;
 };
@@ -210,6 +217,7 @@ export function scoreItem(input: {
   isFree?: boolean;
   price?: number | null;
   codes?: string[];
+  kind?: ContentKind;
 }): { score: number; reason: string } {
   const text = stripUrls(`${input.title} ${input.summary}`).toLowerCase();
   const notes: string[] = [];
@@ -222,7 +230,7 @@ export function scoreItem(input: {
     if (input.price <= 5) {
       score += 8;
       notes.push("低价 ≤5元");
-    } else if (input.price > 30) {
+    } else if (input.price > 30 && input.kind !== "deal") {
       score -= 10;
       notes.push("需实付 >30元");
     }
@@ -241,6 +249,15 @@ export function scoreItem(input: {
     const add = dealHits.length >= 2 ? 14 : 10;
     score += add;
     notes.push(`福利词 ×${dealHits.length}`);
+  } else if (input.kind === "deal" && PROMO_HINT.test(text)) {
+    score += 10;
+    notes.push("特惠信号");
+  } else if (input.kind === "opensource" && (input.category === "opensource" || OPENSOURCE_HINT.test(text))) {
+    score += 10;
+    notes.push("开源项目");
+  } else if (input.kind === "info" && OPENSOURCE_HINT.test(text)) {
+    score += 8;
+    notes.push("实用指南");
   } else {
     score -= 8;
     notes.push("无福利词");
@@ -307,6 +324,17 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
   const codes = extractCodes(title, raw.content ?? raw.summary ?? "");
   const priceInfo = extractPrice(title, summary);
   const expiresAt = raw.expiresAt ?? guessExpiry(`${title} ${summary}`);
+  const obtain = guessObtain(title, summary);
+  const kind = guessKind({
+    title,
+    summary,
+    sourceId,
+    category,
+    obtain,
+    isFree: priceInfo.isFree,
+    price: priceInfo.price,
+    freebieOnlySource: FREEBIE_ONLY_SOURCES.has(sourceId),
+  });
   const { score, reason } = scoreItem({
     title,
     summary,
@@ -318,6 +346,7 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
     isFree: priceInfo.isFree,
     price: priceInfo.price,
     codes,
+    kind,
   });
 
   const expired = Boolean(expiresAt && new Date(expiresAt).getTime() < Date.now());
@@ -335,6 +364,8 @@ export function enrichItem(raw: RawItem, sourceId: string): EnrichedItem | null 
     tags,
     expiresAt,
     score,
+    imageUrl: sanitizeImageUrl(raw.imageUrl, url),
+    kind,
     keep: !expired,
     reason,
   };

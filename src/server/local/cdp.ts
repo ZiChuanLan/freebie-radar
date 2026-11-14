@@ -60,11 +60,11 @@ export async function evaluate<T>(ws: WebSocket, expression: string): Promise<T>
   return result.result?.value as T;
 }
 
-export const ZHIHU_JS = "(() => { const cards = Array.from(document.querySelectorAll('.SearchResult-Card, .List-item')); return cards.slice(0, 20).map((c) => { const a = c.querySelector('h2 a, .ContentItem-title a'); const t = c.querySelector('.RichText'); return { title: (a && a.textContent || '').trim(), url: (a && a.href) || '', summary: (t && t.textContent || '').trim().slice(0, 300) }; }).filter((x) => x.title && x.url); })()";
+export const ZHIHU_JS = "(() => { const cards = Array.from(document.querySelectorAll('.SearchResult-Card, .List-item')); return cards.slice(0, 20).map((c) => { const a = c.querySelector('h2 a, .ContentItem-title a'); const t = c.querySelector('.RichText'); const img = c.querySelector('img'); return { title: (a && a.textContent || '').trim(), url: (a && a.href) || '', summary: (t && t.textContent || '').trim().slice(0, 300), imageUrl: (img && (img.getAttribute('data-original') || img.src)) || '' }; }).filter((x) => x.title && x.url); })()";
 
-export const XHS_JS = "(() => { const cards = Array.from(document.querySelectorAll('section.note-item')); return cards.slice(0, 20).map((c) => { const a = c.querySelector('a.cover, a[href*=\"/explore/\"]'); const t = c.querySelector('.title span, .footer .title, .title'); return { title: (t && t.textContent || '').trim(), url: (a && a.href) || '', summary: '' }; }).filter((x) => x.title && x.url); })()";
+export const XHS_JS = "(() => { const cards = Array.from(document.querySelectorAll('section.note-item')); return cards.slice(0, 20).map((c) => { const a = c.querySelector('a.cover, a[href*=\"/explore/\"]'); const t = c.querySelector('.title span, .footer .title, .title'); const img = c.querySelector('img'); return { title: (t && t.textContent || '').trim(), url: (a && a.href) || '', summary: '', imageUrl: (img && img.src) || '' }; }).filter((x) => x.title && x.url); })()";
 
-export const XHH_JS = "(() => { const cards = Array.from(document.querySelectorAll('a[href*=\"/bbs/app/link/\"], .feed-item, .post-item')); const seen = new Set(); return cards.slice(0, 40).map((c) => { const a = c.tagName === 'A' ? c : c.querySelector('a[href]'); const t = (c.textContent || '').trim().replace(/\\s+/g, ' '); return { title: t.slice(0, 120), url: (a && a.href) || '', summary: '' }; }).filter((x) => { if (!x.title || !x.url || seen.has(x.url)) return false; seen.add(x.url); return true; }).slice(0, 20); })()";
+export const XHH_JS = "(() => { const cards = Array.from(document.querySelectorAll('a[href*=\"/bbs/app/link/\"], .feed-item, .post-item')); const seen = new Set(); return cards.slice(0, 40).map((c) => { const a = c.tagName === 'A' ? c : c.querySelector('a[href]'); const t = (c.textContent || '').trim().replace(/\\s+/g, ' '); const img = c.querySelector('img'); return { title: t.slice(0, 120), url: (a && a.href) || '', summary: '', imageUrl: (img && img.src) || '' }; }).filter((x) => { if (!x.title || !x.url || seen.has(x.url)) return false; seen.add(x.url); return true; }).slice(0, 20); })()";
 
 export type SiteKey = "zhihu" | "xhs" | "xiaoheihe";
 
@@ -94,7 +94,9 @@ export const SITES: Record<SiteKey, { sourceId: string; label: string; url: (kw:
 
 export async function fetchSite(site: SiteKey, keyword: string): Promise<RawItem[]> {
   const spec = SITES[site];
-  const raw = await withPage(spec.url(keyword), spec.waitMs, (ws) => evaluate<{ title: string; url: string; summary: string }[]>(ws, spec.script));
+  const raw = await withPage(spec.url(keyword), spec.waitMs, (ws) =>
+    evaluate<{ title: string; url: string; summary: string; imageUrl?: string }[]>(ws, spec.script),
+  );
   return raw.map((r) => ({
     externalId: r.url,
     url: r.url,
@@ -102,6 +104,7 @@ export async function fetchSite(site: SiteKey, keyword: string): Promise<RawItem
     summary: r.summary,
     author: null,
     publishedAt: null,
+    imageUrl: r.imageUrl || null,
     tags: [site, keyword],
     raw: { site, keyword },
   }));

@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import { cleanText, parseDate } from "../enrich/normalize.ts";
+import { cleanText, extractImageFromHtml, parseDate, sanitizeImageUrl } from "../enrich/normalize.ts";
 import { flaresolverrGet, hasFlare } from "../flaresolverr.ts";
 import type { Collector, RawItem } from "./types.ts";
 
@@ -56,6 +56,35 @@ function categoriesOf(v: unknown): string[] {
       return "";
     })
     .filter(Boolean);
+}
+function mediaUrlOf(v: unknown, base: string): string | null {
+  for (const entry of asArray(v as unknown | unknown[])) {
+    if (!entry) continue;
+    if (typeof entry === "string") {
+      const u = sanitizeImageUrl(entry, base);
+      if (u) return u;
+    } else if (typeof entry === "object") {
+      const o = entry as Record<string, unknown>;
+      const type = String(o["@_type"] ?? o["@_medium"] ?? "").toLowerCase();
+      if (type && !type.includes("image") && type !== "medium") {
+        // enclosure 可能是音频/视频，非图片则跳过
+        if (type.startsWith("audio/") || type.startsWith("video/")) continue;
+      }
+      const u = sanitizeImageUrl(o["@_url"] ?? o["@_href"], base);
+      if (u) return u;
+    }
+  }
+  return null;
+}
+
+function imageOf(it: FeedItem, rawHtml: string, link: string): string | null {
+  return (
+    mediaUrlOf(it["media:thumbnail"], link) ||
+    mediaUrlOf(it["media:content"], link) ||
+    mediaUrlOf(it.enclosure, link) ||
+    mediaUrlOf(it["itunes:image"], link) ||
+    extractImageFromHtml(rawHtml, link)
+  );
 }
 
 function linkOf(v: unknown): string {
@@ -176,6 +205,7 @@ export const rssCollector: Collector = {
             author: textOf(it.author) || textOf(it["dc:creator"]) || null,
             publishedAt: parseDate(published),
             expiresAt: saleEnds,
+            imageUrl: imageOf(it, rawSummary, link),
             categoryHint: feed.only100Off ? "game" : undefined,
             tags: [feed.id],
             raw: { feed: feed.id },
