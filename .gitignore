@@ -13,3 +13,7 @@ docs/dom.html
 docs/probe-results.json
 docs/probe2-results.json
 docs/fs-test.json
+
+# CF worker
+.wrangler/
+.dev.vars

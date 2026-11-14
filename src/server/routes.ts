@@ -158,8 +158,8 @@ function buildItemsQuery(q: Record<string, string | undefined>, rules: BlockRule
       params.push(...kinds);
     }
   }
-  if (q.lang === "zh") where.push("is_zh(title) = 1");
-  else if (q.lang === "en") where.push("is_zh(title) = 0");
+  if (q.lang === "zh") where.push("is_zh = 1");
+  else if (q.lang === "en") where.push("is_zh = 0");
   if (q.starred === "1") where.push("starred = 1");
   if (q.unread === "1") where.push("read_at IS NULL");
   if (q.hasCodes === "1") where.push("codes != '[]' AND codes != ''");
@@ -345,8 +345,8 @@ export function registerApi(app: Hono) {
           params.push(...modes);
         }
       }
-      if (q.lang === "zh") subConds.push("is_zh(x.title) = 1");
-      else if (q.lang === "en") subConds.push("is_zh(x.title) = 0");
+      if (q.lang === "zh") subConds.push("x.is_zh = 1");
+      else if (q.lang === "en") subConds.push("x.is_zh = 0");
       if (q.category) {
         const cats = q.category.split(",").map((s) => s.trim()).filter(Boolean);
         if (cats.length === 1) {

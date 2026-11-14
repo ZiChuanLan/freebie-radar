@@ -1,11 +1,45 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { config } from "./config.ts";
+/**
+ * 数据库后端抽象：默认 Durable Object SQLite（storage.sql，同步 API，
+ * 与原 node:sqlite 语义一致）。测试用 initDbBackend() 注入 node:sqlite 适配器。
+ *
+ * 初始化：RadarDO 构造时调用 initDb(ctx.storage)。
+ */
 
-let db: DatabaseSync | null = null;
+export type SqlValue = string | number | bigint | null | Uint8Array;
 
-const SCHEMA_VERSION = 1;
+export type ExecResult = { rows: Record<string, unknown>[]; rowsWritten: number };
+
+export interface DbBackend {
+  exec(query: string, params: SqlValue[]): ExecResult;
+  transactionSync<T>(fn: () => T): T;
+}
+
+let backend: DbBackend | null = null;
+
+export function initDb(storage: DurableObjectStorage): void {
+  backend = {
+    exec: (query, params) => {
+      const cur = storage.sql.exec(query, ...params);
+      const rows = cur.toArray() as Record<string, unknown>[];
+      return { rows, rowsWritten: cur.rowsWritten };
+    },
+    transactionSync: (fn) => storage.transactionSync(fn),
+  };
+}
+
+/** 测试/脚本专用：注入自定义后端（如 node:sqlite 适配器） */
+export function initDbBackend(b: DbBackend): void {
+  backend = b;
+}
+
+export function closeDb(): void {
+  backend = null;
+}
+
+function S(): DbBackend {
+  if (!backend) throw new Error("db not initialized — call initDb()/initDbBackend() first");
+  return backend;
+}
 
 const MIGRATIONS: string[] = [
   /* v1 */ `
@@ -230,78 +264,59 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE items ADD COLUMN image_url TEXT;
   `,
+
+  /* v17：is_zh 从 SQLite UDF 改落入库列 —— DO sqlite 不支持自定义函数 */
+  `
+  ALTER TABLE items ADD COLUMN is_zh INTEGER;
+  `,
 ];
 
-export function dbPath(): string {
-  const p = config.databasePath;
-  return p === ":memory:" ? p : resolve(process.cwd(), p);
-}
-
-export function getDb(): DatabaseSync {
-  if (db) return db;
-  const path = dbPath();
-  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-  db = new DatabaseSync(path);
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  // 调度器与手动 CLI 是两个进程共用一个 SQLite 文件，写锁竞争时多等一会儿，
-  // 避免出现 "database is locked"（跑一次全量采集要几秒）。
-  db.exec("PRAGMA busy_timeout = 20000;");
-  // 限制 SQLite 内存占用，适配 ≤512MB 低配 VPS
-  db.exec("PRAGMA cache_size = -8000;");
-  db.exec("PRAGMA mmap_size = 0;");
-  db.exec("PRAGMA temp_store = FILE;");
-  db.function("is_zh", { deterministic: true }, (v) => {
-    const t = typeof v === "string" ? v : "";
-    let zh = 0;
-    for (let i = 0; i < t.length; i++) {
-      const c = t.charCodeAt(i);
-      if (c >= 0x4e00 && c <= 0x9fff) zh += 1;
-    }
-    return zh >= 2 && zh / Math.max(t.length, 1) >= 0.12 ? 1 : 0;
-  });
-  return db;
-}
-
 export function migrate(): number {
-  const conn = getDb();
-  const row = conn.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
-  const current = Number(row?.user_version ?? 0);
+  const conn = S();
+  // DO sqlite 禁 PRAGMA user_version —— 版本落在自建表里
+  conn.exec("CREATE TABLE IF NOT EXISTS __migrations (v INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)", []);
+  const row = conn.exec("SELECT MAX(v) AS v FROM __migrations", []).rows[0] as { v: number | null } | undefined;
+  const current = Number(row?.v ?? 0);
   for (let v = current; v < MIGRATIONS.length; v += 1) {
-    conn.exec(MIGRATIONS[v]!);
-    conn.exec(`PRAGMA user_version = ${v + 1}`);
+    conn.exec(MIGRATIONS[v]!, []);
+    conn.exec("INSERT INTO __migrations (v, applied_at) VALUES (?, ?)", [v + 1, new Date().toISOString()]);
+  }
+  // v17 回填：老数据迁移进来时补算（全新部署为空表，秒过）
+  if (current <= 16) {
+    const rows = conn.exec("SELECT id, title FROM items WHERE is_zh IS NULL", []).rows as { id: number; title: string }[];
+    for (const r of rows) conn.exec("UPDATE items SET is_zh = ? WHERE id = ?", [isZhText(r.title) ? 1 : 0, r.id]);
   }
   return Math.max(current, MIGRATIONS.length);
 }
 
-export function closeDb(): void {
-  db?.close();
-  db = null;
+/** 与旧 node:sqlite 版 db.function("is_zh") 同一判据，供入库时写列与迁移回填共用 */
+export function isZhText(t: string): boolean {
+  let zh = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    if (c >= 0x4e00 && c <= 0x9fff) zh += 1;
+  }
+  return zh >= 2 && zh / Math.max(t.length, 1) >= 0.12;
 }
 
-export type SqlValue = string | number | bigint | null | Uint8Array;
-
 export function all<T>(sql: string, ...params: SqlValue[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+  return S().exec(sql, params).rows as T[];
 }
 
 export function get<T>(sql: string, ...params: SqlValue[]): T | undefined {
-  return getDb().prepare(sql).get(...params) as T | undefined;
+  return S().exec(sql, params).rows[0] as T | undefined;
 }
 
-export function run(sql: string, ...params: SqlValue[]) {
-  return getDb().prepare(sql).run(...params);
+export function run(sql: string, ...params: SqlValue[]): { changes: number; lastInsertRowid: number | bigint } {
+  const res = S().exec(sql, params);
+  let lastInsertRowid: number | bigint = 0;
+  if (/^\s*insert/i.test(sql)) {
+    const r = S().exec("SELECT last_insert_rowid() AS id", []).rows[0] as { id: number } | undefined;
+    lastInsertRowid = r?.id ?? 0;
+  }
+  return { changes: res.rowsWritten, lastInsertRowid };
 }
 
 export function tx<T>(fn: () => T): T {
-  const conn = getDb();
-  conn.exec("BEGIN");
-  try {
-    const out = fn();
-    conn.exec("COMMIT");
-    return out;
-  } catch (err) {
-    conn.exec("ROLLBACK");
-    throw err;
-  }
+  return S().transactionSync(fn);
 }

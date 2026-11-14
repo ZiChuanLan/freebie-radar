@@ -34,18 +34,11 @@ async function post(endpoint: string, body: Record<string, unknown>, timeoutMs =
 
 let sessionUp = false;
 let lastSessionUse = 0;
-let idleTimer: NodeJS.Timeout | null = null;
+let sessionEndpoint = "";
 
 function touchSessionIdle(endpoint: string): void {
   lastSessionUse = Date.now();
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    idleTimer = null;
-    if (sessionUp && Date.now() - lastSessionUse >= SESSION_IDLE_MS - 1000) {
-      void dropSession(endpoint);
-    }
-  }, SESSION_IDLE_MS);
-  idleTimer.unref?.();
+  sessionEndpoint = endpoint;
 }
 
 async function ensureSession(endpoint: string): Promise<void> {
@@ -59,10 +52,6 @@ async function ensureSession(endpoint: string): Promise<void> {
 }
 
 async function dropSession(endpoint: string): Promise<void> {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  }
   sessionUp = false;
   try {
     await post(endpoint, { cmd: "sessions.destroy", session: SESSION }, 10_000);
@@ -74,6 +63,13 @@ async function dropSession(endpoint: string): Promise<void> {
 export async function releaseFlareSession(): Promise<void> {
   if (!sessionUp || !config.flaresolverrUrl) return;
   await dropSession(endpointOf(config.flaresolverrUrl));
+}
+
+/** CF 版：setTimeout 没了，空闲检测由 DO.tick() 每分钟调用 —— 超过 90s 没用就销毁会话 */
+export async function releaseFlareSessionIfIdle(now = Date.now()): Promise<void> {
+  if (sessionUp && sessionEndpoint && now - lastSessionUse >= SESSION_IDLE_MS) {
+    await dropSession(sessionEndpoint);
+  }
 }
 
 async function request(endpoint: string, url: string, timeoutMs: number, session: string | null): Promise<FlareResult> {

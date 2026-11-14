@@ -1,5 +1,5 @@
 import { aiEnabled, config, pushEnabled } from "../config.ts";
-import { all, get, run, tx } from "../db.ts";
+import { all, get, isZhText, run, tx } from "../db.ts";
 import { enrichItem, FREEBIE_ONLY_SOURCES, resolveKind, type ContentKind } from "../enrich/index.ts";
 import { calibrateScoreByObtain, resolveDbMergeKey } from "../enrich/alias.ts";
 import { getAiSettings, matchesEntryNoise, shouldPassSourceToAi, shouldReview, type AiVerdict } from "../enrich/ai.ts";
@@ -485,7 +485,7 @@ function persist(
               nextKind,
             );
         run(
-          `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, summary = ?, author = ?, category = ?,
+          `UPDATE items SET url = ?, url_key = ?, title = ?, title_key = ?, is_zh = ?, summary = ?, author = ?, category = ?,
              tags = ?, score = ?, expires_at = ?, published_at = ?, raw = ?, last_seen_at = ?,
              price = ?, is_free = ?,
              ai = COALESCE(?, ai),
@@ -500,6 +500,7 @@ function persist(
           e.urlKey,
           e.title,
           titleKey,
+          isZhText(e.title) ? 1 : 0,
           e.summary ?? "",
           e.author ?? null,
           e.category,
@@ -532,15 +533,16 @@ function persist(
       }
       try {
         const res = run(
-          `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, author, category,
+          `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, is_zh, summary, author, category,
              tags, score, expires_at, published_at, raw, status, ai, obtain, ai_keep, kind, ai_quality, image_url, content, codes, price, is_free, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sourceId,
           e.externalId,
           e.url,
           e.urlKey,
           e.title,
           titleKey,
+          isZhText(e.title) ? 1 : 0,
           e.summary ?? "",
           e.author ?? null,
           e.category,

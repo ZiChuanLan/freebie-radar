@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Hono } from "hono";
 
-process.env.DATABASE_PATH = ":memory:";
+const { useMemoryDb } = await import("./sqlite-adapter.ts");
+const mem = useMemoryDb();
 
 const { migrate, run, get, closeDb } = await import("../src/server/db.ts");
 const { registerApi } = await import("../src/server/routes.ts");
@@ -300,18 +301,18 @@ test("GET /api/items 支持多选分类与中英文语言筛选，且 /api/ai �
 
   const now = new Date().toISOString();
   run(
-    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
-     VALUES ('linuxdo-welfare', 'cat-1', 'https://example.com/cat1', 'https://example.com/cat1', 'OpenRouter 免费模型福利', 'openrouter', '', 'ai', 80, 'active', 1, ?, ?, ?)`,
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, is_zh, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('linuxdo-welfare', 'cat-1', 'https://example.com/cat1', 'https://example.com/cat1', 'OpenRouter 免费模型福利', 'openrouter', 1, '', 'ai', 80, 'active', 1, ?, ?, ?)`,
     now, now, now,
   );
   run(
-    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
-     VALUES ('epic-free', 'cat-2', 'https://example.com/cat2', 'https://example.com/cat2', 'Knightica Free on Epic Games', 'unique_test_game_xyz', '', 'game', 78, 'active', 0, ?, ?, ?)`,
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, is_zh, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('epic-free', 'cat-2', 'https://example.com/cat2', 'https://example.com/cat2', 'Knightica Free on Epic Games', 'unique_test_game_xyz', 0, '', 'game', 78, 'active', 0, ?, ?, ?)`,
     now, now, now,
   );
   run(
-    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
-     VALUES ('v2ex-free', 'cat-3', 'https://example.com/cat3', 'https://example.com/cat3', '送一个域名优惠码', 'domaincode', '', 'domain', 75, 'ignored', 0, ?, ?, ?)`,
+    `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, is_zh, summary, category, score, status, starred, first_seen_at, last_seen_at, published_at)
+     VALUES ('v2ex-free', 'cat-3', 'https://example.com/cat3', 'https://example.com/cat3', '送一个域名优惠码', 'domaincode', 1, '', 'domain', 75, 'ignored', 0, ?, ?, ?)`,
     now, now, now,
   );
 

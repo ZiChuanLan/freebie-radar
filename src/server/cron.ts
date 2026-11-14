@@ -1,6 +1,8 @@
 import { config } from "./config.ts";
-import { all } from "./db.ts";
+import { all, get, run } from "./db.ts";
 import { runSource } from "./collectors/index.ts";
+import { digestExists, runDaily } from "./digest.ts";
+import { getRetention, runCleanup } from "./retention.ts";
 
 /** 极简 5 段 cron 匹配：分 时 日 月 周；支持 * , - /。 */
 export function matchCron(expr: string, date: Date, utc = false): boolean {
@@ -32,82 +34,73 @@ export function matchField(field: string, value: number, min: number, max: numbe
   return false;
 }
 
+let collectBusy = false;
 
 /**
- * 按每个源自己的 interval_sec 轮询：到点就跑，串行执行避免打爆上游。
- * 送码类源设 60-120 秒，日报/清单类源设几小时。
+ * CF 版：setInterval 换成 DO.tick()（由 Cron Trigger 每分钟驱动）。
+ * due 源查询与原 interval scheduler 同一逻辑：到点就跑、串行避免打爆上游。
+ * busy 标志替代原来的「tick 重入」防护 —— DO 可能并发处理 fetch 与 RPC。
  */
-export function startIntervalScheduler(task: {
-  log?: (m: string) => void;
-  tickMs?: number;
-} = {}): void {
-  const log = task.log ?? ((m: string) => console.log(m));
-  const tickMs = task.tickMs ?? 30_000;
-  let busy = false;
-
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      const due = all<{ id: string; interval_sec: number; last_run_at: string | null }>(
-        `SELECT id, interval_sec, last_run_at FROM sources
-          WHERE enabled = 1 AND kind != 'ingest'
-            AND (last_run_at IS NULL OR datetime(last_run_at, '+' || interval_sec || ' seconds') <= datetime('now'))
-          ORDER BY last_run_at IS NOT NULL, last_run_at ASC`,
-      );
-      const filter = config.enabledSources;
-      for (const s of due) {
-        if (filter.length && !filter.includes(s.id)) continue;
-        try {
-          await runSource(s.id);
-        } catch (err) {
-          log(`[cron] ${s.id} 失败: ${err instanceof Error ? err.message : String(err)}`);
-        }
+export async function collectTick(log: (m: string) => void = (m) => console.log(m)): Promise<void> {
+  if (collectBusy) return;
+  collectBusy = true;
+  try {
+    const due = all<{ id: string; interval_sec: number; last_run_at: string | null }>(
+      `SELECT id, interval_sec, last_run_at FROM sources
+        WHERE enabled = 1 AND kind != 'ingest'
+          AND (last_run_at IS NULL OR datetime(last_run_at, '+' || interval_sec || ' seconds') <= datetime('now'))
+        ORDER BY last_run_at IS NOT NULL, last_run_at ASC`,
+    );
+    const filter = config.enabledSources;
+    for (const s of due) {
+      if (filter.length && !filter.includes(s.id)) continue;
+      try {
+        await runSource(s.id);
+      } catch (err) {
+        log(`[cron] ${s.id} 失败: ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      log(`[cron] 调度异常: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      busy = false;
     }
-  };
-
-  void tick();
-  const timer = setInterval(() => void tick(), tickMs);
-  timer.unref?.();
-  intervalTimer = timer;
-  log(`[cron] interval scheduler started (tick=${tickMs}ms)`);
+  } finally {
+    collectBusy = false;
+  }
 }
 
-let intervalTimer: NodeJS.Timeout | null = null;
+let lastDailyKey = "";
 
-export function stopIntervalScheduler(): void {
-  if (intervalTimer) clearInterval(intervalTimer);
-  intervalTimer = null;
-}
-let timer: NodeJS.Timeout | null = null;
-let lastKey = "";
-
-export function startScheduler(task: { collect: () => Promise<unknown>; daily: () => Promise<unknown>; log?: (m: string) => void }): void {
-  if (timer) return;
-  const log = task.log ?? ((m: string) => console.log(m));
-  timer = setInterval(() => {
-    const now = new Date();
-    const key = now.toISOString().slice(0, 16);
-    if (key === lastKey) return;
-    lastKey = key;
-    if (config.enableScheduler && matchCron(config.collectCron, now)) {
-      log("[cron] 触发采集");
-      task.collect().catch((e) => log(`[cron] 采集失败: ${String(e)}`));
-    }
-    if (config.enableScheduler && matchCron(config.dailyCron, now)) {
-      log("[cron] 触发日报");
-      task.daily().catch((e) => log(`[cron] 日报失败: ${String(e)}`));
-    }
-  }, 30_000);
-  log(`[cron] scheduler started collect="${config.collectCron}" daily="${config.dailyCron}"`);
+/** 日报仍按 DAILY_CRON 触发；同一分钟内 cron 可能重复触发用 lastDailyKey 去重 */
+export async function dailyTick(now = new Date(), log: (m: string) => void = (m) => console.log(m)): Promise<void> {
+  if (!config.enableScheduler || !matchCron(config.dailyCron, now)) return;
+  const key = now.toISOString().slice(0, 16);
+  if (key === lastDailyKey) return;
+  lastDailyKey = key;
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (digestExists(day)) return;
+  try {
+    await runDaily({ date: now });
+  } catch (err) {
+    log(`[cron] 日报失败: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
-export function stopScheduler(): void {
-  if (timer) clearInterval(timer);
-  timer = null;
+const CLEANUP_EVERY_MS = 12 * 3600_000;
+
+/** 按保留策略清理过期条目与日志（收藏的永不删），最多每 12h 一次 */
+export function cleanupTick(log: (m: string) => void = (m) => console.log(m)): void {
+  try {
+    const last = get<{ value: string }>("SELECT value FROM settings WHERE key = 'last_cleanup_at'");
+    if (last && Date.now() - Date.parse(last.value) < CLEANUP_EVERY_MS) return;
+    const cfg = getRetention();
+    if (cfg.auto) {
+      const r = runCleanup(cfg);
+      const total = Object.values(r.deleted).reduce((a, b) => a + b, 0);
+      if (total > 0) log(`[cleanup] ${JSON.stringify(r.deleted)} 剩余 ${r.remaining}`);
+    }
+    run(
+      "INSERT INTO settings (key, value, updated_at) VALUES ('last_cleanup_at', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
+  } catch (err) {
+    log(`[cleanup] 失败: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

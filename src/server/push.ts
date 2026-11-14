@@ -666,7 +666,9 @@ function pushedLastHour(): number {
 
 type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[]; route?: PushRoute | null };
 let queue: QueueItem[] = [];
-let flushTimer: NodeJS.Timeout | null = null;
+/** CF 版：setTimeout 换成时间戳，由 DO.tick()（每分钟）检查到点 flush；
+ *  队列仍是内存态 —— DO 回收会丢攒批，与原版进程重启语义一致 */
+let nextFlushAt = 0;
 let schedulerStarted = false;
 
 export function queueSize(): number {
@@ -680,23 +682,26 @@ function enqueue(entries: QueueItem[]): void {
 }
 
 function scheduleFlush(): void {
-  if (flushTimer) return;
+  if (nextFlushAt) return;
   const s = getPushSettings();
   if (!s.enabled || !pushEnabled || s.batchIntervalMin <= 0) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    void flushBatch();
-    scheduleFlush();
-  }, s.batchIntervalMin * 60_000);
-  flushTimer.unref?.();
+  nextFlushAt = Date.now() + s.batchIntervalMin * 60_000;
 }
 
 function rescheduleFlush(): void {
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
-  }
+  nextFlushAt = 0;
   scheduleFlush();
+}
+
+/** 由 DO.tick() 每分钟调用；到点且有积压就 flush，再按当前设置排下一次 */
+export async function pushTick(now = Date.now()): Promise<void> {
+  if (!schedulerStarted || !nextFlushAt || now < nextFlushAt) return;
+  nextFlushAt = 0;
+  try {
+    await flushBatch();
+  } finally {
+    scheduleFlush();
+  }
 }
 
 export function startPushScheduler(): void {

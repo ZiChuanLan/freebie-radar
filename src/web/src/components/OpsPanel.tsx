@@ -144,8 +144,8 @@ export function OpsPanel({
 
   useEffect(() => {
     fetch("/api/retention")
-      .then((r) => r.json())
-      .then((j: { settings: RetentionSettings; counts: typeof retCounts }) => {
+      .then((r) => r.json() as Promise<{ settings: RetentionSettings; counts: typeof retCounts }>)
+      .then((j) => {
         setRetention(j.settings);
         setRetCounts(j.counts);
       })

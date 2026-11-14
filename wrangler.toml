@@ -1,0 +1,31 @@
+name = "freebie-radar"
+main = "src/worker.ts"
+compatibility_date = "2025-11-01"
+
+# 前端：vite build 产物，SPA 路由回退 index.html
+[assets]
+directory = "./dist/web"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# 单例 DO 承载整个应用：同步 SQLite + 调度 + 攒批队列
+[durable_objects]
+bindings = [{ name = "RADAR", class_name = "RadarDO" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RadarDO"]
+
+# 每分钟唤醒一次；真正跑哪些源由 sources.interval_sec/last_run_at 决定
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+TZ = "Asia/Shanghai"
+PUSH_CHANNEL = "none"
+ENABLE_SCHEDULER = "true"
+COLLECT_CRON = "0 */2 * * *"
+DAILY_CRON = "30 8 * * *"
+FETCH_TIMEOUT_MS = "20000"
+MIN_REQUEST_GAP_MS = "2000"
+SOURCE_GAP_MS = "3000"

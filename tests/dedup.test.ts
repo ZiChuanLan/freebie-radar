@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-// 在导入 db/config 前强制走内存库，避免污染本地 data/radar.db
-process.env.DATABASE_PATH = ":memory:";
+// 内存库适配器（node:sqlite 后端），避免污染本地 data
+const { useMemoryDb } = await import("./sqlite-adapter.ts");
+useMemoryDb();
 
 const { migrate, run, closeDb } = await import("../src/server/db.ts");
 const { dedupeByTitle, extractMergeKeys, mergeKey, TitleDeduper } = await import("../src/server/enrich/dedup.ts");

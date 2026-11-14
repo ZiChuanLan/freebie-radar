@@ -1,3 +1,7 @@
+> **本 fork 是 CF-only 分叉**：整个服务托管在 Cloudflare Workers + Durable Object
+> （含同步 SQLite）上，部署见 [docs/deploy-cf.md](docs/deploy-cf.md)。
+> 原 Node/Docker 部署方式已移除，上游差异清单在同文档末尾。
+
 <div align="center">
   <img src="docs/logo.svg" alt="Freebie Radar Logo" width="88" height="88" />
   <h1>白嫖雷达 · Freebie Radar</h1>

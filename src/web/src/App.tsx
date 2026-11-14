@@ -168,8 +168,8 @@ export function App() {
     if (!id || relatedMap[id]) return;
     let alive = true;
     fetch(`/api/items/${id}/related`, { headers: { accept: "application/json" } })
-      .then((r) => r.json())
-      .then((d: { items?: (Item & { sourceName?: string })[] }) => {
+      .then((r) => r.json() as Promise<{ items?: (Item & { sourceName?: string })[] }>)
+      .then((d) => {
         if (alive && Array.isArray(d.items)) setRelatedMap((m) => ({ ...m, [id]: d.items! }));
       })
       .catch(() => {
@@ -185,8 +185,8 @@ export function App() {
   const [adminAuthed, setAdminAuthed] = useState(() => Boolean(getToken()));
   useEffect(() => {
     fetch("/api/auth/check")
-      .then((r) => r.json())
-      .then((j: { protected?: boolean }) => {
+      .then((r) => r.json() as Promise<{ protected?: boolean }>)
+      .then((j) => {
         const prot = Boolean(j.protected);
         setProtectedMode(prot);
         if (!prot) setAdminAuthed(true);
@@ -286,8 +286,8 @@ export function App() {
   const [, bumpNames] = useState(0);
   useEffect(() => {
     fetch("/api/sources")
-      .then((r) => r.json())
-      .then((d: { sources: { id: string; name: string }[] }) => {
+      .then((r) => r.json() as Promise<{ sources: { id: string; name: string }[] }>)
+      .then((d) => {
         const m: Record<string, string> = { ...SOURCE_LABEL };
         for (const s of d.sources) if (s.name) m[s.id] = s.name;
         SOURCE_NAMES = m;
