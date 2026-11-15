@@ -23,6 +23,7 @@ RUN npm i -g pnpm@10 \
     && rm -rf /root/.local/share/pnpm /root/.npm /tmp/*
 COPY --from=build /app/dist ./dist
 COPY src/server ./src/server
+COPY src/shared ./src/shared
 COPY tsconfig.json ./
 RUN mkdir -p /data
 EXPOSE 8788
