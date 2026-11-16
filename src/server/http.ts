@@ -173,9 +173,15 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
       signal: ac.signal,
       body: opts.body,
     };
-    if (proxy) init.dispatcher = await getDispatcher(proxy);
+    let doFetch: typeof fetch = fetch;
+    if (proxy) {
+      init.dispatcher = await getDispatcher(proxy);
+      // 与 ProxyAgent 同源：内置 undici 与包内 undici 版本不同，混用会抛
+      // InvalidArgumentError: invalid onRequestStart method
+      doFetch = ((await import("undici")) as unknown as { fetch: typeof fetch }).fetch;
+    }
     try {
-      const res = await fetch(url, init);
+      const res = await doFetch(url, init);
       const bytes = Buffer.from(await res.arrayBuffer());
       const contentType = res.headers.get("content-type") ?? "";
       return {
