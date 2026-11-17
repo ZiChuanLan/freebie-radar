@@ -5,7 +5,7 @@
   <p>6 Content Kinds · 27 Channel-Aware Categories · Unified Blocklist · Multi-Route Telegram Push · Zero External DB</p>
 
   <p>
-    <a href="README.md">简体中文</a> · <a href="README.en.md">English</a>
+    <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a>
   </p>
 
   <p>

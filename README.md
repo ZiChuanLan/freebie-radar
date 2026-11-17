@@ -5,7 +5,7 @@
   <p>六大内容形态分流 · 27 类分频道目录 · 统一屏蔽词省额度 · AI 语义定级 · 多路由精准推送</p>
 
   <p>
-    <a href="README.md">简体中文</a> · <a href="README.en.md">English</a>
+    <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a>
   </p>
 
   <p>
