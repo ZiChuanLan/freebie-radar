@@ -1,8 +1,11 @@
 /**
- * 英文词条：components/AiPanel.tsx（AI 引擎配置与补审）。
+ * 英文词条：components/AiPanel.tsx、AiProtocolField.tsx（AI 引擎配置与补审）。
  * key 必须与源码里的中文原文逐字一致（含标点、空格）；带变量时用 {name} 占位。
  */
 export const EN_AI: Record<string, string> = {
+  "协议类型": "Protocol",
+  "默认（Chat Completions）": "Default (Chat Completions)",
+  "留空沿用 /chat/completions；选择 Responses 使用 /responses。基础地址保留 /v1，不含接口路径。": "Leave blank for /chat/completions; select Responses for /responses. Keep /v1 in the base URL without the endpoint path.",
   "推送前同步": "Pre-push sync",
   "异步队列": "Async queue",
   "历史补审": "History recheck",

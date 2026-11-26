@@ -22,6 +22,7 @@ import {
 import { KIND_LABEL, OBTAIN_LABEL, categoryLabel, timeAgo } from "../lib/sources.ts";
 import type { AiPayload, AiSettings, AiSourceMode, AiStage, AiStats, Source } from "../types.ts";
 import { t } from "../lib/i18n.ts";
+import { AiProtocolField } from "./AiProtocolField.tsx";
 
 const STAGE_META: Record<AiStage, { label: string; cls: string }> = {
   sync: { label: t("推送前同步"), cls: "bg-brand-subtle text-accent border-brand-border" },
@@ -266,6 +267,7 @@ export function AiPanel({
     setTest(null);
     try {
       const draft: Partial<AiSettings> = {
+        protocol: form?.protocol,
         baseUrl: form?.baseUrl ?? "",
         model: form?.model ?? "",
         apiKey: (form?.apiKey ?? "").startsWith("••••") ? "" : (form?.apiKey ?? ""),
@@ -916,6 +918,7 @@ export function AiPanel({
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
+          <AiProtocolField value={form.protocol} onChange={(protocol) => setForm({ ...form, protocol })} />
         </div>
 
         {/* 性能参数 */}
@@ -1074,6 +1077,7 @@ export function AiPanel({
             onClick={() =>
               save({
                 enabled: form.enabled,
+                protocol: form.protocol,
                 baseUrl: form.baseUrl,
                 model: form.model,
                 apiKey: (form.apiKey ?? "").startsWith("••••") ? "" : (form.apiKey ?? ""),

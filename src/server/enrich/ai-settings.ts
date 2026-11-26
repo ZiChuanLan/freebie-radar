@@ -1,4 +1,6 @@
 import { config } from "../config.ts";
+import { normalizeAiProtocol, type AiProtocol } from "../../shared/ai-protocol.ts";
+import { requestAiText } from "./ai-client.ts";
 import { all, get, run } from "../db.ts";
 import type { RawItem } from "../collectors/types.ts";
 import { isNoiseTitle } from "./noise.ts";
@@ -30,7 +32,9 @@ export type AiSourceMode = "all" | "exclude" | "only";
 export type AiSettings = {
   /** 总开关：关掉后采集不再自动送审 */
   enabled: boolean;
-  /** OpenAI 兼容端点，带 /v1 */
+  /** 协议类型：缺省/空值保持 Chat Completions；response 使用 Responses。 */
+  protocol?: AiProtocol;
+  /** OpenAI 兼容基础地址，带 /v1，不含 /chat/completions 或 /responses */
   baseUrl: string;
   /** 密钥；界面只显示末四位 */
   apiKey: string;
@@ -113,6 +117,7 @@ const DEFAULT_PROMPT = [
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: Boolean(config.aiBaseUrl && config.aiModel),
+  protocol: normalizeAiProtocol(config.aiProtocol),
   baseUrl: config.aiBaseUrl,
   apiKey: config.aiApiKey,
   model: config.aiModel,
@@ -158,6 +163,7 @@ function normalizeSourceMode(v: unknown): AiSourceMode {
 function normalizeSettings(raw: Partial<AiSettings>, base: AiSettings): AiSettings {
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    protocol: normalizeAiProtocol(raw.protocol ?? base.protocol),
     baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl.trim() : base.baseUrl,
     apiKey:
       typeof raw.apiKey === "string" && raw.apiKey.trim() && !raw.apiKey.startsWith("••••")
@@ -276,6 +282,7 @@ export function publicAiSettings(s = getAiSettings()) {
   return {
     apiKey: "",
     enabled: s.enabled,
+    protocol: normalizeAiProtocol(s.protocol),
     baseUrl: s.baseUrl,
     model: s.model,
     maxItems: s.maxItems,
@@ -333,34 +340,18 @@ async function callOnce(
   payload: { index: number; title: string; summary: string }[],
   s: AiSettings,
 ): Promise<CallResult> {
-  const endpoint = s.baseUrl.replace(/\/+$/, "") + "/chat/completions";
   const timeoutMs = s.timeoutSec * 1000;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const t0 = Date.now();
   const tag = `[ai] batch n=${payload.length} idx=${payload[0]?.index ?? "-"}`;
   try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(s.apiKey ? { authorization: "Bearer " + s.apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model: s.model,
-        temperature: 0,
-        messages: [
-          { role: "system", content: buildSystemPrompt(s) },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-      }),
-      signal: ac.signal,
-    });
-    const ttfb = Date.now() - t0;
-    if (!res.ok) throw new Error("AI HTTP " + res.status + " " + (await res.text()).slice(0, 120));
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const { content, ttfbMs: ttfb } = await requestAiText(
+      s,
+      { system: buildSystemPrompt(s), user: JSON.stringify(payload) },
+      { signal: ac.signal },
+    );
     console.log(`${tag} 完成 ${Date.now() - t0}ms（响应头 ${ttfb}ms）`);
-    const content = data.choices?.[0]?.message?.content ?? "";
     const jsonText = /\[[\s\S]*\]/.exec(content)?.[0];
     if (!jsonText) throw new Error("AI 未返回 JSON 数组");
     const arr: unknown = JSON.parse(jsonText);

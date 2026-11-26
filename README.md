@@ -238,6 +238,7 @@ pnpm dev:web    # 前端 Vite :5173（自动代理 /api 到 8788）
 | `TELEGRAM_CHAT_ID` | 留空 | 接收推送的个人/群组 Chat ID |
 | `TELEGRAM_PROXY` | 留空 | 仅用于 Telegram 推送的代理 |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 留空 | 首次启动默认 AI 参数，之后推荐在网页「AI 引擎」修改 |
+| `AI_PROTOCOL` | 留空 | 留空沿用 Chat Completions（`/chat/completions`）；填 `response` 使用 Responses（`/responses`）。基础地址保留 `/v1`，不含具体接口路径；审核、语义去重与连接测试共用该设置，保存后以网页配置为准 |
 | `INGEST_TOKEN` | 留空（禁止写入） | 给 `scripts/pw-collect.mjs` 或油猴脚本回传数据的 Bearer Token |
 | `GITHUB_TOKEN` | 留空 | 可选，将 GitHub 采集限额从 60/h 提升到 5000/h |
 | `ENABLE_SCHEDULER` | `true` | 是否开启内置采集、攒批、每日精选与清理调度 |

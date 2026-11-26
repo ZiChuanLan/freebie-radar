@@ -1,5 +1,6 @@
 import { all, get, run, tx } from "../db.ts";
 import { aiReady, getAiSettings, type AiSettings } from "./ai-settings.ts";
+import { requestAiText } from "./ai-client.ts";
 
 export type DedupCandidate = {
   id: number;
@@ -105,7 +106,6 @@ export async function findSemanticDuplicatesWithAi(
 
   const validAnchorIds = new Set(anchors.map((a) => a.id));
   const candidateIds = new Set(candidates.map((c) => c.id));
-  const endpoint = s.baseUrl.replace(/\/+$/, "") + "/chat/completions";
   const ac = new AbortController();
   const timeoutMs = Math.max(s.timeoutSec * 1000, 12_000);
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -129,27 +129,11 @@ export async function findSemanticDuplicatesWithAi(
   };
 
   try {
-    const res = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(s.apiKey ? { authorization: "Bearer " + s.apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model: s.model,
-        temperature: 0,
-        messages: [
-          { role: "system", content: DEDUP_SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-      }),
-      signal: ac.signal,
-    });
-    if (!res.ok) {
-      throw new Error(`AI 去重 HTTP ${res.status} ${(await res.text()).slice(0, 100)}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? "";
+    const { content } = await requestAiText(
+      s,
+      { system: DEDUP_SYSTEM_PROMPT, user: JSON.stringify(payload) },
+      { signal: ac.signal, fetchImpl, errorLabel: "AI 去重", errorPreviewLength: 100 },
+    );
     const jsonText = /\[[\s\S]*\]/.exec(content)?.[0];
     if (!jsonText) return out;
     const arr = JSON.parse(jsonText) as Array<{

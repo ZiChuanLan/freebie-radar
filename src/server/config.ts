@@ -60,6 +60,8 @@ export const config = {
   telegramApiBase: str("TELEGRAM_API_BASE", "https://api.telegram.org"),
   telegramProxy: str("TELEGRAM_PROXY"),
 
+  /** AI 协议：留空沿用 /chat/completions；response 使用 /responses。 */
+  aiProtocol: str("AI_PROTOCOL"),
   aiBaseUrl: str("AI_BASE_URL"),
   aiApiKey: str("AI_API_KEY"),
   aiModel: str("AI_MODEL"),

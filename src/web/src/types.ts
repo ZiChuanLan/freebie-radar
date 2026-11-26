@@ -1,3 +1,5 @@
+import type { AiProtocol } from "../../shared/ai-protocol.ts";
+
 export type Item = {
   id: number;
   source_id: string;
@@ -210,6 +212,8 @@ export type AiSourceMode = "all" | "exclude" | "only";
 
 export type AiSettings = {
   enabled: boolean;
+  /** 协议类型：缺省/空值沿用 Chat Completions；response 使用 Responses。 */
+  protocol?: AiProtocol;
   baseUrl: string;
   /** 只在本地表单里用；服务端返回的是打码值 */
   apiKey: string;
